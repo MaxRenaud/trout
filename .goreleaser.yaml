@@ -1,0 +1,89 @@
+# trout's release: archives for macOS, Linux and Windows, each with the
+# soju trout installs on servers (Linux amd64 and arm64) and the one it runs
+# itself (This Computer) for that platform, with soju's AGPL license and
+# source; and a Homebrew cask. Try it without publishing anything:
+#
+#   go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean
+version: 2
+project_name: trout
+
+before:
+  hooks:
+    - dev/build-soju dist-soju linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+
+builds:
+  - &build
+    id: linux
+    main: ./cmd/trout
+    binary: trout
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+    goos: [linux]
+    goarch: [amd64, arm64]
+  # One build per OS and arch below, so each archive can name its own soju
+  # (archive files' dst isn't a template).
+  - { <<: *build, id: darwin-amd64, goos: [darwin], goarch: [amd64] }
+  - { <<: *build, id: darwin-arm64, goos: [darwin], goarch: [arm64] }
+  - { <<: *build, id: windows-amd64, goos: [windows], goarch: [amd64] }
+  - { <<: *build, id: windows-arm64, goos: [windows], goarch: [arm64] }
+
+archives:
+  - &archive
+    id: linux
+    ids: [linux]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - &license LICENSE*
+      - &readme README.md
+      - &sojulicense { src: dist-soju/SOJU-*, dst: ., strip_parent: true }
+      - &linuxamd64 { src: dist-soju/linux-amd64/*, dst: soju-linux-amd64, strip_parent: true }
+      - &linuxarm64 { src: dist-soju/linux-arm64/*, dst: soju-linux-arm64, strip_parent: true }
+  - <<: *archive
+    id: darwin-amd64
+    ids: [darwin-amd64]
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+      { src: dist-soju/darwin-amd64/*, dst: soju-darwin-amd64, strip_parent: true }]
+  - <<: *archive
+    id: darwin-arm64
+    ids: [darwin-arm64]
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+      { src: dist-soju/darwin-arm64/*, dst: soju-darwin-arm64, strip_parent: true }]
+  - <<: *archive
+    id: windows-amd64
+    ids: [windows-amd64]
+    formats: [zip]
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+      { src: dist-soju/windows-amd64/*, dst: soju-windows-amd64, strip_parent: true }]
+  - <<: *archive
+    id: windows-arm64
+    ids: [windows-arm64]
+    formats: [zip]
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+      { src: dist-soju/windows-arm64/*, dst: soju-windows-arm64, strip_parent: true }]
+
+checksum:
+  name_template: checksums.txt
+
+homebrew_casks:
+  - name: trout
+    ids: [darwin-amd64, darwin-arm64, linux]
+    repository:
+      owner: MaxRenaud
+      name: homebrew-tap
+    url: # spelled out while release is disabled
+      template: "https://github.com/MaxRenaud/trout/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    homepage: https://github.com/MaxRenaud/trout
+    description: mIRC-inspired IRC client for the terminal
+    binaries: [trout]
+    hooks:
+      post:
+        # Not notarized yet: without this, macOS refuses to run trout and soju.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}"]
+          end
+
+release:
+  disable: true # until trout is public

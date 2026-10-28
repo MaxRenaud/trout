@@ -16,6 +16,7 @@ TROUT_DEBUG=1 dev/trout                            # log raw IRC lines to trout-
 go test ./...                                      # unit and frame tests, no network
 go test -tags integration ./internal/ui -v         # needs the dev env
 dev/build-soju                                     # the soju trout installs on servers
+go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean   # release archives in dist/, nothing published
 go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 go vet ./... && go fix -diff ./...                 # must both be clean
@@ -118,5 +119,6 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 
 ## Not built yet
 
-VPS provisioning (Hetzner, DigitalOcean), and release archives that ship soju next to
-trout (Lock was skipped). See `docs/architecture.md` and `tmp/plan.md`.
+VPS provisioning (Google Cloud, Hetzner, DigitalOcean), and publishing releases (GitHub
+releases and the Homebrew tap wait until trout is public; `.goreleaser.yaml` has release
+disabled). Lock was skipped. See `docs/architecture.md` and `tmp/plan.md`.

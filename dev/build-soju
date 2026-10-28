@@ -1,21 +1,33 @@
 #!/bin/sh
-# Builds the soju trout uses (install.SojuVersion) into the cache
-# install.FindFor looks in: linux amd64 and arm64, to install on servers,
-# and this computer's, for running its own (no bouncer). Pure Go
-# (moderncsqlite, no cgo), so it runs anywhere without packages. Release
-# archives will ship these next to trout instead.
+# Builds the soju trout uses (install.SojuVersion). Pure Go (moderncsqlite,
+# no cgo), so it runs anywhere without packages.
+#
+#   dev/build-soju                     into the cache install.FindFor looks in:
+#                                      linux amd64 and arm64, to install on
+#                                      servers, and this computer's, for
+#                                      running its own (This Computer)
+#   dev/build-soju DIR os/arch...      into DIR/os-arch/ instead, plus soju's
+#                                      LICENSE (AGPL) and where its source is
+#                                      (the release does this)
 set -e
 cd "$(dirname "$0")/.."
 version=$(sed -n 's/^const SojuVersion = "\(.*\)"$/\1/p' internal/install/install.go)
 [ -n "$version" ] || { echo "can't find SojuVersion in internal/install/install.go" >&2; exit 1; }
-cache=$(go run ./dev/cachedir)/trout/soju/$version
+if [ $# -gt 0 ]; then
+	cache=$1
+	shift
+	platforms=$*
+else
+	cache=$(go run ./dev/cachedir)/trout/soju/$version
+	platforms="linux/amd64 linux/arm64 $(go env GOOS)/$(go env GOARCH)"
+fi
 modcache=$(go env GOMODCACHE)
 tmp=$(mktemp -d)
 trap 'chmod -R u+w "$tmp"; rm -rf "$tmp"' EXIT
-for platform in linux/amd64 linux/arm64 "$(go env GOOS)/$(go env GOARCH)"; do
+for platform in $platforms; do
 	os=${platform%/*} arch=${platform#*/}
 	out=$cache/$os-$arch
-	if [ -x "$out/soju" ] && [ -x "$out/sojuctl" ]; then
+	if [ -n "$(ls "$out"/soju "$out"/soju.exe 2>/dev/null)" ]; then
 		echo "soju $version $os/$arch: already built in $out"
 		continue
 	fi
@@ -27,6 +39,20 @@ for platform in linux/amd64 linux/arm64 "$(go env GOOS)/$(go env GOARCH)"; do
 	bin=$tmp/gopath/bin/${os}_$arch
 	[ -d "$bin" ] || bin=$tmp/gopath/bin # this computer's own: no subfolder
 	mv "$bin"/soju* "$out/"
-	rm -rf "$tmp/gopath/bin"
+	chmod -R u+w "$tmp/gopath/bin"
+	rm -r "$tmp/gopath/bin"
 	echo "  -> $out"
 done
+# soju is AGPL: its license, and where to get the exact source, go with it.
+src=$(GOFLAGS=-mod=mod go mod download -json codeberg.org/emersion/soju@"$version" | sed -n 's/^[[:space:]]*"Dir": "\(.*\)",$/\1/p')
+install -m 644 "$src/LICENSE" "$cache/SOJU-LICENSE" # read-only in the module cache
+cat >"$cache/SOJU-SOURCE.md" <<EOT
+The soju-*/ folders hold soju $version, an IRC bouncer by Simon Ser and
+contributors, licensed under the GNU AGPL v3 (SOJU-LICENSE). trout runs it
+as a separate program, unchanged, built with:
+
+    CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' -tags moderncsqlite \\
+        codeberg.org/emersion/soju/cmd/soju@$version codeberg.org/emersion/soju/cmd/sojuctl@$version
+
+Its source: https://codeberg.org/emersion/soju/src/tag/$version
+EOT

@@ -326,3 +326,22 @@ func TestModes(t *testing.T) {
 
 // repo is a path from the repository's root.
 func repo(p string) string { return filepath.Join("..", "..", p) }
+
+// TestFindNextToTrout: release archives put soju-<os>-<arch>/ next to
+// trout, and that's found first (here, next to the test binary).
+func TestFindNextToTrout(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe, _ = filepath.EvalSymlinks(exe)
+	dir := filepath.Join(filepath.Dir(exe), "soju-plan9-mips")
+	os.MkdirAll(dir, 0o755)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	for _, f := range []string{"soju", "sojuctl"} {
+		os.WriteFile(filepath.Join(dir, f), nil, 0o755)
+	}
+	if soju, _, err := FindFor("plan9", "mips"); err != nil || soju != filepath.Join(dir, "soju") {
+		t.Fatal(soju, err)
+	}
+}

@@ -482,6 +482,9 @@ func FindFor(goos, arch string) (soju, sojuctl string, err error) {
 	platform := goos + "-" + arch
 	var dirs []string
 	if exe, err := os.Executable(); err == nil {
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real // Homebrew links bin/trout to where soju is
+		}
 		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "soju-"+platform))
 	}
 	if cache, err := os.UserCacheDir(); err == nil {
