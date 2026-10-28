@@ -291,6 +291,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openBouncers(); return nil }})
 		} else {
 			items = append(items,
+				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openInstall(); return nil }},
 				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openSavedBouncers(); return nil }})
 		}
 		return append(items,

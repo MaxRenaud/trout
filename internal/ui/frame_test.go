@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
@@ -187,6 +188,27 @@ func TestFrames(t *testing.T) {
 		}},
 		{"dcc privacy", func() {
 			a.openDialog(a.dccPrivacyBox(&transfer{net: a.nets[0], nick: "xdcc", file: "pack.bin"}, nil))
+		}},
+		{"set up bouncer", func() { a.openDialog(&installWizard{hosts: []string{"vps", "homelab"}, account: "max"}) }},
+		{"set up bouncer: working", func() {
+			a.openDialog(&installWizard{hosts: []string{"vps"}, account: "max", step: instWorking, log: []string{
+				"Connecting to vps with ssh...", "Found Debian GNU/Linux 13 (trixie), Linux x86_64",
+				"sudo works without a password", "Uploading soju v0.11.1 (15 MB)",
+				"A step long enough to wrap: " + strings.Repeat("and on ", 12)}})
+		}},
+		{"set up bouncer: by hand", func() {
+			in, _ := install.New(nil, install.Facts{Home: "/home/max"}, "192.0.2.10", "max")
+			a.openDialog(&installWizard{typed: "max@192.0.2.10", account: "max", step: instByHand, in: in,
+				err: "soju.service isn't running"})
+		}},
+		{"set up bouncer: failed", func() {
+			a.openDialog(&installWizard{hosts: []string{"vps"}, step: instFailed, log: []string{"Connecting to vps with ssh..."},
+				err: "soju runs on the server, but trout can't reach 192.0.2.10:6697 from here (i/o timeout). " +
+					"A firewall at your provider is the usual reason: allow TCP 6697 and 8443"})
+		}},
+		{"set up bouncer: done", func() {
+			a.openDialog(&installWizard{hosts: []string{"vps"}, step: instDone, log: []string{"Starting soju",
+				"Your bouncer is ready. Its TLS key is pinned: SHA256:9f2cQm1yZ3xS0k5mB2vLr8u7TqWnE4hJdP6aXcYoGe4"}})
 		}},
 	} {
 		d.open()

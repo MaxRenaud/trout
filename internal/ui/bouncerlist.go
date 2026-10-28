@@ -11,11 +11,17 @@ import (
 )
 
 // savedBouncersBox is Tools > Bouncers for real: the bouncers in
-// config.toml, to switch between, add, edit and remove. (The demo has
-// bouncerBox, the mock of setting them up too.)
+// config.toml, to switch between, add, edit and remove, and update the
+// soju on ones trout set up. (The demo has bouncerBox, its mock-up.)
 type savedBouncersBox struct{ sel int }
 
-var savedBouncerButtons = []string{"Use", "Add", "Edit", "Remove", "Close"}
+// buttons has Update when the selected bouncer is one trout set up.
+func (d *savedBouncersBox) buttons(a *App) []string {
+	if bs := a.savedBouncers(); len(bs) > 0 && bs[clamp(d.sel, 0, len(bs)-1)].SSH != "" {
+		return []string{"Use", "Add", "Edit", "Update", "Remove", "Close"}
+	}
+	return []string{"Use", "Add", "Edit", "Remove", "Close"}
+}
 
 func (a *App) openSavedBouncers() {
 	d := &savedBouncersBox{}
@@ -41,7 +47,7 @@ func (a *App) savedBouncers() []config.Bouncer {
 
 func (d *savedBouncersBox) title() string { return "Bouncers" }
 
-func (d *savedBouncersBox) size(a *App) (int, int) { return 72, 16 }
+func (d *savedBouncersBox) size(a *App) (int, int) { return 78, 16 }
 
 func (d *savedBouncersBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	t := a.theme()
@@ -73,7 +79,7 @@ func (d *savedBouncersBox) draw(a *App, c *Canvas, x, y, w, h int) {
 			c.Text(px+10, ly+i, pw-10, r[1], face)
 		}
 	}
-	a.dlgButtons(c, x, y+h-3, w, savedBouncerButtons, 0)
+	a.dlgButtons(c, x, y+h-3, w, d.buttons(a), 0)
 }
 
 func bouncerDetails(a *App, b config.Bouncer) [][2]string {
@@ -98,7 +104,7 @@ func bouncerDetails(a *App, b config.Bouncer) [][2]string {
 			status = "in use, connected"
 		}
 	}
-	return [][2]string{
+	rows := [][2]string{
 		{"Name", b.Name},
 		{"Address", b.Address},
 		{"User", b.User},
@@ -106,6 +112,10 @@ func bouncerDetails(a *App, b config.Bouncer) [][2]string {
 		{"Login", pw},
 		{"Status", status},
 	}
+	if b.SSH != "" {
+		rows = append(rows, [2]string{"Server", "set up by trout, on " + b.SSH})
+	}
+	return rows
 }
 
 func (d *savedBouncersBox) press(a *App, button string) tea.Cmd {
@@ -142,7 +152,14 @@ func (d *savedBouncersBox) press(a *App, button string) tea.Cmd {
 			pw, _ = a.cfg.StoredPassword(b.Name)
 		}
 		a.openConnectFor(b, pw, "", d)
+	case "Update":
+		a.dlg = nil
+		return a.openReinstall(b, "update")
 	case "Remove":
+		if b.SSH != "" {
+			a.openDialog(d.uninstallBox(b))
+			return nil
+		}
 		lines := []string{"Remove " + b.Name + " from trout?", "",
 			"The bouncer itself, and everything on it, stays as it is."}
 		if b.Name == a.bnc.Name {
@@ -175,7 +192,7 @@ func (d *savedBouncersBox) key(a *App, k string) tea.Cmd {
 	case "esc":
 		a.dlg = nil
 	default:
-		for _, b := range savedBouncerButtons {
+		for _, b := range d.buttons(a) {
 			if strings.EqualFold(k, b[:1]) {
 				return d.press(a, b)
 			}
@@ -195,9 +212,38 @@ func (d *savedBouncersBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) 
 			return d.press(a, "Use")
 		}
 	case "button":
-		return d.press(a, savedBouncerButtons[r.I])
+		return d.press(a, d.buttons(a)[r.I])
 	case "close":
 		a.dlg = nil
 	}
 	return nil
+}
+
+// uninstallBox asks what removing a bouncer trout set up should do: take
+// soju off the server (and maybe its history), or only forget it here.
+func (d *savedBouncersBox) uninstallBox(b config.Bouncer) *msgBox {
+	box := &msgBox{Title: "Remove Bouncer", Buttons: []string{"Uninstall", "Forget", "Cancel"}, Sel: 2, Cancel: 2,
+		Lines: []string{"Remove " + b.Name + "?", "",
+			"Uninstall takes the bouncer off " + b.SSH + ". Forget only",
+			"removes it from trout and leaves the server as it is."},
+		Check: "Delete its chat history too"}
+	box.OnClose = func(a *App, button int) tea.Cmd {
+		switch button {
+		case 0:
+			mode := "remove"
+			if box.Checked {
+				mode = "purge"
+			}
+			return a.openReinstall(b, mode)
+		case 1:
+			if a.cfg != nil {
+				if err := a.cfg.Remove(b.Name); err != nil {
+					a.addLine(a.home.Status(), state.RoleQuit, "* Couldn't remove "+b.Name+": "+err.Error())
+				}
+			}
+		}
+		a.openDialog(d)
+		return nil
+	}
+	return box
 }

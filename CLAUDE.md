@@ -15,6 +15,8 @@ TROUT_DEBUG=1 dev/trout                            # log raw IRC lines to trout-
 
 go test ./...                                      # unit and frame tests, no network
 go test -tags integration ./internal/ui -v         # needs the dev env
+dev/build-soju                                     # the soju trout installs on servers
+go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
 
@@ -44,11 +46,14 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `proxy.go` Options > Connect > Proxy; `form.go` is the text-field dialog they and Kick
   (why) use.
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
+- `internal/install`: setting soju up on your server over the system `ssh`: probe, the
+  root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
 - `internal/termkeys`: which terminal this is, whether its Option key sends Alt, and the
   fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `optionkey.go`
   asks at startup.
 - `internal/demo`: the fake world for `--demo`; the dev bot reuses its chatter.
-- `dev/`: Docker setup (two ergo networks, soju, a chatter bot).
+- `dev/`: Docker setup (two ergo networks, soju, a chatter bot); `build-soju`; `proxmox/`,
+  throwaway test VMs for bouncer setup (credentials and their SSH key in `tmp/`).
 - `tmp/`: git-ignored scratch space until v1.0. The roadmap is `tmp/plan.md`; keep it updated.
 
 ## Rules
@@ -92,9 +97,15 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `sojuctl ... user run trout help <command>` (see the dev-env skill) rather than guessing.
 - `internal/irc/conn_test.go` scripts a fake server for registration; `tls_test.go` pins
   a self-signed one.
+- `ui/install_test.go` walks the setup wizard against a fake server (`installHooks`):
+  sudo with and without a password, by hand, ssh needing you, uninstalling, and moving
+  networks. `install/install_test.go` checks the installer's commands against a fake
+  runner. With `-tags proxmox`, `install/proxmox_test.go` installs on all six Proxmox
+  templates through every root tier, and `ui/proxmox_test.go` drives the wizard for real.
+  Only touch VMs in the trout-test pool (IDs 9900-9999).
 - Tests never touch the real config: demo mode and `Options{}` without `Config` save nothing.
 
 ## Not built yet
 
-The embedded "None" mode (trout starting its own soju) and bouncer provisioning (Lock was
+The embedded "None" mode (trout starting its own soju) and VPS provisioning (Lock was
 skipped). See `docs/architecture.md` and `tmp/plan.md`.

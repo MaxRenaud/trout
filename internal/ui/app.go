@@ -174,6 +174,9 @@ type App struct {
 	transfers    []*transfer
 	chats        []*dccChat
 	waiting      []func(a *App) tea.Cmd // dialogs to open once nothing is (whenFree)
+	installing   *installWizard         // the setup running, whose messages count
+	hooks        *installHooks          // tests: no ssh, binaries or login for real
+	moving       []movedNet             // networks to make on a new bouncer once it's connected
 	dccSeq       int
 
 	urls         []seenURL                    // URLs List
@@ -344,6 +347,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chatUpdate(msg)
 	case uploadDoneMsg:
 		a.uploaded(msg)
+	case instStepMsg, instPhaseMsg:
+		cmd = a.installUpdate(msg)
 	case tea.FocusMsg:
 		a.focused = true
 	case tea.BlurMsg:

@@ -283,10 +283,39 @@ Known slash commands map to IRC (`/join`, `/part`, `/msg`, `/me`, `/topic`, `/mo
 `/kick`, `/op` …). Like mIRC, anything else goes to the server as it is, so `/whois`,
 `/list` and `/msg BouncerServ help` work. `/quote` sends a raw line.
 
+## Setting soju up on your server
+
+Tools > Set Up Bouncer (and Set One Up on the first-run Connect dialog) installs soju on a
+Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/install.go`):
+
+- **SSH is the system `ssh`** (Windows 10+ has OpenSSH too), run with BatchMode, so
+  `~/.ssh/config`, agents, ProxyJump, known_hosts and hardware keys work as in a terminal.
+  When ssh needs you (a new host key, a locked key), trout hands it the terminal once
+  (`tea.ExecProcess`). `ssh -G` gives the real host name for the bouncer's address.
+- **Probe:** Linux on x86_64 or ARM64 with systemd, or trout says it can't.
+- **Root, in tiers:** logged in as root; `sudo -n`; sudo with your password (asked in a
+  masked field, kept in memory, sent to `sudo -k -S`, through a pty if sudoers wants a
+  tty; sudo-rs's messages are recognized too); or, when sudo says no, the command to run
+  as root yourself, with View Script. trout never trusts that it ran: Check looks.
+- **What's uploaded** to `~/.trout-install` (0700): trout's pinned soju and sojuctl
+  (`install.SojuVersion`, pure Go, found next to trout or where `dev/build-soju` builds
+  them), a TLS key and self-signed certificate made locally (so the pin is known before
+  soju starts, and no domain is needed), and `setup.sh` with the settings on top.
+- **`setup.sh`** (safe to run again): a `soju` system user, `/usr/local/bin/soju`,
+  `/etc/soju` (root:soju), `/var/lib/soju`, a hardened `soju.service` after soju's
+  contrib unit, ircs on 6697 and https (file uploads) on 8443, those ports opened in ufw or
+  firewalld when active, and your account (`-admin=true`). `update` swaps in trout's soju
+  and keeps the key and accounts; `remove` keeps the history, `purge` doesn't.
+- **Check** logs in from here with the pin and the password. If that fails it looks on
+  the server for what's missing; if the server's fine, it's the provider's firewall.
+- **Then** the bouncer is saved (its `ssh` host marks it as trout's, for Update and
+  Uninstall in Tools > Bouncers), and once its control connection is up trout moves the old
+  bouncer's networks over (`network create`, `channel create`). soju never hands out
+  network passwords, so trout says to set those again.
+
 ## Later
 
 - **"None" mode:** trout starts its own soju on a random localhost port.
-- **Bouncer setup:** install soju over SSH (hosts from `~/.ssh/config`) or on a new VPS
-  (Hetzner, DigitalOcean), pinning a TLS key trout generates so no domain is needed, and
-  move networks over with soju's network commands. The demo shows the planned UI.
+- **A new VPS** (Hetzner, DigitalOcean) for the bouncer, with the same pinning and moving.
+  The demo shows the planned UI.
 - **Clipboard over SSH** via OSC 52 (copying uses pbcopy/xclip/clip locally).

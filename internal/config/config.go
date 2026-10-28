@@ -176,6 +176,11 @@ type Bouncer struct {
 	// client certificate (ClientCert): trout logs in with it (SASL
 	// EXTERNAL) and keeps the password as a fallback.
 	Login string `toml:"login,omitempty"`
+
+	// SSH is the host (as ssh knows it: a ~/.ssh/config Host or user@host)
+	// trout set this soju up on, for Update and Uninstall; empty for a
+	// bouncer trout didn't install.
+	SSH string `toml:"ssh,omitempty"`
 }
 
 // Settings are the View menu and Options dialog choices.

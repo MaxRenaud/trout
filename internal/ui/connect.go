@@ -200,6 +200,7 @@ func (a *App) openConnectFor(b config.Bouncer, password, note string, back modal
 		OnOK: func(a *App, vals []string) (tea.Cmd, error) {
 			return a.connectOK(b, password, vals)
 		},
+		OnButton: map[string]func(*App) tea.Cmd{"Set One Up...": func(a *App) tea.Cmd { a.openInstall(); return nil }},
 		OnCancel: func(a *App) tea.Cmd {
 			switch {
 			case back != nil:
@@ -209,6 +210,10 @@ func (a *App) openConnectFor(b config.Bouncer, password, note string, back modal
 			}
 			return nil
 		},
+	}
+	if a.bnc.Address == "" && back == nil { // first run: no bouncer yet? trout can make one
+		f.Lines = append(f.Lines, "", "No bouncer yet? Set One Up installs soju on a server of yours.")
+		f.Buttons = []string{"Connect", "Set One Up...", "Cancel"}
 	}
 	// Start in the first empty field, or the password after a failed login.
 	f.focus = slices.IndexFunc(f.Fields, func(fl *formField) bool { return len(fl.Edit.Buf) == 0 })
