@@ -21,6 +21,7 @@ go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on rea
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
 dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
+dev/vhs/record                                     # the README's GIFs (docs/gifs) from dev/vhs/*.tape
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
 
@@ -68,7 +69,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `systemd/`, a Debian image with systemd and sshd for the arm64 install test;
   `windows/`, the Windows 11 VM's answer file (`proxmox/pve_windows.py` makes the VM) and
   `run-tests`, which runs cross-compiled tests there over ssh (PowerShell: no `-test.x`
-  flags unquoted, it splits them at the dot).
+  flags unquoted, it splits them at the dot); `vhs/`, the README GIFs' tapes, recorded in
+  VHS's Linux container (on macOS its terminal types Option+key as characters; VHS has no
+  Alt+digit, Alt+arrow or F-keys, so tapes use Ctrl+N/Ctrl+Q and menus).
 - `tmp/`: git-ignored scratch space until v1.0. The roadmap is `tmp/plan.md`; keep it updated.
 
 ## Rules

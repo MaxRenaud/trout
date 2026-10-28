@@ -31,15 +31,18 @@ const (
 )
 
 var (
-	bouncerTargets = []string{"My own server (over SSH)", "Hetzner Cloud", "DigitalOcean"}
-	targetNotes    = []string{
-		"Uses your ~/.ssh/config and SSH agent; no keys to paste.",
-		"About €4/month, billed by Hetzner. Delete it any time.",
-		"About $6/month, billed by DigitalOcean. Delete it any time.",
-	}
-	regions = map[int][]string{
-		1: {"Falkenstein, DE", "Nuremberg, DE", "Helsinki, FI", "Ashburn, US", "Hillsboro, US"},
-		2: {"San Francisco", "New York", "Amsterdam", "Frankfurt", "Singapore"},
+	// The mock-up follows the real wizard (install.go, vps.go): the same
+	// choices, notes and steps, made-up servers.
+	bouncerTargets = whereOptions
+	targetNotes    = whereNotes
+	regions        = map[int][]string{
+		1: {"Falkenstein, DE      $7.59/month   2 CPUs, 4 GB, arm64", "Nuremberg, DE        $7.59/month   2 CPUs, 4 GB, arm64",
+			"Helsinki, FI         $7.59/month   2 CPUs, 4 GB, arm64", "Ashburn, VA, US      $21.09/month  2 CPUs, 2 GB, amd64"},
+		2: {"Amsterdam 3          $4.00/month   1 CPU, 512 MB, amd64", "Frankfurt 1          $4.00/month   1 CPU, 512 MB, amd64",
+			"London 1             $4.00/month   1 CPU, 512 MB, amd64", "Toronto 1            $4.00/month   1 CPU, 512 MB, amd64"},
+		3: {"Oregon, US (us-west1-a)       $3.65/month   the free tier",
+			"Iowa, US (us-central1-a)      $3.65/month   the free tier",
+			"South Carolina, US (us-east1-b) $3.65/month the free tier"},
 	}
 )
 
@@ -92,7 +95,8 @@ func (s *setupWizard) target() string {
 	if s.where == 0 {
 		return s.hosts[s.choice]
 	}
-	return regions[s.where][s.choice]
+	region, _, _ := strings.Cut(regions[s.where][s.choice], "  ") // without the price columns
+	return region
 }
 
 func (s *setupWizard) buttons() []string {
@@ -100,6 +104,9 @@ func (s *setupWizard) buttons() []string {
 	case stepWhere:
 		return []string{"Next", "Cancel"}
 	case stepTarget:
+		if s.where != 0 {
+			return []string{"Create Server", "Back", "Cancel"}
+		}
 		return []string{"Install", "Back", "Cancel"}
 	case stepInstall:
 		return []string{"Cancel"}
@@ -113,31 +120,38 @@ func (s *setupWizard) install(a *App) []string {
 		nets = append(nets, n.Name)
 	}
 	moved := fmt.Sprintf("Moving %d networks onto the bouncer: %s", len(nets), strings.Join(nets, ", "))
+	installed := []string{
+		"Uploading soju v0.11.1 (15 MB)",
+		"Uploading the TLS key and the setup script",
+		"Creating the soju system user",
+		"Installing soju v0.11.1",
+		"Writing /etc/soju/config",
+		"Starting soju",
+		"Setting up your account, max",
+		"Logging in to check that it works...",
+		"Your bouncer is ready. Its TLS key is pinned: SHA256:9f2cQm1yZ3xS0k5mB2vLr8u7TqWnE4h",
+		moved,
+	}
 	if s.where == 0 {
 		host := s.target()
-		return []string{
-			"Connecting to " + host + " with your SSH agent...",
-			"Found Debian GNU/Linux 13 (trixie), x86_64",
+		return append([]string{
+			"Connecting to " + host + " with ssh...",
+			"Found Debian GNU/Linux 13 (trixie), Linux x86_64",
 			"sudo works without a password",
-			"Installing soju from the Debian packages...",
-			"Writing /etc/soju/config (listening on :6697)",
-			"Generating a TLS key and pinning it: SHA256:9f2c…e41a",
-			"Starting soju.service",
-			"Creating your bouncer account",
-			moved,
-			"Done. trout now connects through " + host + ".",
-		}
+		}, installed...)
 	}
-	return []string{
-		"Creating server trout-bouncer in " + s.target() + "...",
-		"Server is up at 203.0.113.40",
-		"Installing soju on first boot...",
-		"Generating a TLS key and pinning it: SHA256:4b7d…09c3",
-		"Starting soju.service",
-		"Creating your bouncer account",
-		moved,
-		"Done. To remove it later, use Delete Server here.",
+	region := s.target()
+	user := "root"
+	if s.where == 3 {
+		user = "trout"
 	}
+	return append([]string{
+		"Creating trout-bouncer at " + bouncerTargets[s.where] + " in " + region + "...",
+		"The server is up at 203.0.113.40",
+		"Connecting to " + user + "@203.0.113.40 with ssh...",
+		"Found Debian GNU/Linux 13 (trixie), Linux " + map[bool]string{true: "aarch64", false: "x86_64"}[s.where == 1],
+		map[bool]string{true: "sudo works without a password", false: "Logged in as root"}[s.where == 3],
+	}, installed...)
 }
 
 func (s *setupWizard) title() string { return "Set Up a Bouncer" }
@@ -182,13 +196,12 @@ func (s *setupWizard) draw(a *App, c *Canvas, x, y, w, h int) {
 			row++
 			radios()
 		} else {
-			text("Connected to "+bouncerTargets[s.where]+" (mock account).", face)
+			text("Signed in to "+bouncerTargets[s.where]+" (mock account).", face)
 			row++
-			text("Pick a region:", bold)
+			text("Where? (each region's cheapest plan)", bold)
 			radios()
 			row++
-			text("No account yet? Sign up with trout's referral link.", face)
-			text("(trout gets hosting credit; you get starter credit.)", face)
+			text("Create Server starts the billing, until you delete the server.", face)
 		}
 	default:
 		head := "Setting up soju on " + s.target() + "..."
@@ -220,7 +233,7 @@ func (s *setupWizard) press(a *App, button string) tea.Cmd {
 		s.step, s.choice = stepTarget, 0
 	case "Back":
 		s.step = stepWhere
-	case "Install":
+	case "Install", "Create Server":
 		s.step, s.script, s.log = stepInstall, s.install(a), nil
 		s.seq++
 		return wizardTick(s.seq)

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Records the README's GIFs (docs/gifs/) from the tapes here, in VHS's
+# Linux container: on macOS its browser terminal types Option+key as a
+# character, and trout's menus need Alt. Usage: dev/vhs/record [tape...]
+set -e
+cd "$(dirname "$0")/../.."
+arch=$(docker info --format '{{.Architecture}}' | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o trout ./cmd/trout
+trap 'rm -f trout' EXIT
+mkdir -p docs/gifs dev/vhs/shots
+tapes=${*:-dev/vhs/chat.tape dev/vhs/menus.tape dev/vhs/setup.tape}
+for t in $tapes; do
+	echo "$t..."
+	docker run --rm -v "$PWD":/vhs -w /vhs ghcr.io/charmbracelet/vhs:v0.12.1 "$t" >/dev/null
+done
+ls -la docs/gifs

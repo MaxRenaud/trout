@@ -3,25 +3,19 @@
 An mIRC-inspired IRC client for the terminal. It looks and works like the mIRC you
 remember, menus, switchbar, treebar, nicklist popups, Address Book and all, and connects
 through a [soju](https://soju.im) bouncer, which keeps you online and keeps your history
-while trout is closed.
+while trout is closed. No bouncer? trout sets one up for you.
 
-```
- trout - [#go-nuts [42] [+nt]: Go programming language | https://go.dev | Ask your question directly]     ×
-  File  View  Favorites  Tools  Commands  Window  Help
-  Connect  Options │  Favorites  Channels │  Address Book  Notify │  Send File  Received │  Colors
- ▏Libera.Chat▕ ▏#go-nuts ×▕ ▏#linux▕ ▏alice▕ ▏OFTC▕ ▏#debian▕ ▏carol▕
- ▾ Libera.Chat        [06:33] * Now talking in #go-nuts                                   ▲  @ChanServ       ▲
-  ├─ #go-nuts         [06:35] * Topic is 'Go programming language | https://go.dev | Ask  ▒  @deferclose
-```
+![Chatting in trout: nick completion, bold, moving between windows, the Dark theme](docs/gifs/chat.gif)
 
 trout is a hobby project. There's no hosted service and nothing to sign up for.
 
 ## What you need
 
-- A soju bouncer; trout is tested with soju 0.11 and uses its networks, history, read
-  markers, search and file host. trout talks to IRC networks only through it.
 - A terminal with mouse support and 24-bit color: iTerm2, Ghostty, kitty, WezTerm,
   Alacritty, Windows Terminal, GNOME Terminal, Konsole.
+- A bouncer, or not: trout connects to a soju you already have, sets one up on a Linux
+  server you can SSH into or on a new server at Hetzner Cloud, DigitalOcean or Google
+  Cloud's free tier, or runs one itself on this computer while it's open.
 - Go 1.25 or later to build it.
 
 ## Install and run
@@ -32,7 +26,12 @@ trout                 # the Connect dialog the first time, then your saved bounc
 trout --demo          # a fake world, no network: look around first
 ```
 
-The first run asks for the bouncer's address (`ircs://host[:port]`), user and password.
+Release archives for macOS, Linux and Windows, and a Homebrew tap, come once trout is
+public; they carry the soju trout installs and runs. Built from source, `dev/build-soju`
+builds that soju.
+
+The first run asks for the bouncer's address (`ircs://host[:port]`), user and password,
+or offers to set one up (Set One Up) or to run one here (This Computer).
 The password goes in a `credentials` file (mode 0600) next to `config.toml`, in your
 config folder (`~/Library/Application Support/trout` on macOS, `~/.config/trout` on
 Linux, `%AppData%\trout` on Windows). Over TLS, after a password login, trout asks the
@@ -42,6 +41,22 @@ Flags and environment variables override the config: `--addr` / `TROUT_ADDR`,
 `--user` / `TROUT_USER`, `--password` / `TROUT_PASSWORD`, `--config` / `TROUT_CONFIG`,
 `--bouncer` to pick a saved one. `password-command` in `config.toml` runs a command such as
 `pass show soju` for the password.
+
+## Getting a bouncer
+
+Tools > Set Up Bouncer installs soju for you: on a Linux server you can SSH into (it uses
+your own `ssh`, so `~/.ssh/config` and your agent just work, and sudo, a sudo password or a
+command you run yourself for root), or on a new server it makes at Hetzner Cloud,
+DigitalOcean or Google Cloud (pick a region, see the price, Create Server). It makes a TLS
+key and pins it, so there's no domain to buy, checks the bouncer by logging in, and moves
+your networks onto it. Tools > Bouncers updates or removes it later, deleting the server
+too.
+
+![Set Up a Bouncer: a new Hetzner server, soju installed, networks moved over](docs/gifs/setup.gif)
+
+This Computer runs soju right here instead, while trout is open, for when there's no
+server. Tools > Connect a Phone shows a QR code that opens your bouncer in
+[Goguma](https://goguma.im) (iPhone and Android), which gets soju's push notifications.
 
 ## What's in it
 
@@ -59,6 +74,8 @@ Flags and environment variables override the config: `--addr` / `TROUT_ADDR`,
   each button's popup, a proxy (SOCKS4, SOCKS5, HTTP) for the bouncer and DCC.
 
 F1 lists the keys. Right-click, Ctrl+click or a long press opens popups.
+
+![Menus and dialogs: Tools, Options, the Channels List, the nick popup, the Address Book](docs/gifs/menus.gif)
 
 ## Terminal notes
 
@@ -78,15 +95,18 @@ set -s escape-time 10
 set -as terminal-features ',xterm-256color:RGB'
 ```
 
-**Windows:** Windows Terminal should work, but trout hasn't been tried there yet.
+**Windows:** tested on Windows 11 in Windows Terminal, This Computer and Set Up Bouncer
+included (it uses Windows' own OpenSSH).
 
 ## Developing
 
 `docker compose -f dev/compose.yaml up -d --build` starts two IRC networks, soju and a
 chatty bot; `dev/trout` connects to it. `go test ./...` runs the unit and screen tests;
 `go test -tags integration ./internal/ui` runs against the dev servers. See
-`docs/dev-environment.md` and `docs/architecture.md`.
+`docs/dev-environment.md` and `docs/architecture.md`. `dev/vhs/record` records the GIFs
+here from `dev/vhs/*.tape`, in [VHS](https://github.com/charmbracelet/vhs)'s container.
 
 ## License
 
-Not decided yet.
+MIT (see `LICENSE`). The soju trout installs and runs is a separate program under the GNU
+AGPL v3; release archives include its license and where its source is.
