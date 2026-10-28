@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -84,6 +85,12 @@ type msgBox struct {
 	Sel     int // focused button
 	Cancel  int // button chosen by Esc or the close box
 	OnClose func(a *App, button int) tea.Cmd
+
+	// Check, if set, is a checkbox under the text (Tab to it, Space or a
+	// click toggles it) that OnClose can read as Checked.
+	Check      string
+	Checked    bool
+	checkFocus bool
 }
 
 func message(lines ...string) *msgBox {
@@ -97,7 +104,12 @@ func (d *msgBox) size(a *App) (int, int) {
 	for _, l := range d.Lines {
 		tw = max(tw, runewidth.StringWidth(l))
 	}
-	return max(tw+6, buttonsWidth(d.Buttons)+4, runewidth.StringWidth(d.Title)+8), len(d.Lines) + 6
+	h := len(d.Lines) + 6
+	if d.Check != "" {
+		h += 2
+		tw = max(tw, runewidth.StringWidth(d.Check)+4)
+	}
+	return max(tw+6, buttonsWidth(d.Buttons)+4, runewidth.StringWidth(d.Title)+8), h
 }
 
 func (d *msgBox) draw(a *App, c *Canvas, x, y, w, h int) {
@@ -105,7 +117,21 @@ func (d *msgBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	for i, l := range d.Lines {
 		c.Text(x+3, y+2+i, w-6, l, Style{FG: t.FaceText, BG: t.Face})
 	}
-	a.dlgButtons(c, x, y+h-3, w, d.Buttons, d.Sel)
+	sel := d.Sel
+	if d.Check != "" {
+		box := "[ ] "
+		if d.Checked {
+			box = "[x] "
+		}
+		st := Style{FG: t.FaceText, BG: t.Face}
+		if d.checkFocus {
+			st, sel = Style{FG: t.MenuSelText, BG: t.MenuSel}, -1
+		}
+		cy := y + 3 + len(d.Lines)
+		c.Text(x+3, cy, w-6, box+d.Check, st)
+		a.addRegion(Region{X: x + 3, Y: cy, W: runewidth.StringWidth(box + d.Check), H: 1, Kind: HitDlg, S: "check"})
+	}
+	a.dlgButtons(c, x, y+h-3, w, d.Buttons, sel)
 }
 
 func (d *msgBox) close(a *App, button int) tea.Cmd {
@@ -118,6 +144,14 @@ func (d *msgBox) close(a *App, button int) tea.Cmd {
 
 func (d *msgBox) key(a *App, k string) tea.Cmd {
 	n := len(d.Buttons)
+	if d.Check != "" && (k == "tab" || k == "shift+tab") {
+		d.checkFocus = !d.checkFocus
+		return nil
+	}
+	if d.checkFocus && k == " " {
+		d.Checked = !d.Checked
+		return nil
+	}
 	switch k {
 	case "left", "shift+tab":
 		d.Sel = (d.Sel + n - 1) % n
@@ -146,17 +180,75 @@ func (d *msgBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 		return d.close(a, r.I)
 	case "close":
 		return d.close(a, d.Cancel)
+	case "check":
+		d.Checked = !d.Checked
 	}
 	return nil
 }
 
-// listBox is a dialog with a scrolling list and Join/Close buttons, used
-// for the Favorites folder and the Channels List.
+// listBox is a dialog with a scrolling list over a row of buttons: the
+// Favorites folder, the Channels List, the Address Book, URLs and
+// downloads. The first button is the default (Enter, double-click), a
+// "Remove" button also gets the Delete key, and the last one closes.
 type listBox struct {
 	Title, Header string
-	Rows, Keys    []string // what's shown, and what OnJoin gets
+	Rows, Keys    []string // what's shown, and what OnPress gets
 	Sel, Top      int
-	OnJoin        func(a *App, key string)
+	Buttons       []string // Join, Close when empty
+	// OnPress handles every button but the last; key is the selected
+	// row's, or "" for an empty list. It closes the dialog if it should.
+	OnPress func(a *App, l *listBox, button, key string) tea.Cmd
+	// OnClose, if set, runs when the list closes (to go back to Options).
+	OnClose func(a *App)
+}
+
+func (l *listBox) close(a *App) {
+	a.dlg = nil
+	if l.OnClose != nil {
+		l.OnClose(a)
+	}
+}
+
+// joinList is an OnPress that closes the list and joins the selected
+// channel.
+func joinList(join func(a *App, ch string)) func(*App, *listBox, string, string) tea.Cmd {
+	return func(a *App, _ *listBox, _ string, ch string) tea.Cmd {
+		a.dlg = nil
+		if ch != "" {
+			join(a, ch)
+		}
+		return nil
+	}
+}
+
+func (l *listBox) buttons() []string {
+	if len(l.Buttons) == 0 {
+		return []string{"Join", "Close"}
+	}
+	return l.Buttons
+}
+
+func (l *listBox) press(a *App, button string) tea.Cmd {
+	bs := l.buttons()
+	if button == bs[len(bs)-1] || l.OnPress == nil {
+		l.close(a)
+		return nil
+	}
+	key := ""
+	if len(l.Keys) > 0 {
+		key = l.Keys[clamp(l.Sel, 0, len(l.Keys)-1)]
+	}
+	return l.OnPress(a, l, button, key)
+}
+
+// removeSel drops the selected row.
+func (l *listBox) removeSel() {
+	if len(l.Keys) == 0 {
+		return
+	}
+	i := clamp(l.Sel, 0, len(l.Keys)-1)
+	l.Rows = slices.Delete(l.Rows, i, min(i+1, len(l.Rows)))
+	l.Keys = slices.Delete(l.Keys, i, i+1)
 }
 
 func (l *listBox) title() string { return l.Title }
@@ -194,15 +286,7 @@ func (l *listBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		c.Text(lx+1, y+3+i, rw-1, l.Rows[idx], st)
 		a.addRegion(Region{X: lx, Y: y + 3 + i, W: rw, H: 1, Kind: HitDlg, S: "item", I: idx})
 	}
-	a.dlgButtons(c, x, y+h-3, w, []string{"Join", "Close"}, 0)
-}
-
-func (l *listBox) join(a *App) tea.Cmd {
-	a.dlg = nil
-	if len(l.Keys) > 0 {
-		l.OnJoin(a, l.Keys[clamp(l.Sel, 0, len(l.Keys)-1)])
-	}
-	return nil
+	a.dlgButtons(c, x, y+h-3, w, l.buttons(), 0)
 }
 
 func (l *listBox) key(a *App, k string) tea.Cmd {
@@ -221,9 +305,13 @@ func (l *listBox) key(a *App, k string) tea.Cmd {
 	case "end":
 		l.Sel = len(l.Rows) - 1
 	case "enter":
-		return l.join(a)
+		return l.press(a, l.buttons()[0])
+	case "delete", "backspace":
+		if slices.Contains(l.buttons(), "Remove") {
+			return l.press(a, "Remove")
+		}
 	case "esc":
-		a.dlg = nil
+		l.close(a)
 	}
 	l.Sel = clamp(l.Sel, 0, len(l.Rows)-1)
 	l.Top = clamp(l.Top, l.Sel-n+1, l.Sel) // keep the selection in view
@@ -241,15 +329,12 @@ func (l *listBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.Cmd {
 	case r.S == "item":
 		l.Sel = r.I
 		if double {
-			return l.join(a)
+			return l.press(a, l.buttons()[0])
 		}
 	case r.S == "button":
-		if r.I == 0 {
-			return l.join(a)
-		}
-		a.dlg = nil
+		return l.press(a, l.buttons()[r.I])
 	case r.S == "close":
-		a.dlg = nil
+		l.close(a)
 	case r.Kind == HitDlg: // scrollbar arrows and track
 		l.Top += scrollStep(r.I, l.visible(a))
 	}

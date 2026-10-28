@@ -24,7 +24,7 @@ services:
 
   soju:
     build: ./soju
-    ports: ["127.0.0.1:6667:6667"]
+    ports: ["127.0.0.1:6667:6667", "127.0.0.1:6697:6697", "127.0.0.1:8080:8080", "127.0.0.1:8443:8443"]
     volumes: ["soju-data:/data"]
     depends_on: [troutnet, devnet]
     restart: unless-stopped
@@ -32,6 +32,7 @@ services:
   bot:
     build: { context: .., dockerfile: dev/bot/Dockerfile }
     command: ["-servers", "troutnet:6667=#trout,#lobby;devnet:6667=#dev", "-user", "trout"]
+    ports: ["127.0.0.1:6800-6809:6800-6809"] # the xdcc bot's DCC sends, a port per offer
     depends_on: [troutnet, devnet]
     restart: unless-stopped
 

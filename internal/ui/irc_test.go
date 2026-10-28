@@ -6,13 +6,14 @@ import (
 
 	"github.com/ergochat/irc-go/ircmsg"
 
+	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
 // TestHandleIRC feeds a channel's worth of server traffic through
 // handleIRC and checks the windows, nicklist and lines that come out.
 func TestHandleIRC(t *testing.T) {
-	a := New(Options{Addr: "127.0.0.1:6667", User: "trout"})
+	a := New(Options{Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:6667", User: "trout"}})
 	n := state.NewNetwork("TestNet")
 	n.Nick = "trout"
 	a.nets = append(a.nets, n)

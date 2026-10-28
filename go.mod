@@ -3,6 +3,7 @@ module github.com/MaxRenaud/trout
 go 1.25.0
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/ergochat/irc-go v0.7.0
 	github.com/mattn/go-runewidth v0.0.31

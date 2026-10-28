@@ -15,9 +15,13 @@ type Theme struct {
 	Lines                          RGB // tree lines and separators on TextBG
 	TrackFG, TrackBG               RGB // the dithered scrollbar track
 	ActEvent, ActMsg, ActHi        RGB // switchbar and treebar activity
+	Warn                           RGB // errors in dialogs, on Face
 }
 
 var themes = []*Theme{&classicTheme, &darkTheme}
+
+// themeNames are the themes as config.toml names them.
+var themeNames = []string{"classic", "dark"}
 
 // classicTheme is mIRC's default colors in Windows 98 chrome.
 var classicTheme = Theme{
@@ -39,6 +43,7 @@ var classicTheme = Theme{
 	Lines:   0x808080,
 	TrackFG: 0xFFFFFF, TrackBG: 0xC0C0C0,
 	ActEvent: 0x7F0000, ActMsg: 0xFF0000, ActHi: 0x0000FC,
+	Warn: 0x9C0000,
 }
 
 // darkTheme keeps the layout but swaps mIRC colors 0 and 1, so black on
@@ -62,4 +67,5 @@ var darkTheme = Theme{
 	Lines:   0x5A5A5A,
 	TrackFG: 0x3A3A3E, TrackBG: 0x252528,
 	ActEvent: 0xD19A66, ActMsg: 0xFF6B6B, ActHi: 0x6FA8FF,
+	Warn: 0xFF7A7A,
 }

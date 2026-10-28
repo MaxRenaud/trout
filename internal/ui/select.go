@@ -14,11 +14,14 @@ import (
 
 // selection is text being drag-selected in the message pane. Rows index
 // windowRows; columns count cells from the left edge of the text. Like
-// mIRC, letting go of the mouse copies the text and clears the selection.
+// mIRC, letting go of the mouse copies the text and clears the selection;
+// holding Ctrl copies the whole lines with their color and format codes,
+// and Shift keeps the line breaks as they're shown.
 type selection struct {
 	win            *state.Window
 	ar, ac, br, bc int // anchor and current end
 	moved          bool
+	codes, breaks  bool
 }
 
 func (a *App) startSelection(w *state.Window, x, y int) {
@@ -79,6 +82,9 @@ func (a *App) selectedText() string {
 		return ""
 	}
 	rows, _ := a.windowRows(s.win, a.msgW)
+	if s.codes {
+		return a.selectedLines(rows)
+	}
 	var lines []string
 	var cur []rune
 	started := false
@@ -87,7 +93,7 @@ func (a *App) selectedText() string {
 		if !ok || r.marker {
 			continue
 		}
-		if started && !r.cont {
+		if started && (!r.cont || s.breaks) {
 			lines = append(lines, strings.TrimRight(string(cur), " "))
 			cur = nil
 		}
@@ -130,4 +136,24 @@ func copyText(text string) tea.Cmd {
 		_ = cmd.Run()
 		return nil
 	}
+}
+
+// selectedLines is every line the selection touches, as received: color
+// and format codes and all.
+func (a *App) selectedLines(rows []textRow) string {
+	var lines []string
+	last := -1
+	for ri, r := range rows {
+		if _, _, ok := a.sel.span(ri); !ok || r.marker || r.line == last {
+			continue
+		}
+		last = r.line
+		l := a.sel.win.Lines[r.line]
+		text := l.Text
+		if a.stampsFor(a.sel.win) {
+			text = l.Time.Format(stampLayout(a.stampFormat)) + " " + text
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n")
 }

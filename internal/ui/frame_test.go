@@ -4,8 +4,12 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
+	"github.com/MaxRenaud/trout/internal/termkeys"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
@@ -88,17 +92,112 @@ func TestFrames(t *testing.T) {
 	frame("dark status + Window menu")
 
 	a.themeIdx = 0
-	a.openDialog(aboutBox())
+	a.openDialog(aboutBox(true))
 	frame("about box")
 	a.dlg.key(a, "o")
 	if a.dlg != nil {
 		t.Fatal("pressing O didn't close the message box")
 	}
 
+	a.openConnect("Login failed. Check the user name and password.")
+	frame("connect")
+	a.dlg.key(a, "esc")
+	a.openDialog(a.kickWhy(a.nets[0].Wins[1], "bob", true))
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("flooding")})
+	frame("kick (why)")
+	a.dlg.key(a, "esc")
+	a.openDialog(a.trustBox(&irc.CertError{Addr: "bnc.example.net:6697",
+		Fingerprint: "SHA256:9f2cXq1v0b0lZ0Yw3o8m7Jm9uEo0qkqH3H3cS0kR3hE"}))
+	frame("unknown certificate")
+	a.dlg = nil // its buttons only make sense with a bouncer
+	a.openServers()
+	a.dlg.key(a, "down")
+	frame("servers")
+	a.openDialog(a.networkForm(nil, nil))
+	frame("add network")
+	a.dlg = nil
+	a.openSavedBouncers()
+	frame("bouncers: none saved")
+	a.dlg = nil
+	a.activate(a.nets[0].Wins[1])
+	a.View()
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("go")})
+	frame("find text")
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.find == nil {
+		t.Fatal("found nothing for \"go\" in #go-nuts")
+	}
+	frame("found")
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	a.openSetAway()
+	frame("set away")
+	a.dlg = nil
+	for _, d := range []struct {
+		name string
+		open func()
+	}{
+		{"options: dcc", func() { a.openOptions(optDCC) }},
+		{"options: connect", func() { a.openOptions(optConnect) }},
+		{"options: irc", func() { a.openOptions(optIRC) }},
+		{"options: messages", func() { a.openOptions(optMessages) }},
+		{"options: display", func() { a.openOptions(optDisplay) }},
+		{"address book: address", func() { a.openBook(tabAddress) }},
+		{"address book: notify", func() { a.openBook(tabNotify) }},
+		{"address book: ignore", func() { a.openBook(tabIgnore) }},
+		{"address book: control", func() { a.openBook(tabControl) }},
+		{"address book: nick colors", func() { a.openBook(tabNickColors) }},
+		{"address book: highlight", func() { a.openBook(tabHighlight) }},
+		{"highlight rule", func() { a.openBook(tabHighlight); a.dlg.(*abookBox).press(a, "Add...") }},
+		{"ignore entry", func() { a.openBook(tabIgnore); a.dlg.(*abookBox).press(a, "Add...") }},
+		{"control entry", func() { a.openBook(tabControl); a.dlg.(*abookBox).press(a, "Add...") }},
+		{"channel topics", func() { a.openTopics(a.nets[0].Wins[1]) }},
+		{"channel bans", func() {
+			w := a.nets[0].Wins[1]
+			w.Lists = map[byte][]state.ListEntry{'b': {{Mask: "*!*@spam.example", By: "gopher", At: time.Now()}}}
+			a.openChannelLists(w, 'b')
+		}},
+		{"options: other", func() { a.openOptions(optOther) }},
+		{"proxy", a.openProxy},
+		{"dcc file types", a.openDCCIgnore},
+		{"dcc folders", a.openDCCFolders},
+		{"window order", a.openOrder},
+		{"window popup", func() { a.windowMenu(a.active, 20, 5) }},
+		{"timestamp format", a.openStampFormat},
+		{"download folder", a.openDownloadDir},
+		{"colors", a.openColors},
+		{"address book", a.openAddressBook},
+		{"urls list", a.openURLsList},
+		{"help topics", func() { a.openDialog(commandsBox()) }},
+		{"keyboard shortcuts", func() { a.openDialog(shortcutsBox()) }},
+		{"option key", func() {
+			a.term = termkeys.Terminal{Name: "iTerm2", Fix: termkeys.FixITermProfile, Profile: "Default"}
+			a.openOptionKey()
+		}},
+		{"channel modes", func() { a.openChannelModes(a.nets[0].Wins[1]) }},
+		{"send file", func() { a.openSendFile("") }},
+		{"nick info", func() { a.openNickInfo(a.nets[0], "bob") }},
+		{"dcc get window", func() {
+			n := a.nets[0]
+			tr := &transfer{net: n, nick: "xdcc", file: "pack.bin", path: "/home/max/Downloads/pack.bin",
+				size: 4 << 20, got: 1 << 20, rate: 512 << 10, started: time.Now(), lastAt: time.Now()}
+			tr.win = n.Add(&state.Window{Kind: state.KTransfer, Name: "Get pack.bin"})
+			a.transfers = append(a.transfers, tr)
+			a.activate(tr.win)
+		}},
+		{"dcc privacy", func() {
+			a.openDialog(a.dccPrivacyBox(&transfer{net: a.nets[0], nick: "xdcc", file: "pack.bin"}, nil))
+		}},
+	} {
+		d.open()
+		frame(d.name)
+		a.dlg = nil
+	}
+
 	a.openOptions(optDisplay)
 	frame("options")
 	a.dlg.key(a, "esc")
-	a.openChannelsList()
+	a.openChannelsList(false)
 	frame("channels list")
 	// Dragging the thumb to the bottom scrolls to the end, leaving the
 	// selection alone.
@@ -189,4 +288,14 @@ func TestFrames(t *testing.T) {
 	if got := string(a.active.Edit.Buf); got != "\x0304hi" {
 		t.Fatalf("editbox holds %q, want \"\\x0304hi\"", got)
 	}
+
+	// Window options: the multi-line editbox under a second one, and the
+	// nicklist on the left.
+	w := a.active
+	w.Edit.Buf, w.Edit.Pos = []rune("one\ntwo\nthree"), 3
+	a.toggleEdit2(w)
+	w.Edit2.Buf = []rune("a draft")
+	frame("multi-line and second editbox")
+	a.setWinOpts(w, func(o *config.WindowOpts) { o.Nicklist = "left" })
+	frame("nicklist on the left")
 }

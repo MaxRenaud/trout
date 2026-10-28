@@ -1,5 +1,16 @@
-# Plain-text IRC for trout, and the admin socket sojuctl talks to.
+# Plain-text IRC for trout, TLS with a self-signed certificate (for
+# trying key pinning), file uploads, and the admin socket sojuctl talks to.
 listen irc+insecure://0.0.0.0:6667
+listen ircs://0.0.0.0:6697
+tls /data/tls.crt /data/tls.key
+# Logging in with a client certificate (SASL EXTERNAL), for trout's certificate login.
+client-cert-auth true
+# File uploads (trout's Send File): plain HTTP is what's advertised;
+# HTTPS with the self-signed key is there for testing pinned uploads.
+listen http+insecure://0.0.0.0:8080
+listen https://0.0.0.0:8443
+http-ingress http://127.0.0.1:8080
+file-upload fs /data/uploads
 listen unix+admin:///run/soju/admin
 db sqlite3 /data/soju.db
 hostname soju.test

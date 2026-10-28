@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
@@ -30,6 +33,8 @@ const (
 	HitDlg // anything inside a dialog; S says what
 	HitSwatch
 	HitURL
+	HitTransfer // a Get window's Cancel or Open Folder button
+	HitNickText // a nick in a channel's text: S is the nick
 )
 
 // Region is a clickable area recorded while drawing. Later regions sit on
@@ -51,18 +56,17 @@ var menuBarNames = [...]string{"File", "View", "Favorites", "Tools", "Commands",
 const menuMnemonics = "fvatcwh"
 
 // An empty label is a separator.
-var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "Scripts", "",
-	"Address Book", "Notify", "", "DCC Send", "DCC Chat", "Received", "", "Colors", "", "Help"}
+var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "",
+	"Address Book", "Notify", "", "Send File", "Received", "", "Colors"}
 
 type textRow struct {
+	line   int // index into the window's Lines
 	runes  []SRune
 	indent int
 	shade  bool // line shading
 	marker bool // the line marker, not text
 	cont   bool // a wrapped continuation of the row before
 }
-
-func (a *App) theme() *Theme { return themes[a.themeIdx] }
 
 func (a *App) addRegion(r Region) { a.regions = append(a.regions, r) }
 
@@ -94,8 +98,7 @@ func (a *App) View() string {
 		y++
 	}
 	if a.showSwitchbar {
-		a.drawSwitchbar(c, y)
-		y++
+		y += a.drawSwitchbar(c, y)
 	}
 	x := 0
 	if a.showTreebar {
@@ -115,13 +118,12 @@ func (a *App) drawTitle(c *Canvas, y int) {
 	for x := range a.w {
 		c.Set(x, y, ' ', Style{BG: lerp(t.TitleA, t.TitleB, float64(x)/float64(a.w-1))})
 	}
-	c.TextOver(1, y, a.w-14, "trout - ["+a.winTitle(a.active)+"]", t.TitleText, true)
+	c.TextOver(1, y, a.w-7, "trout - ["+a.winTitle(a.active)+"]", t.TitleText, true)
+	// Just a close box: a terminal app can't minimize or maximize itself.
 	btn := Style{FG: t.FaceText, BG: t.Face, Bold: true}
-	for i, x := range []int{a.w - 12, a.w - 9, a.w - 5} {
-		c.Fill(x, y, 3, 1, btn)
-		c.Set(x+1, y, []rune("_□×")[i], btn)
-		a.addRegion(Region{X: x, Y: y, W: 3, H: 1, Kind: HitCaption, I: i})
-	}
+	c.Fill(a.w-5, y, 3, 1, btn)
+	c.Set(a.w-4, y, '×', btn)
+	a.addRegion(Region{X: a.w - 5, Y: y, W: 3, H: 1, Kind: HitCaption})
 }
 
 func (a *App) drawMenuBar(c *Canvas, y int) {
@@ -145,11 +147,6 @@ func (a *App) drawMenuBar(c *Canvas, y int) {
 		a.menuBarX[i] = x
 		a.addRegion(Region{X: x, Y: y, W: w, H: 1, Kind: HitMenuBar, I: i})
 		x += w
-	}
-	// A maximized MDI child puts its own buttons at the end of the menubar.
-	for i, x := range []int{a.w - 7, a.w - 5, a.w - 2} {
-		c.Set(x, y, []rune("_□×")[i], face)
-		a.addRegion(Region{X: x, Y: y, W: 1, H: 1, Kind: HitChildBtn, I: i})
 	}
 }
 
@@ -209,6 +206,9 @@ func (a *App) drawToolbar(c *Canvas, y int) {
 			x += 2
 			continue
 		}
+		if label == "Connect" && !a.opts.Demo && a.connected(a.active.Net) {
+			label = "Disconnect" // a toggle, like mIRC's
+		}
 		w := runewidth.StringWidth(label) + 2
 		if x+w > a.w {
 			break
@@ -225,27 +225,168 @@ func (a *App) drawToolbar(c *Canvas, y int) {
 	}
 }
 
-func (a *App) drawSwitchbar(c *Canvas, y int) {
-	t := a.theme()
-	c.Fill(0, y, a.w, 1, Style{BG: t.Face})
-	x := 1
-	for _, w := range a.order() {
-		label := w.Name
+// switchOrder is the windows in switchbar order: the network order, or,
+// with Display > Sort switchbar, each network's status window then its
+// channels and queries alphabetically, like mIRC.
+func (a *App) switchOrder() []*state.Window {
+	if !a.sortSwitch {
+		return a.order()
+	}
+	var out []*state.Window
+	for _, n := range a.nets {
+		ws := slices.Clone(n.Wins[1:])
+		slices.SortStableFunc(ws, func(x, y *state.Window) int {
+			return cmp.Or(cmp.Compare(x.Kind, y.Kind), strings.Compare(n.Fold(x.Name), n.Fold(y.Name)))
+		})
+		out = append(append(out, n.Status()), ws...)
+	}
+	return out
+}
+
+// switchBtn is one switchbar button, laid out.
+type switchBtn struct {
+	w        *state.Window
+	label    string
+	x, row   int
+	width    int
+	closable bool
+}
+
+// minSwitchLabel is how short a crowded switchbar cuts labels before it
+// wraps onto another row.
+const minSwitchLabel = 8
+
+// switchLayout lays the switchbar out like mIRC's: when the buttons don't
+// fit, their labels get shorter, down to minSwitchLabel, and then they
+// wrap onto more rows, so every window keeps a button. Rows are decided
+// without the hovered button's ×, so hovering never changes the layout's
+// height.
+func (a *App) switchLayout(y int) (btns []switchBtn, rows int) {
+	// Each row keeps room for one hovered button's " ×", so hovering
+	// never pushes a button off the end of its row.
+	const hoverRoom = 2
+	right := a.w - 1 - hoverRoom
+	type item struct {
+		w        *state.Window
+		name     string
+		closable bool
+	}
+	var items []item
+	longest := 0
+	for _, w := range a.switchOrder() {
+		name := w.Name
 		if w.Kind == state.KStatus {
-			label = w.Net.Name
+			name = w.Net.Name
 		}
-		bw := runewidth.StringWidth(label) + 2
-		if x+bw > a.w-1 {
+		items = append(items, item{w, name, w.Kind != state.KStatus && w == a.active})
+		longest = max(longest, runewidth.StringWidth(name))
+	}
+	width := func(it item, limit int) int {
+		bw := min(runewidth.StringWidth(it.name), limit) + 2
+		if it.closable {
+			bw += 2
+		}
+		return bw
+	}
+	limit := longest
+	for ; limit > minSwitchLabel; limit-- {
+		total := -1
+		for _, it := range items {
+			total += width(it, limit) + 1
+		}
+		if 1+total <= right {
 			break
 		}
-		st, bevel := Style{FG: a.actFG(w, t.FaceText), BG: t.Face}, 1
-		if w == a.active {
-			st.BG, st.Bold, bevel = t.ButtonDown, true, -1
+	}
+	x := 1
+	for _, it := range items {
+		bw := width(it, limit)
+		if x+bw > right && x > 1 {
+			rows, x = rows+1, 1
 		}
-		a.button(c, x, y, label, st, bevel)
-		a.addRegion(Region{X: x, Y: y, W: bw, H: 1, Kind: HitSwitch, Win: w})
+		label := it.name
+		if runewidth.StringWidth(label) > limit {
+			label = runewidth.Truncate(label, limit, "…")
+		}
+		btns = append(btns, switchBtn{w: it.w, label: label, x: x, row: rows, width: bw, closable: it.closable})
 		x += bw + 1
 	}
+	if a.fillSwitch { // Display: stretch each row's buttons over the bar, like mIRC
+		for row := 0; row <= rows; row++ {
+			var idx []int
+			end := 1
+			for i, b := range btns {
+				if b.row == row {
+					idx = append(idx, i)
+					end = b.x + b.width + 1
+				}
+			}
+			if len(idx) == 0 {
+				continue
+			}
+			spare, shift := right+1-end, 0
+			for j, i := range idx { // spread the spare columns, the first ones get the remainder
+				extra := spare / len(idx)
+				if j < spare%len(idx) {
+					extra++
+				}
+				btns[i].x += shift
+				btns[i].width += extra
+				shift += extra
+			}
+		}
+	}
+	// A window's close box is on its switchbar button, like a browser
+	// tab's, while it's active or under the mouse. (mIRC put it on the
+	// menubar, which only makes sense next to MDI window frames.) A hovered
+	// button grows to the right within its row, so the × stays under the
+	// pointer; it stays hovered over its × too.
+	a.hoverTab = nil
+	for i := range btns {
+		b := &btns[i]
+		over := func(width int) bool { return a.my == y+b.row && a.mx >= b.x && a.mx < b.x+width }
+		if b.w.Kind == state.KStatus || !(over(b.width) || (a.hoverTab == nil && a.lastHover == b.w && over(b.width+2))) {
+			continue
+		}
+		a.hoverTab = b.w
+		if !b.closable {
+			b.closable, b.width = true, b.width+2
+			for j := i + 1; j < len(btns) && btns[j].row == b.row; j++ {
+				btns[j].x += 2
+			}
+		}
+	}
+	a.lastHover = a.hoverTab
+	return btns, rows + 1
+}
+
+// drawSwitchbar draws the switchbar from row y and returns how many rows
+// it took.
+func (a *App) drawSwitchbar(c *Canvas, y int) int {
+	t := a.theme()
+	btns, rows := a.switchLayout(y)
+	c.Fill(0, y, a.w, rows, Style{BG: t.Face})
+	for _, b := range btns {
+		label := b.label
+		if pad := b.width - 2 - runewidth.StringWidth(label); b.closable && pad >= 2 {
+			label += strings.Repeat(" ", pad-2) + " ×" // filled: the × at the end
+		} else if b.closable {
+			label += " ×"
+		} else if pad > 0 {
+			label = strings.Repeat(" ", pad/2) + label + strings.Repeat(" ", pad-pad/2)
+		}
+		st, bevel := Style{FG: a.actFG(b.w, t.FaceText), BG: t.Face}, 1
+		if b.w == a.active {
+			st.BG, st.Bold, bevel = t.ButtonDown, true, -1
+		}
+		by := y + b.row
+		a.button(c, b.x, by, label, st, bevel)
+		a.addRegion(Region{X: b.x, Y: by, W: b.width, H: 1, Kind: HitSwitch, Win: b.w})
+		if b.closable {
+			a.addRegion(Region{X: b.x + b.width - 3, Y: by, W: 2, H: 1, Kind: HitChildBtn, Win: b.w})
+		}
+	}
+	return rows
 }
 
 func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
@@ -254,7 +395,11 @@ func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
 	c.Fill(x, y, w, h, Style{FG: t.TextFG, BG: t.TextBG})
 	row := y
 	item := func(win *state.Window, lx int, label string) {
-		st := Style{FG: a.actFG(win, t.TextFG), BG: t.TextBG}
+		fg := t.TextFG
+		if win.Kind == state.KStatus && a.offline(win.Net) {
+			fg = t.Disabled
+		}
+		st := Style{FG: a.actFG(win, fg), BG: t.TextBG}
 		if win == a.active {
 			st = Style{FG: t.SelFG, BG: t.SelBG}
 		}
@@ -301,25 +446,59 @@ func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
 // drawWindow draws the active (maximized) window: messages, the nicklist
 // for channels, and the editbox along the bottom.
 func (a *App) drawWindow(c *Canvas, win *state.Window, x, y, w, h int) {
+	if win.Kind == state.KTransfer { // no text or editbox, like mIRC's
+		a.drawTransfer(c, win, x, y, w, h)
+		return
+	}
 	t := a.theme()
-	ph := h - 2
-	right := x + w
+	// The editbox grows with Alt+Enter's lines; the second editbox (Alt+Q)
+	// takes a separator and its own rows under it.
+	eh, e2h := editHeight(&win.Edit, w), 0
+	if win.Edit2On {
+		e2h = 1 + editHeight(&win.Edit2, w)
+	}
+	ph := max(1, h-1-eh-e2h)
+	left, right := x, x+w
 	if win.Kind == state.KChannel && a.showNicklist {
 		a.nickW = clamp(a.nickW, 8, w/3)
-		nx := right - a.nickW
+		nx, sx := right-a.nickW, right-a.nickW-1
+		a.nickLeftX = -1
+		if a.winOpts(win).Nicklist == "left" { // the window's own Nicklist option
+			nx, sx = x, x+a.nickW
+			a.nickLeftX = x
+		}
 		a.drawNicklist(c, win, nx, y, a.nickW, ph)
 		for j := y; j < y+ph; j++ {
-			c.Set(nx-1, j, ' ', Style{BG: t.Face})
+			c.Set(sx, j, ' ', Style{BG: t.Face})
 		}
-		a.addRegion(Region{X: nx - 1, Y: y, W: 1, H: ph, Kind: HitNickSplit})
-		right = nx - 1
+		a.addRegion(Region{X: sx, Y: y, W: 1, H: ph, Kind: HitNickSplit})
+		if a.nickLeftX >= 0 {
+			left = sx + 1
+		} else {
+			right = sx
+		}
 	}
-	a.drawMessages(c, win, x, y, right-x, ph)
+	a.drawMessages(c, win, left, y, right-left, ph)
 	sep := Style{FG: t.Lines, BG: t.TextBG}
 	for i := x; i < x+w; i++ {
 		c.Set(i, y+ph, '─', sep)
 	}
-	a.drawEdit(c, win, x, y+ph+1, w)
+	focus1 := !a.nickFocus && !(win.Edit2On && win.Edit2Focus)
+	cx, cy := a.drawWinEdit(c, &win.Edit, 1, x, y+ph+1, w, eh, focus1)
+	if focus1 {
+		a.caretX, a.caretY = cx, cy
+	}
+	if win.Edit2On {
+		ey := y + ph + 1 + eh
+		for i := x; i < x+w; i++ {
+			c.Set(i, ey, '─', sep)
+		}
+		focus2 := !a.nickFocus && win.Edit2Focus
+		cx, cy := a.drawWinEdit(c, &win.Edit2, 2, x, ey+1, w, e2h-1, focus2)
+		if focus2 {
+			a.caretX, a.caretY = cx, cy
+		}
+	}
 }
 
 func (a *App) drawMessages(c *Canvas, win *state.Window, x, y, w, h int) {
@@ -329,6 +508,15 @@ func (a *App) drawMessages(c *Canvas, win *state.Window, x, y, w, h int) {
 	win.Scroll = clamp(win.Scroll, 0, len(rows)-h)
 	top := max(0, len(rows)-h-win.Scroll)
 	a.addRegion(Region{X: x, Y: y, W: w - 1, H: h, Kind: HitMsg})
+	// Nicks in the text are hotlinks, like mIRC's: double-click for a
+	// query, right-click for the nicklist popup.
+	var nicks map[string]string
+	if win.Kind == state.KChannel {
+		nicks = make(map[string]string, len(win.Nicks))
+		for _, n := range win.Nicks {
+			nicks[win.Net.Fold(n.Name)] = n.Name
+		}
+	}
 	for i := 0; i < h && top+i < len(rows); i++ {
 		r, ry := rows[top+i], y+i
 		if r.marker {
@@ -355,6 +543,14 @@ func (a *App) drawMessages(c *Canvas, win *state.Window, x, y, w, h int) {
 		if url != nil {
 			a.addRegion(Region{X: ux, Y: ry, W: cx - ux, H: 1, Kind: HitURL, S: *url})
 		}
+		if nicks != nil {
+			a.nickLinks(win, r, nicks, x+1+r.indent, ry)
+		}
+		if a.found(win, r) {
+			for sx := x + 1; sx < x+1+tw; sx++ {
+				c.Restyle(sx, ry, t.SelFG, t.SelBG)
+			}
+		}
 		if s := a.sel; s != nil && s.moved && s.win == win {
 			if from, to, ok := s.span(top + i); ok {
 				for sx := x + 1 + from; sx < min(x+1+tw, x+1+to); sx++ {
@@ -377,7 +573,10 @@ func (a *App) windowRows(win *state.Window, w int) (rows []textRow, marker int) 
 			marker = len(rows)
 			rows = append(rows, textRow{marker: true})
 		}
-		rows = append(rows, a.lineRows(win, l, w, a.shading && i%2 == 1)...)
+		for _, r := range a.lineRows(win, l, w, a.shading && i%2 == 1) {
+			r.line = i
+			rows = append(rows, r)
+		}
 	}
 	return rows, marker
 }
@@ -397,19 +596,35 @@ func (a *App) lineRows(win *state.Window, l state.Line, w int, shade bool) []tex
 		}
 	}
 	indent := 0
-	if a.stamps {
-		add(l.Time.Format("[15:04] "), Style{FG: t.Roles[state.RoleTimestamp], BG: bg})
-		indent = 8
+	if a.stampsFor(win) { // the window's own Timestamp, or Options
+		stamp := l.Time.Format(stampLayout(a.stampFormat)) + " "
+		add(stamp, Style{FG: t.Roles[state.RoleTimestamp], BG: bg})
+		indent = runewidth.StringWidth(stamp)
 	}
 	if w < indent+10 {
 		indent = 0
 	}
 	base := Style{FG: t.Roles[l.Role], BG: bg}
+	if l.Color > 0 { // a highlight rule's color
+		base.FG = t.Pal[(l.Color-1)%16]
+	}
 	text := l.Text
+	if !a.prefixOwn && l.Role == state.RoleOwn { // Options > Messages
+		if _, after, ok := strings.Cut(text, "> "); ok && strings.HasPrefix(text, "<") {
+			text = after
+		}
+	}
+	if a.stripCodes && l.Role != state.RoleOwn { // Options > Messages
+		text = stripCodes(text)
+	}
 	rest, isMsg := strings.CutPrefix(text, "<")
 	if nick, after, ok := strings.Cut(rest, ">"); isMsg && ok && nick != "" {
 		st := base
-		if a.nickColors && l.Role != state.RoleHighlight {
+		switch c := a.nickRuleColor(win, nick); {
+		case l.Role == state.RoleHighlight:
+		case c >= 0: // Address Book > Nick Colors
+			st.FG = t.Pal[c%16]
+		case a.nickColors:
 			st.FG = t.Pal[nickColor(nick)]
 		}
 		prefix := ""
@@ -481,8 +696,13 @@ func (a *App) drawNicklist(c *Canvas, win *state.Window, x, y, w, h int) {
 	for i := 0; i < h && win.NickTop+i < n; i++ {
 		nk := win.Nicks[win.NickTop+i]
 		st := Style{FG: t.TextFG, BG: t.TextBG}
-		if a.nickColors {
+		if c := a.nickRuleColor(win, nk.Name); c >= 0 {
+			st.FG = t.Pal[c%16]
+		} else if a.nickColors {
 			st.FG = t.Pal[nickColor(nk.Name)]
+		}
+		if nk.Away {
+			st.FG = t.Disabled
 		}
 		switch {
 		case nk.Name == win.NickSel && focused:
@@ -499,9 +719,11 @@ func (a *App) drawNicklist(c *Canvas, win *state.Window, x, y, w, h int) {
 	}
 }
 
-func (a *App) drawEdit(c *Canvas, win *state.Window, x, y, w int) {
+// drawEditBox draws a one-line text box, scrolled to keep the cursor in
+// view, and returns the cursor's column. A masked box shows dots.
+func (a *App) drawEditBox(c *Canvas, e *state.EditBox, x, y, w int, caret, mask bool) int {
 	t := a.theme()
-	e := &win.Edit
+	c.Fill(x, y, w, 1, Style{FG: t.TextFG, BG: t.TextBG})
 	avail := w - 2
 	if e.Pos < e.Off {
 		e.Off = e.Pos
@@ -509,31 +731,46 @@ func (a *App) drawEdit(c *Canvas, win *state.Window, x, y, w int) {
 	for e.Off < e.Pos {
 		width := 0
 		for _, r := range e.Buf[e.Off:e.Pos] {
-			width += editWidth(r)
+			width += boxRuneWidth(r, mask)
 		}
 		if width < avail {
 			break
 		}
 		e.Off++
 	}
-	cx := x + 1
+	cx, caretX := x+1, x+1
+	from, to, sel := e.Selection()
 	for i := e.Off; i <= len(e.Buf) && cx < x+w; i++ {
 		r, st := ' ', Style{FG: t.TextFG, BG: t.TextBG}
 		if i < len(e.Buf) {
 			r = e.Buf[i]
-			if g, ok := ctrlGlyph[r]; ok {
+			if g, ok := ctrlGlyph[r]; ok && !mask {
 				r, st = g, Style{FG: t.TextBG, BG: t.Lines}
+			} else if mask {
+				r = '•'
+			}
+			if sel && i >= from && i < to {
+				st = Style{FG: t.SelFG, BG: t.SelBG}
 			}
 		}
 		if i == e.Pos {
-			if !a.nickFocus {
+			if caret {
 				st = Style{FG: t.TextBG, BG: t.TextFG}
 			}
-			a.caretX, a.caretY = cx, y
+			caretX = cx
 		}
 		cx += c.Rune(cx, y, x+w-cx, r, st)
 	}
-	a.addRegion(Region{X: x, Y: y, W: w, H: 1, Kind: HitEdit})
+	return caretX
+}
+
+// offline reports whether network n isn't connected: soju says so, or for
+// soju's own window, trout isn't connected to soju.
+func (a *App) offline(n *state.Network) bool {
+	if n == a.home {
+		return !a.opts.Demo && a.control == nil
+	}
+	return n.Down()
 }
 
 // winTitle is the caption mIRC shows for a window.
@@ -545,7 +782,25 @@ func (a *App) winTitle(w *state.Window) string {
 		if b := a.currentBouncer(); b != nil {
 			s += " via " + b.Name
 		}
+		switch st := n.State(); {
+		case n == a.home && a.offline(n):
+			s += " [not connected]"
+		case st != "" && st != "connected":
+			s += " [" + st + "]"
+		}
+		if a.away != "" {
+			s += " [away]"
+		}
+		if up, ok := a.upAt[n]; ok { // mIRC's online timer
+			d := time.Since(up)
+			s += fmt.Sprintf(" [online %d:%02d]", int(d.Hours()), int(d.Minutes())%60)
+		}
 		return s
+	case state.KTransfer:
+		if tr := a.transferFor(w); tr != nil && tr.size > 0 {
+			return fmt.Sprintf("%s (%d%%)", w.Name, tr.got*100/tr.size)
+		}
+		return w.Name
 	case state.KChannel:
 		s := fmt.Sprintf("%s [%d] [+%s]", w.Name, len(w.Nicks), w.Modes)
 		if w.Topic != "" {
@@ -568,4 +823,34 @@ func (a *App) actFG(w *state.Window, def RGB) RGB {
 		return t.ActHi
 	}
 	return def
+}
+
+// nickLinks registers the nicks in a row of text as hotlinks: runs of
+// nick characters, outside links, that are someone in the channel.
+func (a *App) nickLinks(win *state.Window, r textRow, nicks map[string]string, x, y int) {
+	cx, start, sx := x, -1, 0
+	flush := func(end int) {
+		if start < 0 {
+			return
+		}
+		word := make([]rune, 0, end-start)
+		for _, sr := range r.runes[start:end] {
+			word = append(word, sr.R)
+		}
+		if nick, ok := nicks[win.Net.Fold(string(word))]; ok {
+			a.addRegion(Region{X: sx, Y: y, W: cx - sx, H: 1, Kind: HitNickText, S: nick, Win: win})
+		}
+		start = -1
+	}
+	for i, sr := range r.runes {
+		if sr.URL == nil && nickRune(sr.R) {
+			if start < 0 {
+				start, sx = i, cx
+			}
+		} else {
+			flush(i)
+		}
+		cx += runewidth.RuneWidth(sr.R)
+	}
+	flush(len(r.runes))
 }

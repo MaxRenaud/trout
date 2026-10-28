@@ -21,6 +21,7 @@ func lerp(a, b RGB, t float64) RGB {
 type Style struct {
 	FG, BG                  RGB
 	Bold, Italic, Underline bool
+	Strike                  bool
 }
 
 // A cell with R == 0 is the right half of the double-width rune before it.
@@ -156,6 +157,9 @@ func sgr(b *strings.Builder, s Style) {
 	}
 	if s.Underline {
 		b.WriteString(";4")
+	}
+	if s.Strike {
+		b.WriteString(";9")
 	}
 	fmt.Fprintf(b, ";38;2;%d;%d;%d;48;2;%d;%d;%dm",
 		s.FG>>16&0xff, s.FG>>8&0xff, s.FG&0xff, s.BG>>16&0xff, s.BG>>8&0xff, s.BG&0xff)

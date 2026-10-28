@@ -1,0 +1,32 @@
+#!/bin/sh
+# Runs trout against the dev soju (dev/compose.yaml) with its own config in
+# tmp/dev-config, so your real config stays untouched and dev settings stick
+# between runs. Arguments go to trout:
+#
+#   dev/trout                    plain text, 127.0.0.1:6667
+#   dev/trout --bouncer dev-tls  TLS with the self-signed cert, to try pinning
+#   TROUT_DEBUG=1 dev/trout      log raw IRC lines to trout-debug.log
+#
+# Delete tmp/dev-config to start over.
+set -e
+cd "$(dirname "$0")/.."
+dir=tmp/dev-config
+if [ ! -f "$dir/config.toml" ]; then
+    mkdir -p "$dir"
+    cat >"$dir/config.toml" <<'EOF'
+active = "dev"
+
+[[bouncer]]
+  name = "dev"
+  address = "irc+insecure://127.0.0.1:6667"
+  user = "trout"
+  password-command = "echo trout"
+
+[[bouncer]]
+  name = "dev-tls"
+  address = "ircs://127.0.0.1:6697"
+  user = "trout"
+  password-command = "echo trout"
+EOF
+fi
+TROUT_CONFIG="$PWD/$dir/config.toml" exec go run ./cmd/trout "$@"

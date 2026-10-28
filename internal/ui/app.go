@@ -4,24 +4,29 @@
 package ui
 
 import (
+	"cmp"
+	"crypto/tls"
+	"io"
 	"math/rand/v2"
-	"net"
+	"os"
 	"os/exec"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/demo"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
+	"github.com/MaxRenaud/trout/internal/termkeys"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Holding the left button on a nick this long opens its popup, for
-// terminals like iTerm2 that keep right-clicks to themselves.
+// Holding the left button on a nick, or a treebar or switchbar entry, this
+// long opens its popup, for terminals like iTerm2 that keep right-clicks to
+// themselves.
 const longPress = 500 * time.Millisecond
 
 type pressHold struct {
@@ -40,14 +45,21 @@ const (
 	dragNick
 	dragThumb  // a scrollbar thumb; see thumbKind
 	dragSelect // selecting text; see sel
+	dragEdit   // selecting text in an editbox; see editDrag
 )
 
 // Options configure a new App.
 type Options struct {
 	Demo bool // play the fake world instead of connecting
 
-	// The soju bouncer to connect to.
-	Addr, User, Password string
+	// Config is config.toml, where settings and bouncers are saved as they
+	// change. Without one (demo mode, tests) nothing is saved.
+	Config *config.Config
+
+	// Bouncer is the soju to connect to, with its password. Without an
+	// address, trout opens the Connect dialog first.
+	Bouncer  config.Bouncer
+	Password string
 
 	Debug func(dir, line string) // sees every raw IRC line, if set
 }
@@ -60,15 +72,122 @@ type App struct {
 
 	// Real mode: home is the bouncer's own status window, and the network
 	// list soju reports; every network has its own connection.
-	send     func(tea.Msg) // delivers messages from connection goroutines
-	home     *state.Network
-	control  *irc.Conn
-	conns    map[*state.Network]*irc.Conn
-	batches  map[string]*histBatch
-	joining  map[string]bool // channels we asked to join, to focus them
-	listing  map[*state.Network]*listBox
-	listRows map[*state.Network][]demo.ChanInfo
-	history  map[*state.Window]bool // chathistory already fetched
+	cfg         *config.Config
+	bnc         config.Bouncer // the bouncer in use
+	password    string
+	saved       config.Settings  // as last written to config.toml
+	stopped     bool             // not connected and not retrying, until File > Connect
+	clientCert  *tls.Certificate // this computer\'s, for logging in to TLS bouncers
+	certFailed  bool             // the bouncer refused it this session: use the password
+	certNoted   bool             // said once that the bouncer can\'t take certificates
+	send        func(tea.Msg)    // delivers messages from connection goroutines
+	home        *state.Network
+	control     *irc.Conn
+	conns       map[*state.Network]*irc.Conn
+	batches     map[string]*histBatch
+	joining     map[string]bool // channels we asked to join, to focus them
+	listing     map[*state.Network]*listBox
+	listRows    map[*state.Network][]demo.ChanInfo
+	chanLists   map[*state.Network]*chanList // the Channels List's last download, per network
+	listWaiting map[*state.Network]int       // a LIST trout sent, by its listSeq
+	listFilter  map[*state.Network]listFilter
+	listSeq     int
+	history     map[*state.Window]bool                  // chathistory already fetched
+	serving     []*servCmd                              // BouncerServ commands awaiting replies
+	focusNet    string                                  // a network being added, to focus when soju has it
+	unread      map[*state.Network]map[string]time.Time // private chats to open if unread, by latest message
+	probing     map[*state.Network]map[string]time.Time // missed private chats whose history decides if they get a window, by read marker
+
+	focused  bool      // the terminal has focus (assumed until it reports otherwise)
+	readSent time.Time // when trout last told soju what's been read
+	readTick bool      // a readTickMsg is on its way
+
+	beep      bool               // ring the bell for highlights and private messages
+	colors    map[state.Role]int // the Colors dialog\'s palette choices; role -1 is the background
+	hoverTab  *state.Window      // the switchbar button under the mouse, showing its ×
+	lastHover *state.Window      // last frame\'s hoverTab, so a button stays hovered over its ×
+	bellOut   io.Writer          // the terminal, for the bell and iTerm2's profile switch; nil in tests
+	// The terminal and its Option key (optionkey.go): optionKey is ""
+	// until asked, "fix" for iTerm2's profile switch, "never" to stop
+	// asking; itermRestore switches the tab back when trout quits.
+	term         termkeys.Terminal
+	termHome     string
+	optionKey    string
+	itermRestore string
+	bellDue      bool
+	lastBell     time.Time
+
+	find      *finder                  // Ctrl+F's highlighted match
+	findText  string                   // the last search, to search again
+	searching map[*state.Network]*goTo // a bouncer history search on its way
+	goingTo   *goTo                    // a search result whose history is on its way
+
+	lists [listKinds]map[string][]string // per-network lists without a config.toml (tests)
+
+	// DCC and file uploads (dcc.go, upload.go).
+	dccGet       int  // an index into dccModes: ask, auto or ignore
+	dccAutoAsked bool // with "ask", auto-get from nicks you just messaged
+	dccWarn      bool // show the privacy notice first
+	dccChat      int  // DCC CHAT offers: an index into dccModes
+	// Options > DCC: file types (an index into dccIgnoreModes) and the
+	// time-out in seconds.
+	dccIgnoreMode, dccTimeoutS int
+	proxyPass                  string // the proxy's password without a config (tests)
+	dccClose                   bool   // close a Get window when its file is in
+
+	// Options > IRC and Other (see config.Settings).
+	stampFormat    string
+	rejoinOnKick   bool
+	joinOnInvite   bool
+	noticesActive  bool
+	whoisOnQuery   bool
+	confirmPaste   bool
+	stripCodes     bool
+	keepOpenOnPart bool
+	prefixOwn      bool
+	ctcpActive     bool
+	awayCancel     bool
+	invisible      bool
+	popFavorites   bool
+	popped         bool // the Favorites already popped up this session
+
+	// Options > Other, Display and Messages (see config.Settings).
+	confirmExit  bool
+	cmdPrefix    string
+	tabSuffix    string
+	sortSwitch   bool
+	fillSwitch   bool
+	hiActive     bool
+	privateTo    int // an index into privateModes
+	showAddress  bool
+	nicksOnJoin  bool
+	notifyActive bool
+	memBook      config.Config          // the Address Book without a config.toml (tests)
+	nickLeftX    int                    // a left nicklist's x, for dragging its edge; -1 on the right
+	selfCTCP     string                 // the msgid of the last CTCP to ourselves, which comes twice
+	editDrag     int                    // the editbox (1 or 2) a drag is selecting in
+	namesOnJoin  map[*state.Window]bool // channels just joined, to list their nicks (Options > Messages)
+	lastFrom     string                 // who last messaged you, for Tab, when private messages
+	lastFromNet  *state.Network         // don't get query windows
+	downloadDir  string
+	messaged     map[string]time.Time // whom you last messaged, by network ID + " " + nick
+	transfers    []*transfer
+	chats        []*dccChat
+	dccSeq       int
+
+	urls         []seenURL                    // URLs List
+	ctcpSent     []time.Time                  // when trout answered CTCPs lately, for flood protection
+	isonOn       bool                         // the notify poll for networks without MONITOR is running
+	away         string                       // the away message, on every network
+	quietWho     map[string]bool              // WHOs trout sent itself, by whoKey
+	hopping      map[string]bool              // channels /hop is parting, to keep their windows
+	upAt         map[*state.Network]time.Time // when each connection came up, for the online timer
+	listFetch    map[string][]state.ListEntry // channel lists on their way, by listFetchKey
+	chanListBox  *listBox                     // Channel Central's open list, to refresh
+	chanListWin  *state.Window
+	chanListMode byte
+	invitedTo    map[*state.Network]string // the last channel invited to, for /join -i
+	whois        map[*state.Network]string // the nick whose WHOIS reply is coming in
 
 	// Settings, reachable from the View menu and Tools > Options.
 	themeIdx                                int
@@ -113,36 +232,53 @@ type App struct {
 // Run starts the UI and blocks until the user quits.
 func Run(opts Options) error {
 	a := New(opts)
-	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus())
 	a.send = p.Send
+	a.bellOut = os.Stdout
+	env := termkeys.SystemEnv()
+	a.term, a.termHome = termkeys.Detect(env), env.Home
 	_, err := p.Run()
+	a.stopITermProfile() // back to the tab's own profile
 	return err
 }
 
 func New(opts Options) *App {
 	a := &App{
-		opts:        opts,
-		showToolbar: true, showSwitchbar: true, showTreebar: true, showNicklist: true,
-		stamps: true, modePrefix: true, showMarker: true,
-		treeW: 20, nickW: 18, menuBar: -1, pressedTool: -1,
-		sbars:    map[HitKind]scrollGeom{},
-		conns:    map[*state.Network]*irc.Conn{},
-		batches:  map[string]*histBatch{},
-		joining:  map[string]bool{},
-		listing:  map[*state.Network]*listBox{},
-		listRows: map[*state.Network][]demo.ChanInfo{},
-		history:  map[*state.Window]bool{},
-		send:     func(tea.Msg) {},
+		opts:    opts,
+		cfg:     opts.Config,
+		menuBar: -1, pressedTool: -1,
+		sbars:       map[HitKind]scrollGeom{},
+		conns:       map[*state.Network]*irc.Conn{},
+		batches:     map[string]*histBatch{},
+		joining:     map[string]bool{},
+		listing:     map[*state.Network]*listBox{},
+		listRows:    map[*state.Network][]demo.ChanInfo{},
+		chanLists:   map[*state.Network]*chanList{},
+		listWaiting: map[*state.Network]int{},
+		listFilter:  map[*state.Network]listFilter{},
+		history:     map[*state.Window]bool{},
+		unread:      map[*state.Network]map[string]time.Time{},
+		probing:     map[*state.Network]map[string]time.Time{},
+		focused:     true,
+		quietWho:    map[string]bool{},
+		hopping:     map[string]bool{},
+		namesOnJoin: map[*state.Window]bool{},
+		upAt:        map[*state.Network]time.Time{},
+		listFetch:   map[string][]state.ListEntry{},
+		invitedTo:   map[*state.Network]string{},
+		searching:   map[*state.Network]*goTo{},
+		messaged:    map[string]time.Time{},
+		whois:       map[*state.Network]string{},
+		send:        func(tea.Msg) {},
 	}
+	a.applySettings(config.DefaultSettings())
+	a.memBook.DCCIgnore = slices.Clone(config.DefaultDCCIgnore)
+	if a.cfg != nil {
+		a.applySettings(a.cfg.Settings)
+	}
+	a.saved = a.settings()
 	if !opts.Demo {
-		a.home = state.NewNetwork("soju")
-		a.home.Nick, a.home.Server = opts.User, opts.Addr
-		if host, port, err := net.SplitHostPort(opts.Addr); err == nil {
-			a.home.Server = host
-			a.home.Port, _ = strconv.Atoi(port)
-		}
-		a.nets = []*state.Network{a.home}
-		a.active = a.home.Status()
+		a.setBouncer(opts.Bouncer, opts.Password)
 		return a
 	}
 	a.nets = demo.Seed()
@@ -161,7 +297,12 @@ func (a *App) Init() tea.Cmd {
 	if a.opts.Demo {
 		return tick()
 	}
-	return a.connectBouncer()
+	if a.bnc.Address == "" || a.bnc.User == "" {
+		a.stopped = true
+		a.openConnect("")
+		return nil
+	}
+	return tea.Batch(a.connectBouncer(), a.optionKeyStart())
 }
 
 type tickMsg struct{}
@@ -186,6 +327,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tick()
 	case ircUpMsg, ircLineMsg, ircDownMsg, reconnectMsg:
 		cmd = a.updateIRC(msg)
+	case passwordMsg:
+		cmd = a.gotPassword(msg)
+	case isonTickMsg:
+		cmd = a.pollNotify()
+	case controlMsg:
+		a.controlDue(msg)
+	case listTimeoutMsg:
+		if a.listWaiting[msg.net] == msg.seq {
+			a.listFailed(msg.net, "no answer from the server; try Get List again")
+		}
+	case dccProgressMsg, dccDoneMsg:
+		a.dccUpdate(msg)
+	case chatUpMsg, chatLineMsg, chatDownMsg:
+		a.chatUpdate(msg)
+	case uploadDoneMsg:
+		a.uploaded(msg)
+	case tea.FocusMsg:
+		a.focused = true
+	case tea.BlurMsg:
+		a.focused = false
+	case readTickMsg:
+		a.readTick = false
 	case wizardTickMsg:
 		if s, ok := a.dlg.(*setupWizard); ok && s.seq == msg.seq && s.step == stepInstall {
 			cmd = s.advance()
@@ -193,8 +356,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case holdMsg:
 		if h := a.hold; h != nil && h.id == msg.id {
 			a.hold = nil
-			if h.r.Win == a.active && a.dlg == nil && len(a.menus) == 0 {
+			switch {
+			case a.dlg != nil || len(a.menus) > 0:
+			case (h.r.Kind == HitNick || h.r.Kind == HitNickText) && h.r.Win == a.active:
+				if a.sel != nil && a.sel.moved {
+					break // dragging to select, not holding
+				}
+				a.drag, a.sel = dragNone, nil
 				a.nickMenu(h.r.Win, h.r.S, h.x, h.y)
+			case h.r.Kind == HitSwitch || h.r.Kind == HitTree:
+				a.windowMenu(h.r.Win, h.x, h.y)
 			}
 		}
 	case tea.KeyMsg:
@@ -206,19 +377,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.title = t
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
 	}
-	return a, cmd
+	a.saveSettings()
+	return a, tea.Batch(cmd, a.syncRead(), a.bell())
 }
 
 func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	s := k.String()
 	switch s {
 	case "ctrl+c":
-		return tea.Quit
+		// Like mIRC, Ctrl+C copies the editbox's selection; with none, it
+		// asks to quit (twice quits), as terminals expect.
+		if a.dlg == nil && len(a.menus) == 0 && a.active != nil {
+			if e := a.edit(a.active); e.SelText() != "" {
+				e.Sel = false
+				return copyText(e.SelText())
+			}
+		}
+		return a.quit()
 	case "f2":
 		a.themeIdx = (a.themeIdx + 1) % len(themes)
 		return nil
 	}
 	if a.dlg != nil {
+		if f, ok := a.dlg.(*formBox); ok {
+			if rs, ok := typedRunes(k); ok {
+				return f.typed(a, rs)
+			}
+		}
 		return a.dlg.key(a, s)
 	}
 	if len(a.menus) > 0 {
@@ -238,10 +423,26 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 			a.openOptions(optDisplay)
 			return nil
 		case ch == 'l':
-			a.openChannelsList()
-			return nil
+			return a.openChannelsList(false)
 		case ch == 'j':
 			a.openFavorites()
+			return nil
+		case ch == 'b': // the Address Book, like mIRC
+			a.openAddressBook()
+			return nil
+		case ch == 'n': // its notify list
+			a.openBook(tabNotify)
+			return nil
+		case ch == 'k':
+			a.openColors()
+			return nil
+		case ch == 'u':
+			a.openURLsList()
+			return nil
+		case ch == 'q': // the second editbox, like mIRC
+			if a.active.Kind != state.KTransfer {
+				a.toggleEdit2(a.active)
+			}
 			return nil
 		default:
 			if i := strings.IndexByte(menuMnemonics, ch); i >= 0 {
@@ -258,13 +459,22 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	}
 
 	w := a.active
-	e := &w.Edit
+	e := a.edit(w)
+	w.Act = state.ActNone // seen: for Display > Highlight on message
 	if s != "tab" {
 		e.ResetTab()
 	}
 	switch s {
 	case "f1":
 		a.openDialog(shortcutsBox())
+	case "ctrl+f":
+		a.openFind()
+	case "f3":
+		a.findNext(-1)
+	case "shift+f3":
+		a.findNext(1)
+	case "esc":
+		a.find = nil
 	case "ctrl+n":
 		a.cycleKind(state.KChannel)
 	case "ctrl+q":
@@ -290,26 +500,89 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		}
 	case "enter":
 		return a.submit(w)
+	// A new line: mIRC's multi-line editbox. Ctrl+J (a line feed) is
+	// the terminal's way, for Macs whose Option key isn't Alt.
+	case "alt+enter", "ctrl+j":
+		e.Insert('\n')
+	case "alt+up", "alt+down": // between the two editboxes
+		w.Edit2Focus = w.Edit2On && s == "alt+down"
 	case "backspace":
 		e.Backspace()
 	case "delete":
 		e.Delete()
-	case "left":
-		e.Move(-1)
-	case "right":
-		e.Move(1)
+	case "left", "right":
+		// With a selection, the cursor goes to its edge, like Windows.
+		if from, to, ok := e.Selection(); ok {
+			e.Pos = map[bool]int{true: from, false: to}[s == "left"]
+			e.Sel = false
+			break
+		}
+		e.Move(map[bool]int{true: -1, false: 1}[s == "left"])
 	case "home", "ctrl+a":
-		e.Pos = 0
-	case "end", "ctrl+e":
-		e.Pos = len(e.Buf)
-	case "up":
+		e.Sel = false
+		e.Pos, _ = e.Line()
+	case "end":
+		e.Sel = false
+		_, e.Pos = e.Line()
+	case "shift+left":
+		e.Extend(func() { e.Pos-- })
+	case "shift+right":
+		e.Extend(func() { e.Pos++ })
+	case "shift+home":
+		e.Extend(func() { e.Pos, _ = e.Line() })
+	case "shift+end":
+		e.Extend(func() { _, e.Pos = e.Line() })
+	case "shift+up", "shift+down":
+		anchor, sel := e.Anchor, e.Sel
+		if !sel {
+			anchor = e.Pos
+		}
+		if e.LineMove(map[bool]int{true: -1, false: 1}[s == "shift+up"]) {
+			e.Sel, e.Anchor = true, anchor
+		}
+	case "ctrl+x":
+		if t := e.SelText(); t != "" {
+			e.DeleteSel()
+			return copyText(t)
+		}
+	case "ctrl+v":
+		return pasteClipboard()
+	case "ctrl+e": // strikethrough, like mIRC
+		e.Wrap(0x1e, 0x1e)
+	case "ctrl+pgup": // a line at a time, like mIRC
+		w.Scroll++
+	case "ctrl+pgdown":
+		w.Scroll--
+	case "ctrl+home": // the top of the scrollback, or the editbox's start
+		if len(e.Buf) == 0 {
+			w.Scroll = 1 << 30
+		} else {
+			e.Pos, e.Sel = 0, false
+		}
+	case "ctrl+end":
+		if len(e.Buf) == 0 {
+			w.Scroll = 0
+		} else {
+			e.Pos, e.Sel = len(e.Buf), false
+		}
+	case "up", "down":
+		// A multi-line editbox moves between its lines; Ctrl+Up/Down
+		// is the history there, like mIRC.
+		if !e.Multi() || !e.LineMove(map[bool]int{true: -1, false: 1}[s == "up"]) {
+			e.History(map[bool]int{true: -1, false: 1}[s == "up"])
+		}
+	case "ctrl+up":
 		e.History(-1)
-	case "down":
+	case "ctrl+down":
 		e.History(1)
 	case "tab":
 		// Like mIRC, Tab on an empty line starts a reply to whoever last
 		// messaged you; otherwise it completes nicks and channels.
-		if len(e.Buf) == 0 && a.lastQuery != nil {
+		if len(e.Buf) == 0 && a.lastFrom != "" && a.lastFromNet == w.Net && (a.lastQuery == nil || a.lastQuery.Name == messagesWindow) {
+			e.Insert([]rune("/msg " + a.lastFrom + " ")...)
+			break
+		}
+		if len(e.Buf) == 0 && a.lastQuery != nil && a.lastQuery.Name != messagesWindow {
 			e.Insert([]rune("/msg " + a.lastQuery.Name + " ")...)
 			break
 		}
@@ -325,27 +598,30 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 				cands = append(cands, x.Name)
 			}
 		}
-		e.Complete(cands)
+		e.Complete(cands, func(word string) string {
+			if w.Net.IsChannel(word) {
+				return ""
+			}
+			return a.tabSuffix // Options > Other: after a nick at the start of the line
+		})
 	// mIRC's formatting keys: bold, color, underline, reverse, reset.
+	// With text selected, they go around it.
 	case "ctrl+b":
-		e.Insert(0x02)
+		e.Wrap(0x02, 0x02)
 	case "ctrl+k":
 		a.openPalette()
-		e.Insert(0x03)
+		e.Wrap(0x03, 0x03)
 	case "ctrl+u":
-		e.Insert(0x1f)
+		e.Wrap(0x1f, 0x1f)
 	case "ctrl+r":
-		e.Insert(0x16)
+		e.Wrap(0x16, 0x16)
 	case "ctrl+o":
 		e.Insert(0x0f)
 	default:
-		if (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) && !k.Alt {
-			rs := slices.Clone(k.Runes)
-			for i, r := range rs {
-				if r == '\n' || r == '\r' || r == '\t' {
-					rs[i] = ' '
-				}
-			}
+		if k.Paste && strings.ContainsAny(string(k.Runes), "\r\n") {
+			return a.pasteLines(w, string(k.Runes))
+		}
+		if rs, ok := typedRunes(k); ok {
 			e.Insert(rs...)
 		}
 	}
@@ -414,8 +690,12 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			}
 		case a.drag == dragTree:
 			a.treeW = m.X
+		case a.drag == dragNick && a.nickLeftX >= 0:
+			a.nickW = m.X - a.nickLeftX
 		case a.drag == dragNick:
 			a.nickW = a.w - m.X - 1
+		case a.drag == dragEdit:
+			a.dragEditTo(m.X, m.Y)
 		case a.drag == dragSelect:
 			a.extendSelection(m.X, m.Y)
 		default:
@@ -491,7 +771,7 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			d = -3
 		}
 		switch r.Kind {
-		case HitMsg, HitMsgScroll, HitURL:
+		case HitMsg, HitMsgScroll, HitURL, HitNickText:
 			w.Scroll += d
 		case HitNick, HitNickScroll:
 			w.NickTop -= d
@@ -508,18 +788,14 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 	a.lastHit, a.lastClick = r, time.Now()
 	switch r.Kind {
 	case HitCaption:
-		if r.I == 2 {
-			return tea.Quit
-		}
-	case HitChildBtn:
-		if r.I == 2 {
-			a.closeWindow(w)
-		}
+		return a.quit()
+	case HitChildBtn: // a switchbar button's ×
+		a.closeWindow(r.Win)
 	case HitMenuBar:
 		a.openMenuBar(r.I)
 	case HitTool:
 		a.pressedTool = r.I
-		a.toolAction(toolButtons[r.I])
+		return a.toolAction(toolButtons[r.I])
 	case HitSwitch, HitTree:
 		switch {
 		case m.Shift && r.Kind == HitSwitch:
@@ -528,6 +804,7 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			a.windowMenu(r.Win, m.X, m.Y)
 		default:
 			a.activate(r.Win)
+			return a.startHold(r, m.X, m.Y) // a long press opens its popup too
 		}
 	case HitTreeToggle:
 		r.Net.Collapsed = !r.Net.Collapsed
@@ -535,14 +812,27 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		a.drag = dragTree
 	case HitNickSplit:
 		a.drag = dragNick
-	case HitMsg, HitURL:
+	case HitMsg, HitURL, HitNickText:
 		a.nickFocus = false
 		switch {
+		case right && r.Kind == HitNickText: // a nick hotlink's popup
+			a.nickMenu(w, r.S, m.X, m.Y)
+		case m.Ctrl && m.Button == tea.MouseButtonLeft: // copy with codes, like mIRC
+			a.startSelection(w, m.X, m.Y)
+			a.sel.codes = true
 		case right:
+		case double && r.Kind == HitNickText:
+			a.openQuery(w.Net, r.S)
+		case double && r.Kind == HitURL && w.Net.IsChannel(r.S):
+			a.join(w.Net, r.S) // a channel hotlink
 		case double && r.Kind == HitURL:
 			return openURL(r.S)
 		default:
 			a.startSelection(w, m.X, m.Y)
+			a.sel.breaks = m.Shift // copy with the line breaks shown, like mIRC
+			if r.Kind == HitNickText {
+				return a.startHold(r, m.X, m.Y)
+			}
 		}
 	case HitMsgScroll:
 		w.Scroll -= scrollStep(r.I, a.msgH)
@@ -558,16 +848,32 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		case double:
 			a.openQuery(w.Net, r.S)
 		default:
-			a.holdSeq++
-			a.hold = &pressHold{id: a.holdSeq, r: r, x: m.X, y: m.Y}
-			id := a.holdSeq
-			return tea.Tick(longPress, func(time.Time) tea.Msg { return holdMsg{id} })
+			return a.startHold(r, m.X, m.Y)
 		}
+	case HitTransfer:
+		return a.transferButton(r.Win)
 	case HitEdit:
 		a.nickFocus = false
-		a.clickEdit(w, m.X-r.X)
+		w.Edit2Focus = r.S == "edit2"
+		e := a.edit(w)
+		pos := editPosAt(e, r.I, m.X-r.X, r.W)
+		if m.Shift {
+			e.Extend(func() { e.Pos = pos })
+		} else {
+			e.Pos, e.Sel, e.Anchor = pos, false, pos
+		}
+		a.drag, a.editDrag = dragEdit, map[bool]int{true: 2, false: 1}[w.Edit2Focus]
 	}
 	return nil
+}
+
+// startHold starts timing a left press on r: held for longPress, it opens
+// r's popup, for terminals that keep right-clicks to themselves.
+func (a *App) startHold(r Region, x, y int) tea.Cmd {
+	a.holdSeq++
+	a.hold = &pressHold{id: a.holdSeq, r: r, x: x, y: y}
+	id := a.holdSeq
+	return tea.Tick(longPress, func(time.Time) tea.Msg { return holdMsg{id} })
 }
 
 // dragThumbTo moves the dragged scrollbar thumb so the row that was
@@ -604,17 +910,34 @@ func scrollStep(part, page int) int {
 	return part
 }
 
-func (a *App) toolAction(label string) {
+func (a *App) toolAction(label string) tea.Cmd {
 	switch label {
-	case "Options", "Colors":
+	case "Connect": // or Disconnect: a toggle, like mIRC's
+		switch n := a.active.Net; {
+		case a.opts.Demo:
+		case a.connected(n):
+			a.disconnectNet(n)
+		default:
+			return a.connectNet(n)
+		}
+	case "Options":
 		a.openOptions(optDisplay)
+	case "Colors": // mIRC's Colors dialog, not the Display options
+		a.openColors()
 	case "Favorites":
 		a.openFavorites()
 	case "Channels":
-		a.openChannelsList()
-	case "Help":
-		a.openDialog(shortcutsBox())
+		return a.openChannelsList(false)
+	case "Address Book":
+		a.openAddressBook()
+	case "Notify":
+		a.openBook(tabNotify)
+	case "Send File":
+		a.openSendFile("")
+	case "Received":
+		return a.openReceived()
 	}
+	return nil
 }
 
 // openURL hands an http(s) link to the desktop's browser.
@@ -637,20 +960,6 @@ func openURL(u string) tea.Cmd {
 	}
 }
 
-func (a *App) clickEdit(w *state.Window, rel int) {
-	e := &w.Edit
-	i, cx := e.Off, 1
-	for i < len(e.Buf) {
-		cw := editWidth(e.Buf[i])
-		if cx+cw > rel {
-			break
-		}
-		cx += cw
-		i++
-	}
-	e.Pos = i
-}
-
 // jumpToMarker scrolls the line marker to the top of the view (Ctrl+L).
 func (a *App) jumpToMarker(w *state.Window) {
 	rows, marker := a.windowRows(w, a.msgW)
@@ -660,21 +969,43 @@ func (a *App) jumpToMarker(w *state.Window) {
 }
 
 func (a *App) submit(w *state.Window) tea.Cmd {
-	text := w.Edit.Take()
+	text := a.edit(w).Take()
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 	w.Scroll = 0
-	if cmd, ok := strings.CutPrefix(text, "/"); ok {
-		return a.command(w, cmd)
+	if w.Kind == state.KTransfer { // nothing to say to a download
+		return nil
 	}
-	a.say(w, text)
-	return nil
+	// A multi-line editbox sends each line as if typed on its own.
+	var cmds []tea.Cmd
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if cmd, ok := strings.CutPrefix(line, cmp.Or(a.cmdPrefix, "/")); ok { // Options > Other
+			cmds = append(cmds, a.command(w, cmd))
+			continue
+		}
+		a.say(w, line)
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a *App) say(w *state.Window, text string) {
 	if w.Kind == state.KStatus {
 		a.addLine(w, state.RoleInfo, "* You are not on a channel")
+		return
+	}
+	if a.awayCancel && a.away != "" && (w.Kind == state.KChannel || w.Kind == state.KQuery) {
+		a.setAway("") // Options > Messages: back when you talk, like mIRC
+	}
+	if w.Kind == state.KChat {
+		a.chatSay(w, text, false)
+		return
+	}
+	if w.Name == messagesWindow {
+		a.addLine(w, state.RoleInfo, "* Reply with /msg nick, or Tab on an empty line")
 		return
 	}
 	if !a.opts.Demo {
@@ -756,7 +1087,7 @@ func (a *App) demoCommand(w *state.Window, line string) tea.Cmd {
 	case "clear":
 		w.Lines, w.Scroll, w.Marker = nil, 0, 0
 	case "exit":
-		return tea.Quit
+		return a.quit()
 	default:
 		a.addLine(w, state.RoleInfo, "* /"+name+" isn't implemented in this UI mock")
 	}
@@ -774,9 +1105,13 @@ func (a *App) order() []*state.Window {
 func (a *App) activate(w *state.Window) {
 	if old := a.active; old != nil && old != w {
 		old.Marker = len(old.Lines) // what you'd seen when you left
+		a.sendRead(old)
 	}
 	a.active = w
 	a.nickFocus = false
+	if a.find != nil && a.find.win != w {
+		a.find = nil
+	}
 	w.Act = state.ActNone
 }
 
@@ -809,6 +1144,10 @@ func (a *App) closeWindow(w *state.Window) {
 	case !a.opts.Demo && w.Kind == state.KChannel && w.Joined:
 		a.sendTo(w, "PART", w.Name)
 		return
+	case w.Kind == state.KTransfer: // closing a Get window cancels it, like mIRC
+		a.cancelTransfer(a.transferFor(w))
+	case w.Kind == state.KChat:
+		a.chatClose(w)
 	}
 	a.removeWindow(w)
 }
@@ -855,9 +1194,13 @@ func (a *App) addLine(w *state.Window, role state.Role, text string) {
 }
 
 func (a *App) addLineAt(w *state.Window, role state.Role, text string, t time.Time) {
-	l := state.Line{Time: t, Role: role, Text: text}
+	a.addLineL(w, state.Line{Time: t, Role: role, Text: text})
+}
+
+// addLineL adds a whole line, a highlight rule's color and all.
+func (a *App) addLineL(w *state.Window, l state.Line) {
 	w.Lines = append(w.Lines, l)
-	if n := len(w.Lines) - 500; n > 0 {
+	if n := len(w.Lines) - state.MaxLines; n > 0 {
 		w.Lines = slices.Delete(w.Lines, 0, n)
 		w.Marker = max(0, w.Marker-n)
 	}
@@ -865,9 +1208,11 @@ func (a *App) addLineAt(w *state.Window, role state.Role, text string, t time.Ti
 		if w.Scroll > 0 && a.msgW > 0 {
 			w.Scroll += len(a.lineRows(w, l, a.msgW, false)) // keep a scrolled-up view still
 		}
-		return
+		if !a.hiActive { // Display > Highlight on message colors even this one
+			return
+		}
 	}
-	if lvl := state.ActivityFor(role); lvl > w.Act {
+	if lvl := state.ActivityFor(l.Role); lvl > w.Act {
 		w.Act = lvl
 	}
 }
@@ -894,4 +1239,38 @@ func clamp(v, lo, hi int) int {
 		hi = lo
 	}
 	return max(lo, min(v, hi))
+}
+
+// quit leaves trout, asking first if Options > Other says to, like mIRC's
+// "Confirm exit". The bouncer stays on IRC either way.
+func (a *App) quit() tea.Cmd {
+	if !a.confirmExit || a.opts.Demo {
+		return tea.Quit
+	}
+	if d, ok := a.dlg.(*msgBox); ok && d.Title == "Quit" {
+		return tea.Quit // Ctrl+C twice
+	}
+	d := message("Quit trout?", "", "The bouncer keeps you on your networks.")
+	d.Title = "Quit"
+	d.Buttons, d.Cancel = []string{"Yes", "No"}, 1
+	d.OnClose = func(a *App, button int) tea.Cmd {
+		if button == 0 {
+			return tea.Quit
+		}
+		return nil
+	}
+	a.openDialog(d)
+	return nil
+}
+
+// dragEditTo selects in the editbox being dragged in, up to the pointer.
+func (a *App) dragEditTo(x, y int) {
+	w := a.active
+	r, ok := a.hit(x, y)
+	if !ok || r.Kind != HitEdit || r.S != editBoxName[a.editDrag] {
+		return
+	}
+	e := a.edit(w)
+	pos := editPosAt(e, r.I, x-r.X, r.W)
+	e.Extend(func() { e.Pos = pos })
 }

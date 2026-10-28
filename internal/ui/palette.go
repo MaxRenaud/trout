@@ -36,7 +36,7 @@ func (a *App) paletteKey(k string) bool {
 }
 
 func (a *App) pickColor(i int) {
-	e := &a.active.Edit
+	e := a.edit(a.active)
 	if a.pal.bg {
 		e.Insert([]rune(fmt.Sprintf(",%02d", i))...)
 		a.pal = nil

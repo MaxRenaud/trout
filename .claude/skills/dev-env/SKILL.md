@@ -16,8 +16,8 @@ Everything lives in `dev/compose.yaml`; details in `docs/dev-environment.md`.
    upstreams connected; the bot logs only on errors.
 4. Verify trout end to end without a terminal:
    `go test -tags integration ./internal/ui -run TestAgainstSoju -v`
-5. trout itself is a full-screen TUI: the user runs `go run ./cmd/trout` in their own
-   terminal. For protocol debugging, have them run it with `TROUT_DEBUG=1` and read
+5. trout itself is a full-screen TUI: the user runs `dev/trout` in their own
+   terminal (it uses a dev config in `tmp/dev-config`, never their real one). For protocol debugging, have them run it with `TROUT_DEBUG=1` and read
    `trout-debug.log`.
 
 Reset to a fresh soju (user, networks and history recreated by `dev/soju/start.sh`):

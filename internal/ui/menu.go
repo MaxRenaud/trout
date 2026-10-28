@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 
-	"github.com/MaxRenaud/trout/internal/demo"
 	"github.com/MaxRenaud/trout/internal/state"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -232,10 +231,32 @@ func (a *App) menuBarItems(i int) []MenuItem {
 	}
 	switch i {
 	case 0:
-		return []MenuItem{{Label: "Connect"}, {Label: "Disconnect"}, {Label: "Select Server..."}, sep,
-			{Label: "New Window", Sub: []MenuItem{{Label: "Server"}, {Label: "Channel..."}, {Label: "Query..."}}}, sep,
-			{Label: "Save Settings"}, sep,
-			{Label: "Exit", Action: func(*App) tea.Cmd { return tea.Quit }}}
+		// Like mIRC, these are about the active window's network; soju's own
+		// status window is the bouncer connection.
+		connect, disconnect := MenuItem{Label: "Connect"}, MenuItem{Label: "Disconnect"}
+		save := MenuItem{Label: "Save Settings", Disabled: a.cfg == nil}
+		if !a.opts.Demo {
+			n := a.active.Net
+			connect.Action = func(a *App) tea.Cmd { return a.connectNet(n) }
+			disconnect.Action = func(a *App) tea.Cmd { a.disconnectNet(n); return nil }
+			connect.Disabled, disconnect.Disabled = a.connected(n), !a.connected(n)
+		}
+		if a.cfg != nil { // settings save as they change; this says where
+			save.Action = func(a *App) tea.Cmd {
+				a.cfg.Settings, a.saved = a.settings(), a.settings()
+				a.saveConfig()
+				a.addLine(a.active, state.RoleInfo, "* Settings saved to "+a.cfg.Path)
+				return nil
+			}
+		}
+		return []MenuItem{connect, disconnect,
+			{Label: "Select Server...", Action: func(a *App) tea.Cmd { a.openServers(); return nil }}, sep,
+			{Label: "New Window", Sub: []MenuItem{
+				{Label: "Server...", Disabled: a.opts.Demo, Action: func(a *App) tea.Cmd { a.openDialog(a.networkForm(nil, nil)); return nil }},
+				{Label: "Channel...", Action: a.commandPrompt("Join Channel", "Channel:", "join", "#")},
+				{Label: "Query...", Action: a.commandPrompt("Query User", "Nick:", "query", "")}}}, sep,
+			save, sep,
+			{Label: "Exit", Action: func(a *App) tea.Cmd { return a.quit() }}}
 	case 1:
 		return []MenuItem{{Label: "Menubar", Check: true, Disabled: true},
 			{Label: "Toolbar", Check: a.showToolbar, Action: toggle(&a.showToolbar)},
@@ -244,35 +265,57 @@ func (a *App) menuBarItems(i int) []MenuItem {
 			{Label: "Nicklist", Check: a.showNicklist, Action: toggle(&a.showNicklist)},
 			{Label: "Timestamps", Check: a.stamps, Action: toggle(&a.stamps)}, sep,
 			{Label: "Classic Theme", Check: a.themeIdx == 0, Action: setTheme(0)},
-			{Label: "Dark Theme", Check: a.themeIdx == 1, Action: setTheme(1)}, sep,
-			{Label: "Font..."}}
+			{Label: "Dark Theme", Check: a.themeIdx == 1, Action: setTheme(1)}}
 	case 2:
-		n := a.active.Net
-		items := []MenuItem{{Label: "Add to Favorites..."},
+		n, w := a.active.Net, a.active
+		add := MenuItem{Label: "Add to Favorites", Disabled: w.Kind != state.KChannel || a.opts.Demo,
+			Action: func(a *App) tea.Cmd {
+				a.setFavorite(n, w.Name, true)
+				a.addLine(w, state.RoleInfo, "* Added "+w.Name+" to Favorites (Alt+J)")
+				return nil
+			}}
+		items := []MenuItem{add,
 			{Label: "Organize Favorites...", Key: "Alt+J", Action: func(a *App) tea.Cmd { a.openFavorites(); return nil }}, sep}
-		for _, ch := range demo.Favorites[n.Name] {
+		for _, ch := range a.favorites(n) {
 			items = append(items, MenuItem{Label: ch, Action: func(a *App) tea.Cmd { a.join(n, ch); return nil }})
 		}
 		return items
 	case 3:
-		items := []MenuItem{{Label: "Address Book..."}, {Label: "Aliases..."}, {Label: "Popups..."},
-			{Label: "Scripts Editor..."}, sep,
-			{Label: "Channels List...", Key: "Alt+L", Action: func(a *App) tea.Cmd { a.openChannelsList(); return nil }},
-			{Label: "URLs List..."}, sep}
-		if a.opts.Demo { // bouncer setup and management are mock-ups so far
+		// mIRC's Aliases, Popups and Scripts Editor wait for scripting.
+		items := []MenuItem{{Label: "Address Book...", Action: func(a *App) tea.Cmd { a.openAddressBook(); return nil }}, sep,
+			{Label: "Channels List...", Key: "Alt+L", Action: func(a *App) tea.Cmd { return a.openChannelsList(false) }},
+			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }}, sep}
+		if a.opts.Demo { // bouncer setup is a mock-up so far
 			items = append(items,
 				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openSetup(); return nil }},
 				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openBouncers(); return nil }})
+		} else {
+			items = append(items,
+				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openSavedBouncers(); return nil }})
 		}
 		return append(items,
 			MenuItem{Label: "Options...", Key: "Alt+O", Action: func(a *App) tea.Cmd { a.openOptions(optDisplay); return nil }})
 	case 4:
-		return []MenuItem{{Label: "Join Channel..."}, {Label: "Part Channel..."}, {Label: "Query User..."},
-			{Label: "Send Notice..."}, {Label: "Whois User..."}, {Label: "Send CTCP..."}, sep,
-			{Label: "Set Away..."}, {Label: "Change Nick..."}, sep, {Label: "Ignore User..."}, {Label: "Invite User..."}}
+		ch := ""
+		if a.active.Kind == state.KChannel {
+			ch = a.active.Name
+		}
+		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
+		return []MenuItem{
+			{Label: "Join Channel...", Action: a.commandPrompt("Join Channel", "Channel:", "join", "#")},
+			{Label: "Part Channel...", Action: a.commandPrompt("Part Channel", "Channel:", "part", ch)},
+			{Label: "Query User...", Action: a.commandPrompt("Query User", "Nick:", "query", a.selectedNick())},
+			{Label: "Send Notice...", Action: do(a.openSendNotice)},
+			{Label: "Whois User...", Action: a.commandPrompt("Whois User", "Nick:", "whois", a.selectedNick())},
+			{Label: "Send CTCP...", Action: do(a.openSendCTCP)},
+			{Label: "Send File...", Action: do(func() { a.openSendFile("") })}, sep,
+			{Label: "Set Away...", Action: do(a.openSetAway)},
+			{Label: "Change Nick...", Action: a.commandPrompt("Change Nick", "Nick:", "nick", a.active.Net.Nick)}, sep,
+			{Label: "Ignore User...", Action: a.commandPrompt("Ignore User", "Nick or mask:", "ignore", a.selectedNick())},
+			{Label: "Invite User...", Disabled: ch == "", Action: a.commandPrompt("Invite User", "Nick:", "invite", "")},
+		}
 	case 5:
-		items := []MenuItem{{Label: "Tile Horizontal", Disabled: true}, {Label: "Tile Vertical", Disabled: true},
-			{Label: "Cascade", Disabled: true}, {Label: "Arrange Icons", Disabled: true}, sep}
+		items := []MenuItem{{Label: "Order...", Action: func(a *App) tea.Cmd { a.openOrder(); return nil }}, sep}
 		for n, w := range a.order() {
 			label := w.Name
 			if w.Kind == state.KStatus {
@@ -283,9 +326,9 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		}
 		return items
 	}
-	return []MenuItem{{Label: "Help Topics"},
+	return []MenuItem{{Label: "Help Topics", Action: func(a *App) tea.Cmd { a.openDialog(commandsBox()); return nil }},
 		{Label: "Keyboard Shortcuts", Key: "F1", Action: func(a *App) tea.Cmd { a.openDialog(shortcutsBox()); return nil }}, sep,
-		{Label: "About trout", Action: func(a *App) tea.Cmd { a.openDialog(aboutBox()); return nil }}}
+		{Label: "About trout", Action: func(a *App) tea.Cmd { a.openDialog(aboutBox(a.opts.Demo)); return nil }}}
 }
 
 // windowMenu is the popup for a switchbar or treebar button.
@@ -297,21 +340,47 @@ func (a *App) windowMenu(w *state.Window, x, y int) {
 	closeAs := func(label string) MenuItem {
 		return MenuItem{Label: label, Key: "Ctrl+W", Action: func(a *App) tea.Cmd { a.closeWindow(w); return nil }}
 	}
-	logging := MenuItem{Label: "Logging", Disabled: true}
+	// The bouncer keeps the real logs; this saves what the window shows.
+	save := MenuItem{Label: "Save to File", Action: func(a *App) tea.Cmd { a.saveWindow(w); return nil }}
 	var items []MenuItem
 	switch w.Kind {
 	case state.KStatus:
-		items = []MenuItem{clear, {Sep: true}, {Label: "Disconnect"}, logging}
+		connect, disconnect := MenuItem{Label: "Connect"}, MenuItem{Label: "Disconnect"}
+		if !a.opts.Demo {
+			connect.Action = func(a *App) tea.Cmd { return a.connectNet(w.Net) }
+			disconnect.Action = func(a *App) tea.Cmd { a.disconnectNet(w.Net); return nil }
+			connect.Disabled, disconnect.Disabled = a.connected(w.Net), !a.connected(w.Net)
+		}
+		items = []MenuItem{clear, {Sep: true}, connect, disconnect, save}
+	case state.KChat:
+		items = []MenuItem{clear, closeAs("Close"), {Sep: true}, save}
+	case state.KTransfer:
+		tr := a.transferFor(w)
+		items = []MenuItem{
+			{Label: "Cancel", Disabled: tr == nil || tr.done, Action: func(a *App) tea.Cmd { a.cancelTransfer(tr); return nil }},
+			closeAs("Close"), {Sep: true},
+			{Label: "Open Folder", Action: func(a *App) tea.Cmd { return a.openReceived() }}}
 	case state.KChannel:
-		items = []MenuItem{clear, closeAs("Part"), {Sep: true}, {Label: "Channel Modes..."}, logging}
+		// Like mIRC, closing parts; Detach is soju's way to stay without
+		// a window.
+		detach := MenuItem{Label: "Detach", Disabled: a.opts.Demo || !w.Joined,
+			Action: func(a *App) tea.Cmd { a.detach(w); return nil }}
+		modes := MenuItem{Label: "Channel Modes...", Disabled: a.opts.Demo || !w.Joined,
+			Action: func(a *App) tea.Cmd { a.openChannelModes(w); return nil }}
+		items = []MenuItem{clear, closeAs("Part"), detach, {Sep: true}, modes, save}
 	default:
-		items = []MenuItem{clear, closeAs("Close"), {Sep: true}, {Label: "Whois"}, logging}
+		whois := MenuItem{Label: "Whois", Action: func(a *App) tea.Cmd { a.sendTo(w, "WHOIS", w.Name); return nil }}
+		items = []MenuItem{clear, closeAs("Close"), {Sep: true}, whois, save}
+	}
+	if w.Kind != state.KTransfer {
+		items = append(append(items, MenuItem{Sep: true}), a.winOptItems(w)...)
 	}
 	a.closeMenus()
 	a.pushMenu(items, x, y)
 }
 
-// nickMenu is mIRC's default nicklist popup. Only Query does anything.
+// nickMenu is mIRC's default nicklist popup. (DCC Chat isn't there: it
+// would need an open port here. Send File goes through the bouncer.)
 func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
 	sub := func(labels ...string) []MenuItem {
 		items := make([]MenuItem, len(labels))
@@ -324,29 +393,39 @@ func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
 	control := sub("Ignore", "Unignore", "Op", "Deop", "Voice", "Devoice",
 		"Kick", "Kick (why)", "Ban", "Ban, Kick", "Ban, Kick (why)")
 	whois, slap := MenuItem{Label: "Whois"}, MenuItem{Label: "Slap!"}
+	info := MenuItem{Label: "Info", Action: func(a *App) tea.Cmd { a.openNickInfo(win.Net, nick); return nil }}
+	ctcp := sub("Ping", "Time", "Version")
+	sendFile := MenuItem{Label: "Send File...", Action: func(a *App) tea.Cmd { a.openSendFile(nick); return nil }}
 	if !a.opts.Demo {
-		// The channel operator actions are real; "(why)" variants use a
-		// stock reason until there's a prompt dialog.
+		// The channel operator actions are real; the "(why)" variants ask
+		// for a reason.
 		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
 		mode := func(m, arg string) func(*App) tea.Cmd {
 			return do(func() { a.sendTo(win, "MODE", win.Name, m, arg) })
 		}
 		kick := do(func() { a.sendTo(win, "KICK", win.Name, nick, "trout") })
 		ban := mode("+b", nick+"!*@*")
-		for i, act := range []func(*App) tea.Cmd{nil, nil, mode("+o", nick), mode("-o", nick),
-			mode("+v", nick), mode("-v", nick), kick, kick, ban,
-			do(func() { ban(a); kick(a) }), do(func() { ban(a); kick(a) })} {
+		why := func(ban bool) func(*App) tea.Cmd {
+			return do(func() { a.openDialog(a.kickWhy(win, nick, ban)) })
+		}
+		ignore := func(on bool) func(*App) tea.Cmd { return do(func() { a.setIgnore(win, nick, on) }) }
+		for i, act := range []func(*App) tea.Cmd{ignore(true), ignore(false), mode("+o", nick), mode("-o", nick),
+			mode("+v", nick), mode("-v", nick), kick, why(false), ban,
+			do(func() { ban(a); kick(a) }), why(true)} {
 			control[i].Action = act
 		}
 		whois.Action = do(func() { a.sendTo(win, "WHOIS", nick) })
+		for i, req := range []string{"PING", "TIME", "VERSION"} {
+			ctcp[i].Action = do(func() { a.sendCTCP(win, nick, req) })
+		}
 		slap.Action = do(func() { a.action(win, "slaps "+nick+" around a bit with a large trout") })
 	}
 	a.closeMenus()
 	a.pushMenu([]MenuItem{
-		{Label: "Info"}, whois, {Label: "Query", Action: query}, {Sep: true},
+		info, whois, {Label: "Query", Action: query}, {Sep: true},
 		{Label: "Control", Sub: control},
-		{Label: "CTCP", Sub: sub("Ping", "Time", "Version")},
-		{Label: "DCC", Sub: sub("Send", "Chat")},
+		{Label: "CTCP", Sub: ctcp},
+		sendFile,
 		{Sep: true},
 		slap,
 	}, x, y)

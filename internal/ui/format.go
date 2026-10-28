@@ -15,7 +15,8 @@ type SRune struct {
 }
 
 // parseMIRC applies mIRC formatting codes on top of base: ^B bold,
-// ^Cfg[,bg] color, ^] italic, ^_ underline, ^V reverse and ^O reset.
+// ^Cfg[,bg] color, ^] italic, ^_ underline, ^^ strikethrough (typed as
+// Ctrl+E, like mIRC), ^V reverse and ^O reset.
 func parseMIRC(s string, base Style, pal *[16]RGB) []SRune {
 	rs := []rune(s)
 	out := make([]SRune, 0, len(rs))
@@ -28,6 +29,8 @@ func parseMIRC(s string, base Style, pal *[16]RGB) []SRune {
 			st.Italic = !st.Italic
 		case 0x1f:
 			st.Underline = !st.Underline
+		case 0x1e:
+			st.Strike = !st.Strike
 		case 0x16:
 			rev = !rev
 		case 0x0f:
@@ -69,10 +72,25 @@ func readColor(rs []rune, i int) (v, n int) {
 }
 
 func palColor(pal *[16]RGB, i int, def RGB) RGB {
-	if i < len(pal) {
+	switch {
+	case i < len(pal):
 		return pal[i]
+	case i < 99:
+		return extendedColors[i-16]
 	}
-	return def // 99 means "default"; the extended 16-98 range isn't mocked
+	return def // 99 is "default"
+}
+
+// extendedColors are mIRC's colors 16-98, which are fixed: they look the
+// same in every scheme, unlike 0-15.
+var extendedColors = [83]RGB{
+	0x470000, 0x472100, 0x474700, 0x324700, 0x004700, 0x00472c, 0x004747, 0x002747, 0x000047, 0x2e0047, 0x470047, 0x47002a,
+	0x740000, 0x743a00, 0x747400, 0x517400, 0x007400, 0x007449, 0x007474, 0x004074, 0x000074, 0x4b0074, 0x740074, 0x740045,
+	0xb50000, 0xb56300, 0xb5b500, 0x7db500, 0x00b500, 0x00b571, 0x00b5b5, 0x0063b5, 0x0000b5, 0x7500b5, 0xb500b5, 0xb5006b,
+	0xff0000, 0xff8c00, 0xffff00, 0xb2ff00, 0x00ff00, 0x00ffa0, 0x00ffff, 0x008cff, 0x0000ff, 0xa500ff, 0xff00ff, 0xff0098,
+	0xff5959, 0xffb459, 0xffff71, 0xcfff60, 0x6fff6f, 0x65ffc9, 0x6dffff, 0x59b4ff, 0x5959ff, 0xc459ff, 0xff66ff, 0xff59bc,
+	0xff9c9c, 0xffd39c, 0xffff9c, 0xe2ff9c, 0x9cff9c, 0x9cffdb, 0x9cffff, 0x9cd3ff, 0x9c9cff, 0xdc9cff, 0xff9cff, 0xff94d3,
+	0x000000, 0x131313, 0x282828, 0x363636, 0x4d4d4d, 0x656565, 0x818181, 0x9f9f9f, 0xbcbcbc, 0xe2e2e2, 0xffffff,
 }
 
 // markURLs underlines http(s) links and tags their runes with the URL, so
@@ -88,6 +106,10 @@ func markURLs(rs []SRune) {
 		return true
 	}
 	for i := 0; i < len(rs); i++ {
+		if rs[i].R == '#' && (i == 0 || rs[i-1].R == ' ' || rs[i-1].R == '(') {
+			i = markChannel(rs, i) // a channel hotlink, like mIRC's: double-click joins
+			continue
+		}
 		if !hasPrefix(i, "https://") && !hasPrefix(i, "http://") {
 			continue
 		}
@@ -111,6 +133,31 @@ func markURLs(rs []SRune) {
 		}
 		i = j
 	}
+}
+
+// markChannel tags a #channel at i as a link (its URL is the channel
+// name) and returns where it ends.
+func markChannel(rs []SRune, i int) int {
+	j := i + 1
+	for j < len(rs) && rs[j].R > ' ' && !strings.ContainsRune(",:;!?)\"'", rs[j].R) {
+		j++
+	}
+	for j > i+1 && rs[j-1].R == '.' {
+		j--
+	}
+	if j-i < 2 {
+		return i
+	}
+	name := make([]rune, j-i)
+	for k := range name {
+		name[k] = rs[i+k].R
+	}
+	ch := string(name)
+	for k := i; k < j; k++ {
+		rs[k].St.Underline = true
+		rs[k].URL = &ch
+	}
+	return j
 }
 
 var nickPalette = []int{2, 3, 4, 5, 6, 7, 10, 12, 13}

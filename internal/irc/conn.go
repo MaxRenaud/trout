@@ -1,11 +1,13 @@
-// Package irc is a small IRC client connection: registration with CAP
-// negotiation and SASL PLAIN, binding to a soju network, a read loop that
-// answers PINGs, and thread-safe sending. It knows nothing about the UI.
+// Package irc is a small IRC client connection: TLS with key pinning,
+// registration with CAP negotiation and SASL PLAIN, binding to a soju
+// network, a read loop that answers PINGs, and thread-safe sending. It
+// knows nothing about the UI.
 package irc
 
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,15 +21,25 @@ import (
 )
 
 type Config struct {
-	Addr     string // host:port, plain-text TCP
+	Addr     string // host:port
+	TLS      bool
+	Pin      string // trusted key fingerprint (see Fingerprint) for a certificate no CA signed
 	Nick     string
-	User     string   // SASL and USER name
-	Password string   // SASL PLAIN password; empty skips SASL
-	Caps     []string // capabilities to request when the server offers them
-	Bind     string   // soju network ID to bind to (soju.im/bouncer-networks)
+	User     string // SASL and USER name
+	Password string // SASL PLAIN password; empty skips SASL
+	// ClientCert, on a TLS connection, is presented to the server; with
+	// External, the login is SASL EXTERNAL (that certificate) instead of
+	// PLAIN, when the server offers it.
+	ClientCert *tls.Certificate
+	External   bool
+	Caps       []string // capabilities to request when the server offers them
+	Bind       string   // soju network ID to bind to (soju.im/bouncer-networks)
 
 	// Debug, if set, sees every raw line; dir is "<-" or "->".
 	Debug func(dir, line string)
+
+	// Dial, if set, makes the connection (through a proxy, say).
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
 
 type Conn struct {
@@ -43,15 +55,28 @@ type Conn struct {
 	// early holds what arrived during registration (RPL_WELCOME and
 	// friends) for Run to hand over first.
 	early []ircmsg.Message
+	// Mech is the SASL mechanism used to log in: "PLAIN", "EXTERNAL", or "".
+	Mech string
 }
 
 // Dial connects and registers. It returns once the server has sent
 // RPL_WELCOME.
 func Dial(ctx context.Context, cfg Config) (*Conn, error) {
-	var d net.Dialer
-	nc, err := d.DialContext(ctx, "tcp", cfg.Addr)
+	dial := cfg.Dial
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	nc, err := dial(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.TLS {
+		tc := tls.Client(nc, cfg.TLSConfig())
+		if err := tc.HandshakeContext(ctx); err != nil {
+			nc.Close()
+			return nil, err
+		}
+		nc = tc
 	}
 	c := &Conn{cfg: cfg, nc: nc, r: bufio.NewReader(nc), Caps: map[string]bool{}, Nick: cfg.Nick}
 	deadline, ok := ctx.Deadline()
@@ -72,6 +97,7 @@ func (c *Conn) register() error {
 	c.Send("NICK", c.cfg.Nick)
 	c.Send("USER", c.cfg.User, "0", "*", "trout")
 	var offered []string
+	mechs := map[string]bool{} // sasl=PLAIN,EXTERNAL; no list means any
 	for {
 		m, err := c.read()
 		if err != nil {
@@ -88,8 +114,13 @@ func (c *Conn) register() error {
 			switch m.Params[1] {
 			case "LS":
 				for _, cp := range list {
-					name, _, _ := strings.Cut(cp, "=")
+					name, value, _ := strings.Cut(cp, "=")
 					offered = append(offered, name)
+					if name == "sasl" {
+						for m := range strings.SplitSeq(value, ",") {
+							mechs[strings.ToUpper(m)] = true
+						}
+					}
 				}
 				if m.Params[2] == "*" {
 					continue // more LS lines follow
@@ -100,7 +131,14 @@ func (c *Conn) register() error {
 						req = append(req, cp)
 					}
 				}
-				if c.cfg.Password != "" && slices.Contains(offered, "sasl") {
+				switch {
+				case !slices.Contains(offered, "sasl"):
+				case c.cfg.External && c.cfg.ClientCert != nil && (mechs["EXTERNAL"] || mechs[""]):
+					c.Mech = "EXTERNAL"
+				case c.cfg.Password != "":
+					c.Mech = "PLAIN"
+				}
+				if c.Mech != "" {
 					req = append(req, "sasl")
 				}
 				if len(req) == 0 {
@@ -112,8 +150,8 @@ func (c *Conn) register() error {
 				for _, cp := range list {
 					c.Caps[cp] = true
 				}
-				if c.Caps["sasl"] {
-					c.Send("AUTHENTICATE", "PLAIN")
+				if c.Caps["sasl"] && c.Mech != "" {
+					c.Send("AUTHENTICATE", c.Mech)
 				} else {
 					c.endCaps()
 				}
@@ -121,12 +159,16 @@ func (c *Conn) register() error {
 				c.endCaps()
 			}
 		case "AUTHENTICATE":
+			if c.Mech == "EXTERNAL" { // the certificate says who we are
+				c.Send("AUTHENTICATE", "+")
+				break
+			}
 			creds := "\x00" + c.cfg.User + "\x00" + c.cfg.Password
 			c.Send("AUTHENTICATE", base64.StdEncoding.EncodeToString([]byte(creds)))
 		case "903": // RPL_SASLSUCCESS
 			c.endCaps()
 		case "902", "904", "905", "906":
-			return errors.New("SASL login failed: " + last(m.Params))
+			return fmt.Errorf("%w: %s", ErrLogin, last(m.Params))
 		case "433": // nick in use
 			c.Nick += "_"
 			c.Send("NICK", c.Nick)

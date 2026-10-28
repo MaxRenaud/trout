@@ -28,7 +28,11 @@ func main() {
 	servers := flag.String("servers", "127.0.0.1:6667=#trout",
 		`networks and channels, like "troutnet:6667=#trout,#lobby;devnet:6667=#dev"`)
 	me := flag.String("user", "trout", "your nick: the one personas mention, message and answer")
+	xdccIP := flag.String("xdcc-ip", "127.0.0.1", "the address the xdcc bot puts in its DCC offers")
+	xdccPort := flag.Int("xdcc-port", 6800, "the port the xdcc bot sends files from")
 	flag.Parse()
+	first, _, _ := strings.Cut(*servers, "=")
+	go runXDCC(first, *xdccIP, *xdccPort)
 	for spec := range strings.SplitSeq(*servers, ";") {
 		addr, chans, _ := strings.Cut(spec, "=")
 		for i, nick := range personas {
@@ -96,13 +100,21 @@ func act(c *irc.Conn, chans []string, me string) {
 }
 
 // answer replies when you mention this persona or message it privately.
-// Personas only answer you, never each other, so they can't loop.
+// Personas only chat with you, never each other, so they can't loop; CTCPs
+// get answered for anyone (the integration tests log in as someone else).
 func answer(c *irc.Conn, nick, me string, m ircmsg.Message) {
-	if m.Command != "PRIVMSG" || len(m.Params) < 2 || !strings.EqualFold(m.Nick(), me) {
+	if m.Command != "PRIVMSG" || len(m.Params) < 2 {
 		return
 	}
 	target, text := m.Params[0], m.Params[1]
 	private := strings.EqualFold(target, nick)
+	if private && strings.HasPrefix(text, "\x01") && !strings.HasPrefix(text, "\x01ACTION") {
+		ctcpReply(c, m.Nick(), text) // CTCPs from anyone, like a real client
+		return
+	}
+	if !strings.EqualFold(m.Nick(), me) {
+		return
+	}
 	if !private && !strings.Contains(strings.ToLower(text), nick) {
 		return
 	}

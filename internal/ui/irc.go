@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
 
-	"github.com/MaxRenaud/trout/internal/demo"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
 )
@@ -37,25 +37,36 @@ type (
 	reconnectMsg struct{ net *state.Network }
 )
 
-// histBatch collects a chathistory batch until it ends.
+// histBatch collects a chathistory batch (or a TARGETS list, or search
+// results) until it ends.
 type histBatch struct {
-	target string
-	msgs   []ircmsg.Message
+	targets bool // draft/chathistory-targets
+	search  bool // soju.im/search
+	target  string
+	msgs    []ircmsg.Message
 }
 
 var (
 	controlCaps = []string{"soju.im/bouncer-networks", "soju.im/bouncer-networks-notify",
-		"server-time", "message-tags", "batch", "echo-message"}
+		"server-time", "message-tags", "batch", "echo-message", "soju.im/client-cert"}
 	networkCaps = []string{"soju.im/bouncer-networks", "server-time", "message-tags", "batch",
-		"echo-message", "multi-prefix", "draft/chathistory"}
+		"echo-message", "multi-prefix", "draft/chathistory", "draft/read-marker", "away-notify", "chghost", "soju.im/search"}
 )
 
 const reconnectDelay = 5 * time.Second
 
 func (a *App) dial(n *state.Network, bind string, caps []string) tea.Cmd {
-	cfg := irc.Config{Addr: a.opts.Addr, Nick: a.opts.User, User: a.opts.User, Password: a.opts.Password,
-		Caps: caps, Bind: bind, Debug: a.opts.Debug}
+	addr, useTLS, err := irc.ParseAddress(a.bnc.Address)
+	cfg := irc.Config{Addr: addr, TLS: useTLS, Pin: a.bnc.Pin, Nick: a.bnc.User, User: a.bnc.User,
+		Password: a.password, Caps: caps, Bind: bind, Debug: a.opts.Debug, Dial: a.dialer(false)}
+	if useTLS { // this computer's certificate, for logging in without the password
+		cfg.ClientCert = a.loadClientCert()
+		cfg.External = a.bnc.Login == "certificate" && !a.certFailed
+	}
 	return func() tea.Msg {
+		if err != nil {
+			return ircDownMsg{n, err}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		c, err := irc.Dial(ctx, cfg)
@@ -67,7 +78,8 @@ func (a *App) dial(n *state.Network, bind string, caps []string) tea.Cmd {
 }
 
 func (a *App) connectBouncer() tea.Cmd {
-	a.addLine(a.home.Status(), state.RoleInfo, "* Connecting to soju at "+a.opts.Addr+" as "+a.opts.User+"...")
+	a.stopped = false
+	a.addLine(a.home.Status(), state.RoleInfo, "* Connecting to the bouncer at "+a.bnc.Address+" as "+a.bnc.User+"...")
 	return a.dial(a.home, "", controlCaps)
 }
 
@@ -82,26 +94,43 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case ircUpMsg:
 		n, c := msg.net, msg.conn
+		var cmd tea.Cmd
 		if !slices.Contains(a.nets, n) { // removed while connecting
 			c.Close()
 			return nil
 		}
+		a.upAt[n] = time.Now() // for the online timer
 		if n == a.home {
 			a.control = c
-			a.addLine(n.Status(), state.RoleInfo, "* Connected to soju")
+			a.addLine(n.Status(), state.RoleInfo, "* Connected to the bouncer")
 			c.Send("BOUNCER", "LISTNETWORKS")
+			a.refreshDisabled()
+			a.pinClientCert(c)
 		} else {
 			a.conns[n] = c
-			a.addLine(n.Status(), state.RoleInfo, "* Connected to "+n.Name+" through soju")
+			a.addLine(n.Status(), state.RoleInfo, "* Connected to "+n.Name+" through the bouncer")
+			a.catchUp(n, c) // the notify list starts at the end of the MOTD, after ISUPPORT
+			if !a.isonOn {  // the notify list's poll, for networks without MONITOR
+				a.isonOn = true
+				cmd = tea.Tick(isonEvery, func(time.Time) tea.Msg { return isonTickMsg{} })
+			}
+		}
+		if a.away != "" {
+			a.sendAway(c)
 		}
 		go func() {
 			err := c.Run(func(m ircmsg.Message) { a.send(ircLineMsg{n, m}) })
 			a.send(ircDownMsg{n, err})
 		}()
+		return cmd
 	case ircLineMsg:
+		if !slices.Contains(a.nets, msg.net) { // from before switching bouncers
+			return nil
+		}
 		return a.handleIRC(msg.net, msg.m)
 	case ircDownMsg:
 		n := msg.net
+		delete(a.upAt, n)
 		if n == a.home {
 			a.control = nil
 		} else {
@@ -115,12 +144,15 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 				w.Joined, w.Nicks = false, nil
 			}
 		}
+		if n == a.home && a.stopOn(msg.err) {
+			return nil
+		}
 		a.addLine(n.Status(), state.RoleQuit, "* Disconnected ("+msg.err.Error()+"); retrying in 5 seconds")
 		return tea.Tick(reconnectDelay, func(time.Time) tea.Msg { return reconnectMsg{n} })
 	case reconnectMsg:
 		n := msg.net
 		switch {
-		case !slices.Contains(a.nets, n) || a.connFor(n) != nil:
+		case !slices.Contains(a.nets, n) || a.connFor(n) != nil || (n == a.home && a.stopped):
 		case n == a.home:
 			return a.connectBouncer()
 		default:
@@ -152,11 +184,16 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		return ""
 	}
 	nick := m.Nick()
-	isMe := strings.EqualFold(nick, n.Nick)
+	isMe := n.Same(nick, n.Nick)
 	status := n.Status()
 	line := func(w *state.Window, role state.Role, text string) { a.addLineAt(w, role, text, t) }
+	// event is a channel event that the window's Events option can send
+	// to the status window or hide.
+	event := func(w *state.Window, role state.Role, text string) {
+		a.eventLine(w, state.Line{Time: t, Role: role, Text: text})
+	}
 	mask := func() string {
-		if nuh, err := m.NUH(); err == nil && nuh.User != "" {
+		if nuh, err := m.NUH(); err == nil && nuh.User != "" && a.showAddress { // Options > Messages
 			return nick + " (" + nuh.User + "@" + nuh.Host + ")"
 		}
 		return nick
@@ -176,8 +213,40 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 			return a.bouncerNetwork(b)
 		}
 	case "PRIVMSG", "NOTICE":
+		if a.servReply(n, m) || a.ignored(n, m) || a.ctcp(n, m, t) {
+			return nil
+		}
+		if m.Command == "PRIVMSG" && !n.IsChannel(arg(0)) && a.privateTo != 0 {
+			a.privateElsewhere(n, nick, arg(0), arg(1), isMe, t) // Options > Messages
+			return nil
+		}
+		newQuery := m.Command == "PRIVMSG" && !isMe && !n.IsChannel(arg(0)) && n.Find(state.KQuery, nick) == nil
 		if w, l, ok := a.message(n, m, t); ok {
-			a.addLineAt(w, l.Role, l.Text, t)
+			if newQuery && a.whoisOnQuery && w.Kind == state.KQuery { // Options > IRC, like mIRC
+				a.sendNet(n, "WHOIS", nick)
+			}
+			if m.Command == "NOTICE" && !n.IsChannel(arg(0)) && strings.Contains(m.Source, "!") {
+				// Like mIRC, a private notice shows in the active window
+				// (or, by Options > IRC, the status window), never a window
+				// of its own; server notices go to status.
+				w = status
+				if a.noticesActive {
+					w = a.whoisWin(n)
+				}
+				if isMe { // yours, from this or another client
+					l.Text = "-> -" + arg(0) + "- " + arg(1)
+				}
+			}
+			if e, ok := a.ignoreMatch(n, m); ok && strings.Contains(e.flags, "k") {
+				l.Text = stripCodes(l.Text) // an ignore of their codes only
+			}
+			l.Time = t
+			a.addLineL(w, l)
+			a.noteURLs(w, nick, arg(1), t)
+			if w.Kind != state.KStatus && t.After(w.Latest) {
+				w.Latest = t
+			}
+			a.beepFor(w, l)
 			if w.Kind == state.KQuery && l.Role != state.RoleOwn {
 				a.lastQuery = w
 			}
@@ -193,6 +262,15 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		if v, ok := is["CHANMODES"]; ok {
 			n.ChanModes = v
 		}
+		if v, ok := is["soju.im/FILEHOST"]; ok {
+			n.FileHost = v
+		}
+		if v, ok := is["CASEMAPPING"]; ok {
+			n.CaseMapping = v
+		}
+		if _, ok := is["MONITOR"]; ok {
+			n.Monitor = true
+		}
 		line(status, state.RoleNormal, strings.Join(p[1:], " "))
 	case "JOIN":
 		ch := arg(0)
@@ -202,8 +280,14 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 				w = n.AddChannel(&state.Window{Kind: state.KChannel, Name: ch})
 			}
 			w.Joined, w.Nicks = true, nil
+			if a.nicksOnJoin { // Options > Messages: list them once NAMES is in
+				a.namesOnJoin[w] = true
+			}
 			line(w, state.RoleEvent, "* Now talking in "+ch)
 			a.sendNet(n, "MODE", ch)
+			if a.sendNet(n, "WHO", ch) { // for who's away
+				a.quietWho[whoKey(n, ch)] = true
+			}
 			a.fetchHistory(w)
 			if a.joining[strings.ToLower(ch)] {
 				delete(a.joining, strings.ToLower(ch))
@@ -211,40 +295,65 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 			}
 		} else if w != nil {
 			w.AddNick(state.Nick{Name: nick})
-			line(w, state.RoleEvent, "* Joins: "+mask())
+			event(w, state.RoleEvent, "* Joins: "+mask())
+			if isOp(w) { // Address Book > Control: auto-op and auto-voice
+				return a.controlJoin(n, w, nick, m.Source)
+			}
 		}
 	case "PART":
 		w := n.Find(state.KChannel, arg(0))
 		switch {
 		case w == nil:
+		case isMe && (a.hopping[n.Fold(w.Name)] || a.keepOpenOnPart):
+			// /hop, or Options > IRC: the window stays, like mIRC's
+			// "Keep channels open".
+			delete(a.hopping, n.Fold(w.Name))
+			w.Joined, w.Nicks = false, nil
+			line(w, state.RoleEvent, "* You left "+w.Name)
 		case isMe:
 			delete(a.history, w)
 			a.removeWindow(w)
 		case w.RemoveNick(nick):
-			line(w, state.RoleEvent, "* Parts: "+mask()+reason(1))
+			event(w, state.RoleEvent, "* Parts: "+mask()+reason(1))
 		}
 	case "KICK":
 		w := n.Find(state.KChannel, arg(0))
 		switch {
 		case w == nil:
-		case strings.EqualFold(arg(1), n.Nick):
+		case n.Same(arg(1), n.Nick):
 			w.Joined, w.Nicks = false, nil
 			line(w, state.RoleEvent, "* You were kicked from "+w.Name+" by "+nick+reason(2))
+			if a.rejoinOnKick { // Options > IRC, like mIRC
+				line(w, state.RoleEvent, "* Rejoining "+w.Name)
+				a.sendNet(n, "JOIN", w.Name)
+			}
 		default:
 			w.RemoveNick(arg(1))
 			line(w, state.RoleEvent, "* "+arg(1)+" was kicked by "+nick+reason(2))
 		}
 	case "QUIT":
+		toStatus := false // once, however many channels send it there
 		for _, w := range n.Wins {
-			if (w.Kind == state.KChannel && w.RemoveNick(nick)) || (w.Kind == state.KQuery && strings.EqualFold(w.Name, nick)) {
+			switch {
+			case w.Kind == state.KChannel && w.RemoveNick(nick):
+				if a.winOpts(w).Events == "status" {
+					toStatus = true
+				} else {
+					event(w, state.RoleQuit, "* Quits: "+mask()+reason(0))
+				}
+			case w.Kind == state.KQuery && strings.EqualFold(w.Name, nick):
 				line(w, state.RoleQuit, "* Quits: "+mask()+reason(0))
 			}
+		}
+		if toStatus {
+			line(status, state.RoleQuit, "* Quits: "+mask()+reason(0))
 		}
 	case "NICK":
 		to := arg(0)
 		if isMe {
 			n.Nick = to
 		}
+		toStatus := false // once, however many channels send it there
 		for _, w := range n.Wins {
 			switch {
 			case isMe:
@@ -256,11 +365,18 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 			case w.Kind == state.KChannel && w.NickIndex(nick) >= 0:
 				w.Nicks[w.NickIndex(nick)].Name = to
 				w.SortNicks()
-				line(w, state.RoleEvent, "* "+nick+" is now known as "+to)
+				if a.winOpts(w).Events == "status" {
+					toStatus = true
+				} else {
+					event(w, state.RoleEvent, "* "+nick+" is now known as "+to)
+				}
 			case w.Kind == state.KQuery && strings.EqualFold(w.Name, nick):
 				w.Name = to
 				line(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 			}
+		}
+		if toStatus {
+			line(status, state.RoleEvent, "* "+nick+" is now known as "+to)
 		}
 	case "MODE":
 		who := cmp.Or(nick, m.Source)
@@ -270,11 +386,14 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 			line(status, state.RoleEvent, "* "+who+" sets mode: "+change)
 		} else if w := n.Find(state.KChannel, arg(0)); w != nil {
 			applyChanModes(w, arg(1), p[min(2, len(p)):])
-			line(w, state.RoleEvent, "* "+who+" sets mode: "+change)
+			a.listModes(w, nick, arg(1), p[min(2, len(p)):], t)
+			a.protect(n, w, nick, arg(1), p[min(2, len(p)):]) // Address Book > Control
+			event(w, state.RoleEvent, "* "+who+" sets mode: "+change)
 		}
 	case "TOPIC":
 		if w := n.Find(state.KChannel, arg(0)); w != nil {
 			w.Topic = arg(1)
+			w.Topics = append(w.Topics, state.TopicChange{Text: arg(1), By: nick, At: t})
 			line(w, state.RoleEvent, "* "+nick+" changes topic to '"+arg(1)+"'")
 		}
 	case "324": // RPL_CHANNELMODEIS
@@ -293,6 +412,9 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 			when := arg(3)
 			if ts, err := strconv.ParseInt(when, 10, 64); err == nil {
 				when = time.Unix(ts, 0).Format("Mon Jan 2 15:04:05")
+				if len(w.Topics) == 0 {
+					w.Topics = []state.TopicChange{{Text: w.Topic, By: setter, At: time.Unix(ts, 0)}}
+				}
 			}
 			line(w, state.RoleEvent, "* Set by "+setter+" on "+when)
 		}
@@ -305,27 +427,93 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 	case "366": // RPL_ENDOFNAMES
 		if w := n.Find(state.KChannel, arg(1)); w != nil {
 			w.EndNames()
-		}
-	case "329", "321", "CAP", "AWAY", "ACCOUNT", "PONG":
-	case "322": // RPL_LIST
-		users, _ := strconv.Atoi(arg(2))
-		a.listRows[n] = append(a.listRows[n], demo.ChanInfo{Name: arg(1), Users: users, Topic: arg(3)})
-	case "323": // RPL_LISTEND
-		rows := a.listRows[n]
-		slices.SortFunc(rows, func(x, y demo.ChanInfo) int { return cmp.Compare(y.Users, x.Users) })
-		if l := a.listing[n]; l != nil {
-			l.setChannels(rows)
-			if len(rows) == 0 {
-				l.Rows = []string{"No channels"}
+			if a.namesOnJoin[w] {
+				delete(a.namesOnJoin, w)
+				var names []string
+				for _, nk := range w.Nicks {
+					names = append(names, nk.Prefix+nk.Name)
+				}
+				line(w, state.RoleInfo, "* Nicks "+w.Name+": "+strings.Join(names, " "))
 			}
 		}
-		delete(a.listing, n)
-		delete(a.listRows, n)
+	case "AWAY": // away-notify
+		a.awayNotify(n, nick, arg(0), t)
+	case "305", "306": // RPL_UNAWAY, RPL_NOWAWAY: setAway already said so
+		a.awayUpstream(n)
+	case "INVITE":
+		if !a.ignored(n, m) {
+			a.invitedTo[n] = arg(1) // for /join -i
+		}
+		switch {
+		case a.ignored(n, m):
+		case a.joinOnInvite: // Options > IRC, like mIRC
+			line(a.whoisWin(n), state.RoleInfo, "* "+nick+" invites you to "+arg(1)+"; joining")
+			a.join(n, arg(1))
+		default:
+			line(a.whoisWin(n), state.RoleInfo, "* "+nick+" invites you to "+arg(1)+" (/join "+arg(1)+")")
+		}
+	case "730", "731": // RPL_MONONLINE, RPL_MONOFFLINE: the notify list
+		a.monitorReply(n, m)
+	case "376", "422": // the end of the MOTD (or none): registration is done
+		line(status, state.RoleNormal, strings.Join(p[1:], " "))
+		if n != a.home {
+			a.monitor(n)     // now ISUPPORT has said whether there's MONITOR
+			if a.invisible { // Options > Messages
+				a.sendNet(n, "MODE", n.Nick, "+i")
+			}
+			// Like mIRC, the Favorites pop up when you connect; once a
+			// session, for the first network that has some.
+			if a.popFavorites && !a.popped && a.dlg == nil && len(a.favorites(n)) > 0 {
+				a.popped = true
+				a.openFavoritesFor(n)
+			}
+		}
+	case "303": // RPL_ISON: the notify list, where there's no MONITOR
+		a.isonReply(n, arg(1))
+	case "WALLOPS": // like mIRC: !nick! text, in the status window
+		line(status, state.RoleNotice, "!"+cmp.Or(nick, m.Source)+"! "+arg(0))
+	case "CHGHOST": // a new user@host, for an open query's title
+		if q := n.Find(state.KQuery, nick); q != nil && len(p) >= 2 {
+			q.Host = arg(0) + "@" + arg(1)
+		}
+	case "732", "733": // the MONITOR list, when asked
+	case "CLIENTCERT": // soju.im/client-cert
+		if n == a.home && strings.EqualFold(arg(0), "CREATE") {
+			a.clientCertPinned()
+		}
+	case "367", "346", "348", "728": // ban, invite, exception, quiet list entries
+		a.listEntry(n, m)
+	case "368", "347", "349", "729": // ...and their ends
+		a.listEnd(n, m)
+	case "MARKREAD":
+		a.markRead(n, arg(0), arg(1))
+	case "329", "321", "CAP", "ACCOUNT", "PONG":
+	case "322", "323": // RPL_LIST, RPL_LISTEND
+		a.listReply(n, m.Command, p)
+	case "263": // RPL_TRYAGAIN: rate-limited, like LIST on Rizon
+		if strings.EqualFold(arg(1), "LIST") {
+			a.listFailed(n, tryAgainText(arg(2)))
+		}
+		line(a.whoisWin(n), state.RoleInfo, "* "+strings.Join(p[1:], " "))
 	case "ERROR":
 		line(status, state.RoleQuit, "* "+arg(0))
 	case "FAIL", "WARN", "NOTE":
+		if arg(0) == "CLIENTCERT" { // the bouncer can't take certificates; say so once
+			if !a.certNoted {
+				a.certNoted = true
+				line(status, state.RoleInfo, "* The bouncer can't take a certificate login ("+lastParam(p)+"); trout keeps using the password")
+			}
+			break
+		}
 		line(status, state.RoleInfo, "* "+m.Command+" "+strings.Join(p, " "))
 	default:
+		if a.who(n, m) {
+			return nil
+		}
+		if who, text, ok := whoisLine(m); ok {
+			a.whoisReply(n, m, who, text, t)
+			return nil
+		}
 		code, err := strconv.Atoi(m.Command)
 		if err != nil || len(p) < 2 {
 			return nil
@@ -337,6 +525,34 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		line(w, state.RoleNormal, strings.Join(p[1:], " "))
 	}
 	return nil
+}
+
+// whoisReply shows one WHOIS line where you asked: the active window if
+// it's on the same network, else the status window. RPL_AWAY outside a
+// WHOIS is someone you messaged being away.
+func (a *App) whoisReply(n *state.Network, m ircmsg.Message, nick, text string, t time.Time) {
+	switch m.Command {
+	case "311", "314":
+		a.whois[n] = nick
+	case "301":
+		if !strings.EqualFold(a.whois[n], nick) {
+			a.awayNotify(n, nick, m.Params[len(m.Params)-1], t)
+			if n.Find(state.KQuery, nick) == nil {
+				a.addLineAt(a.whoisWin(n), state.RoleInfo, "* "+text, t)
+			}
+			return
+		}
+	case "318", "369":
+		delete(a.whois, n)
+	}
+	a.addLineAt(a.whoisWin(n), state.RoleNormal, text, t)
+}
+
+func (a *App) whoisWin(n *state.Network) *state.Window {
+	if a.active.Net == n {
+		return a.active
+	}
+	return n.Status()
 }
 
 // message turns a PRIVMSG or NOTICE into a line and the window it belongs
@@ -388,32 +604,42 @@ func (a *App) message(n *state.Network, m ircmsg.Message, t time.Time) (*state.W
 	switch {
 	case fromMe && l.Role == state.RoleNormal:
 		l.Role = state.RoleOwn
-	case !fromMe && !notice && mentions(text, n.Nick):
-		l.Role = state.RoleHighlight
+	case !fromMe && !notice:
+		if hit, color, beep := a.highlight(w, from, text); hit {
+			l.Role, l.NoBeep, l.Color = state.RoleHighlight, !beep, color+1
+		}
 	}
 	return w, l, true
 }
 
-func mentions(text, nick string) bool {
-	return nick != "" && strings.Contains(strings.ToLower(text), strings.ToLower(nick))
-}
-
-// batch starts or finishes a chathistory batch. History goes in front of
-// what the window already shows, skipping lines it already has.
+// batch starts or finishes a chathistory batch, which is merged into its
+// window in time order, or a TARGETS list.
 func (a *App) batch(n *state.Network, m ircmsg.Message) {
 	if len(m.Params) == 0 {
 		return
 	}
 	if id, ok := strings.CutPrefix(m.Params[0], "+"); ok {
-		if len(m.Params) >= 3 && m.Params[1] == "chathistory" {
+		switch {
+		case len(m.Params) >= 3 && m.Params[1] == "chathistory":
 			a.batches[n.ID+" "+id] = &histBatch{target: m.Params[2]}
+		case len(m.Params) >= 2 && m.Params[1] == "draft/chathistory-targets":
+			a.batches[n.ID+" "+id] = &histBatch{targets: true}
+		case len(m.Params) >= 2 && (m.Params[1] == "soju.im/search" || m.Params[1] == "search"):
+			a.batches[n.ID+" "+id] = &histBatch{search: true}
 		}
 		return
 	}
 	key := n.ID + " " + strings.TrimPrefix(m.Params[0], "-")
 	b := a.batches[key]
 	delete(a.batches, key)
-	if b == nil {
+	switch {
+	case b == nil:
+		return
+	case b.targets:
+		a.checkTargets(n, b.msgs)
+		return
+	case b.search:
+		a.searchResults(n, b.msgs)
 		return
 	}
 	kind := state.KQuery
@@ -421,35 +647,76 @@ func (a *App) batch(n *state.Network, m ircmsg.Message) {
 		kind = state.KChannel
 	}
 	w := n.Find(kind, b.target)
-	if w == nil {
+	var readAt time.Time
+	switch probe, ok := a.probing[n][strings.ToLower(b.target)]; {
+	case w != nil:
+		readAt = w.ReadAt
+	case ok: // missed private messages, from checkTargets
+		delete(a.probing[n], strings.ToLower(b.target))
+		readAt = probe
+	default:
 		return
 	}
-	type seen struct {
-		t    int64
-		text string
+	type histMsg struct {
+		m ircmsg.Message
+		t time.Time
 	}
-	have := map[seen]bool{}
-	for _, l := range w.Lines {
-		have[seen{l.Time.UnixMilli(), l.Text}] = true
-	}
-	var lines []state.Line
+	var msgs []histMsg
+	chat := false // an unread private message, not a notice or CTCP
 	for _, hm := range b.msgs {
+		if (hm.Command != "PRIVMSG" && hm.Command != "NOTICE") || a.ignored(n, hm) {
+			continue
+		}
 		t := time.Now()
 		if ok, v := hm.GetTag("time"); ok {
 			if pt, err := time.Parse(time.RFC3339Nano, v); err == nil {
 				t = pt.Local()
 			}
 		}
-		if hm.Command != "PRIVMSG" && hm.Command != "NOTICE" {
-			continue
-		}
-		if hw, l, ok := a.message(n, hm, t); ok && hw == w && !have[seen{t.UnixMilli(), l.Text}] {
-			lines = append(lines, l)
+		msgs = append(msgs, histMsg{hm, t})
+		_, _, ctcp := ctcpSplit(lastParam(hm.Params))
+		if hm.Command == "PRIVMSG" && !ctcp && t.After(readAt) && !strings.EqualFold(hm.Nick(), n.Nick) {
+			chat = true
 		}
 	}
-	w.Lines = slices.Concat(lines, w.Lines)
-	if w.Marker > 0 {
-		w.Marker += len(lines)
+	if w == nil {
+		if chat { // like a live private message, it opens a window
+			w = a.query(n, b.target, "")
+			w.ReadAt, a.history[w] = readAt, true
+		}
+	}
+	// Private notices never get a window of their own, like mIRC: the ones
+	// you hadn't read go to the status window, where they'd have shown.
+	var lines, notices []state.Line
+	for _, h := range msgs {
+		if kind == state.KQuery && h.m.Command == "NOTICE" {
+			if h.t.After(readAt) && strings.Contains(h.m.Source, "!") {
+				if _, l, ok := a.message(n, h.m, h.t); ok {
+					if strings.EqualFold(h.m.Nick(), n.Nick) {
+						l.Text = "-> -" + b.target + "- " + lastParam(h.m.Params)
+					}
+					notices = append(notices, l)
+				}
+			}
+			continue
+		}
+		if w == nil {
+			continue
+		}
+		if hw, l, ok := a.message(n, h.m, h.t); ok && hw == w {
+			lines = append(lines, l)
+			if h.t.After(w.Latest) {
+				w.Latest = h.t
+			}
+		}
+	}
+	if status := n.Status(); len(notices) > 0 && status.Merge(notices) > 0 && status != a.active {
+		status.Act = max(status.Act, state.ActMsg)
+	}
+	if w != nil {
+		w.Merge(lines)
+		a.applyRead(w)
+		a.arrived(w)
 	}
 }
 
@@ -470,29 +737,80 @@ func (a *App) bouncerNetwork(b irc.BouncerNetwork) tea.Cmd {
 		if a.active.Net == n {
 			a.activate(home)
 		}
-		a.addLine(home, state.RoleInfo, "* soju: network "+n.Name+" was removed")
+		a.addLine(home, state.RoleInfo, "* Bouncer: network "+n.Name+" was removed")
 		return nil
 	}
 	if i >= 0 {
-		n := a.nets[i]
-		if name := b.Attrs["name"]; name != "" {
-			n.Name = name
-		}
-		if st := b.Attrs["state"]; st != "" {
-			a.addLine(n.Status(), state.RoleInfo, "* soju: "+n.Name+" is "+st)
-		}
+		a.networkAttrs(a.nets[i], b.Attrs)
 		return nil
 	}
 	n := state.NewNetwork(cmp.Or(b.Attrs["name"], b.Attrs["host"], "network "+b.ID))
-	n.ID, n.Server = b.ID, b.Attrs["host"]
-	if port, err := strconv.Atoi(b.Attrs["port"]); err == nil {
+	n.ID = b.ID
+	n.Nick = cmp.Or(b.Attrs["nickname"], a.bnc.User)
+	a.nets = append(a.nets, n)
+	a.addLine(home, state.RoleInfo, "* Bouncer: found network "+n.Name+" ("+b.Attrs["host"]+")")
+	a.networkAttrs(n, b.Attrs)
+	if strings.EqualFold(a.focusNet, n.Name) {
+		a.focusNet = ""
+		a.activate(n.Status())
+	}
+	return a.dial(n, n.ID, networkCaps)
+}
+
+// networkAttrs merges soju's attributes for n, saying in its status window
+// when soju connects or disconnects. soju sends only what changed, and an
+// attribute without a value (like "error") was cleared.
+func (a *App) networkAttrs(n *state.Network, attrs map[string]string) {
+	if n.Attrs == nil {
+		n.Attrs = map[string]string{}
+	}
+	was := n.Attrs["state"]
+	for k, v := range attrs {
+		if v == "" {
+			delete(n.Attrs, k)
+		} else {
+			n.Attrs[k] = v
+		}
+	}
+	n.Name = cmp.Or(n.Attrs["name"], n.Name)
+	n.Server = cmp.Or(n.Attrs["host"], n.Server)
+	if port, err := strconv.Atoi(n.Attrs["port"]); err == nil {
 		n.Port = port
 	}
-	n.Nick = cmp.Or(b.Attrs["nickname"], a.opts.User)
-	a.nets = append(a.nets, n)
-	a.addLine(home, state.RoleInfo, "* soju: found network "+n.Name+" ("+n.Server+")")
-	a.addLine(n.Status(), state.RoleInfo, "* Connecting to "+n.Name+" through soju...")
-	return a.dial(n, n.ID, networkCaps)
+	st := n.Attrs["state"]
+	if st == was {
+		return
+	}
+	switch {
+	case st == "connecting" || st == "connected":
+		n.Disabled = false
+		if st == "connected" && a.away != "" {
+			a.awayUpstream(n) // a new connection to the network isn't away yet
+		}
+	case st == "disconnected" && was != "":
+		a.refreshDisabled() // switched off, or just dropped?
+	}
+	status := n.Status()
+	switch st {
+	case "connecting":
+		a.addLine(status, state.RoleInfo, fmt.Sprintf("* Bouncer: connecting to %s (%s:%d)...", n.Name, n.Server, n.Port))
+	case "connected":
+		a.addLine(status, state.RoleInfo, "* Bouncer: connected to "+n.Name)
+	case "disconnected":
+		// soju doesn't part the channels on our side; they come back with
+		// JOINs when it reconnects.
+		for _, w := range n.Wins {
+			if w.Kind == state.KChannel && w.Joined {
+				w.Joined, w.Nicks = false, nil
+				a.addLine(w, state.RoleQuit, "* Disconnected")
+			}
+		}
+		why := ""
+		if e := n.Attrs["error"]; e != "" {
+			why = " (" + e + ")"
+		}
+		a.addLine(status, state.RoleQuit, "* Bouncer: disconnected from "+n.Name+why)
+	}
 }
 
 // fetchHistory asks soju for a window's recent messages, once.
@@ -517,6 +835,12 @@ func (a *App) sendNet(n *state.Network, command string, params ...string) bool {
 		a.addLine(n.Status(), state.RoleInfo, "* Couldn't send: "+err.Error())
 		return false
 	}
+	// Who this trout messaged, for DCC offers you asked for. Not from
+	// echoes: the bouncer relays what your other clients send too, and
+	// their requests shouldn't make this trout download anything.
+	if command == "PRIVMSG" && len(params) > 0 && !n.IsChannel(params[0]) {
+		a.messaged[n.ID+" "+strings.ToLower(params[0])] = time.Now()
+	}
 	return true
 }
 
@@ -540,19 +864,27 @@ func (a *App) echoed(n *state.Network) bool {
 }
 
 func (a *App) privmsg(w *state.Window, target, text string) {
-	if a.sendNet(w.Net, "PRIVMSG", target, text) && !a.echoed(w.Net) {
-		a.addLine(w, state.RoleOwn, "<"+w.Net.Nick+"> "+text)
+	for _, part := range a.sendText(w.Net, "PRIVMSG", target, text, plain) {
+		if !a.echoed(w.Net) {
+			a.addLine(w, state.RoleOwn, "<"+w.Net.Nick+"> "+part)
+		}
 	}
 }
 
 // action is /me.
 func (a *App) action(w *state.Window, text string) {
+	if w.Kind == state.KChat {
+		a.chatSay(w, text, true)
+		return
+	}
 	if a.opts.Demo {
 		a.addLine(w, state.RoleAction, "* "+w.Net.Nick+" "+text)
 		return
 	}
-	if a.sendNet(w.Net, "PRIVMSG", w.Name, "\x01ACTION "+text+"\x01") && !a.echoed(w.Net) {
-		a.addLine(w, state.RoleAction, "* "+w.Net.Nick+" "+text)
+	for _, part := range a.sendText(w.Net, "PRIVMSG", w.Name, text, asAction) {
+		if !a.echoed(w.Net) {
+			a.addLine(w, state.RoleAction, "* "+w.Net.Nick+" "+part)
+		}
 	}
 }
 
@@ -561,6 +893,10 @@ func (a *App) action(w *state.Window, text string) {
 func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 	name, rest, _ := strings.Cut(line, " ")
 	rest = strings.TrimSpace(rest)
+	switches, rest := stripSwitches(name, rest)
+	if strings.EqualFold(name, "join") && strings.Contains(switches, "i") { // /join -i: the last invite
+		rest = strings.TrimSpace(a.lastInvited(w.Net) + " " + rest)
+	}
 	arg, tail, _ := strings.Cut(rest, " ")
 	n := w.Net
 	channel := ""
@@ -618,16 +954,20 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			need()
 			break
 		}
-		if a.sendNet(n, "PRIVMSG", arg, tail) && !a.echoed(n) {
-			a.addLine(w, state.RoleOwn, "-> *"+arg+"* "+tail)
+		for _, part := range a.sendText(n, "PRIVMSG", arg, tail, plain) {
+			if !a.echoed(n) {
+				a.addLine(w, state.RoleOwn, "-> *"+arg+"* "+part)
+			}
 		}
 	case "notice":
 		if tail == "" {
 			need()
 			break
 		}
-		if a.sendNet(n, "NOTICE", arg, tail) {
-			a.addLine(w, state.RoleNotice, "-> -"+arg+"- "+tail)
+		for _, part := range a.sendText(n, "NOTICE", arg, tail, plain) {
+			if !a.echoed(n) {
+				a.addLine(w, state.RoleNotice, "-> -"+arg+"- "+part)
+			}
 		}
 	case "me":
 		if w.Kind == state.KStatus || rest == "" {
@@ -641,28 +981,31 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			break
 		}
 		a.sendNet(n, "NICK", arg)
-	case "topic":
+	case "topic": // /topic [#chan] [text]
+		ch, text := a.channelArg(w, rest)
 		switch {
-		case channel == "":
+		case ch == "":
 			need()
-		case rest == "":
-			a.sendNet(n, "TOPIC", channel)
+		case text == "":
+			a.sendNet(n, "TOPIC", ch)
 		default:
-			a.sendNet(n, "TOPIC", channel, rest)
+			a.sendNet(n, "TOPIC", ch, text)
 		}
 	case "mode":
 		if channel != "" && (rest == "" || strings.ContainsRune("+-", rune(rest[0]))) {
 			rest = strings.TrimSpace(channel + " " + rest)
 		}
 		a.rawNet(n, "MODE "+rest)
-	case "kick":
+	case "kick": // /kick [#chan] nick [reason]
+		ch, more := a.channelArg(w, rest)
+		who, why, _ := strings.Cut(more, " ")
 		switch {
-		case channel == "" || arg == "":
+		case ch == "" || who == "":
 			need()
-		case tail != "":
-			a.sendNet(n, "KICK", channel, arg, tail)
+		case why != "":
+			a.sendNet(n, "KICK", ch, who, why)
 		default:
-			a.sendNet(n, "KICK", channel, arg)
+			a.sendNet(n, "KICK", ch, who)
 		}
 	case "op":
 		opMode("+o")
@@ -683,11 +1026,58 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			break
 		}
 		a.rawNet(n, rest)
-	case "clear":
-		w.Lines, w.Scroll, w.Marker = nil, 0, 0
+	case "server":
+		return a.serverCommand(w, rest)
+	case "list":
+		if rest == "" { // like mIRC, the Channels List; with filters, the server's own
+			return a.openChannelsList(true)
+		}
+		a.rawNet(n, "LIST "+rest)
+	case "away":
+		a.setAway(rest)
+	case "notify":
+		a.notifyCommand(w, rest)
+	case "amsg", "ame":
+		if rest == "" {
+			need()
+			break
+		}
+		a.allChannels(w, rest, strings.EqualFold(name, "ame"))
+	case "invite": // like mIRC, the channel defaults to this one
+		switch {
+		case arg == "" || (tail == "" && channel == ""):
+			need()
+		case tail == "":
+			a.sendNet(n, "INVITE", arg, channel)
+		default:
+			a.sendNet(n, "INVITE", arg, tail)
+		}
+	case "ctcp":
+		if tail == "" {
+			need()
+			break
+		}
+		a.sendCTCP(w, arg, tail)
+	case "ignore":
+		a.ignoreCommand(w, true, rest)
+	case "unignore":
+		if arg == "" {
+			need()
+			break
+		}
+		a.ignoreCommand(w, false, rest)
+	case "clear": // /clear [window]
+		cw := w
+		if arg != "" {
+			cw = cmp.Or(a.windowFor(n, arg), w)
+		}
+		cw.Lines, cw.Scroll, cw.Marker = nil, 0, 0
 	case "exit", "quit":
-		return tea.Quit
+		return a.quit()
 	default:
+		if cmd, ok := a.mircCommand(w, name, rest); ok {
+			return cmd
+		}
 		a.rawNet(n, strings.TrimSpace(strings.ToUpper(name)+" "+rest))
 	}
 	return nil
@@ -746,4 +1136,12 @@ func b2i(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// lastParam is a message's last parameter, usually its text.
+func lastParam(p []string) string {
+	if len(p) == 0 {
+		return ""
+	}
+	return p[len(p)-1]
 }
