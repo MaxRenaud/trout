@@ -426,3 +426,22 @@ func TestOptionKey(t *testing.T) {
 		t.Fatalf("Add It: %q", b)
 	}
 }
+
+// TestSurrogates: on Windows an emoji arrives as two UTF-16 halves, one key
+// each; they're put back together, and a lone half is dropped.
+func TestSurrogates(t *testing.T) {
+	a, n, _ := realApp(t)
+	a.activate(n.Find(state.KChannel, "#go"))
+	e := a.edit(a.active)
+	for _, r := range []rune{'f', 0xD83D, 0xDC1F, ' ', 0xD83D, 'x', 0xDC1F} {
+		a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got := string(e.Buf); got != "f🐟 x" {
+		t.Fatalf("got %q", got)
+	}
+	e.Buf, e.Pos = nil, 0
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a', 0xD83D, 0xDC1F, 'b'}, Paste: true}) // pasted at once
+	if got := string(e.Buf); got != "a🐟b" {
+		t.Fatalf("pasted: %q", got)
+	}
+}

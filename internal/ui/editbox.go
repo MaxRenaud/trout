@@ -2,6 +2,7 @@ package ui
 
 import (
 	"slices"
+	"unicode/utf16"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
@@ -56,4 +57,31 @@ func typedRunes(k tea.KeyMsg) ([]rune, bool) {
 		}
 	}
 	return rs, true
+}
+
+// joinSurrogates puts characters outside the BMP (emoji) back together on
+// Windows, where Bubble Tea hands over the console's UTF-16 one unit at a
+// time: a high surrogate waits for the low one that follows. A half on its
+// own is dropped; it isn't a character. ok is false when nothing's left.
+func (a *App) joinSurrogates(k tea.KeyMsg) (tea.KeyMsg, bool) {
+	if k.Type != tea.KeyRunes || !slices.ContainsFunc(k.Runes, utf16.IsSurrogate) && a.highHalf == 0 {
+		return k, true
+	}
+	var rs []rune
+	for _, r := range k.Runes {
+		switch {
+		case r >= 0xd800 && r < 0xdc00: // high: wait for the low half
+			a.highHalf = r
+		case r >= 0xdc00 && r < 0xe000:
+			if a.highHalf != 0 {
+				rs = append(rs, utf16.DecodeRune(a.highHalf, r))
+			}
+			a.highHalf = 0
+		default:
+			a.highHalf = 0
+			rs = append(rs, r)
+		}
+	}
+	k.Runes = rs
+	return k, len(rs) > 0
 }

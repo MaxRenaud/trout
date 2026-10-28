@@ -1,10 +1,6 @@
 package ui
 
 import (
-	"os"
-	"os/exec"
-	"runtime"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MaxRenaud/trout/internal/state"
@@ -160,21 +156,10 @@ func editPosAt(e *state.EditBox, row, rel, w int) int {
 // into the terminal. (Most terminals paste with their own key too.)
 func pasteClipboard() tea.Cmd {
 	return func() tea.Msg {
-		var cmd *exec.Cmd
-		switch {
-		case runtime.GOOS == "darwin":
-			cmd = exec.Command("pbpaste")
-		case runtime.GOOS == "windows":
-			cmd = exec.Command("powershell", "-NoProfile", "-Command", "Get-Clipboard")
-		case os.Getenv("WAYLAND_DISPLAY") != "":
-			cmd = exec.Command("wl-paste", "--no-newline")
-		default:
-			cmd = exec.Command("xclip", "-selection", "clipboard", "-o")
-		}
-		out, err := cmd.Output()
-		if err != nil || len(out) == 0 {
+		text, err := systemPaste()
+		if err != nil || text == "" {
 			return nil
 		}
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(string(out)), Paste: true}
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true}
 	}
 }

@@ -180,6 +180,7 @@ type App struct {
 	moving       []movedNet             // networks to make on a new bouncer once it's connected
 	movingTo     string                 // that bouncer's name
 	netsBatch    string                 // the batch of the bouncer's network list, while it comes
+	highHalf     rune                   // Windows: an emoji's first UTF-16 half, waiting for its second
 	local        *local.Soju            // trout's own soju, for the This Computer bouncer
 	cloudTokens  map[string]string      // without a config (tests): cloud API tokens
 	dccSeq       int
@@ -387,7 +388,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.KeyMsg:
-		cmd = a.key(msg)
+		if k, ok := a.joinSurrogates(msg); ok {
+			cmd = a.key(k)
+		}
 	case tea.MouseMsg:
 		cmd = a.mouse(msg)
 	}
