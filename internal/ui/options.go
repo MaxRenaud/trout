@@ -472,7 +472,7 @@ func shortcutsBox() *msgBox {
 		"Alt+O Alt+L Alt+J    Options, Channels List, Favorites",
 		"Alt+B Alt+N Alt+U    Address Book, Notify, URLs List   Alt+K  Colors",
 		"Ctrl+F  F3 Shift+F3  Find text: newest first, older, newer",
-		"F2                   Classic / Dark      Ctrl+C  Quit",
+		"F2                   Classic / Dark      /exit   Quit",
 		"",
 		"Nick popup: right-click, Ctrl+click or press and hold a nick.",
 		"Double-click a nick to query it, or a URL to open it.",

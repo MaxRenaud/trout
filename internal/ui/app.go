@@ -387,16 +387,19 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	s := k.String()
 	switch s {
 	case "ctrl+c":
-		// Like mIRC, Ctrl+C copies the editbox's selection; with none, it
-		// asks to quit (twice quits), as terminals expect.
-		if a.dlg == nil && len(a.menus) == 0 && a.active != nil {
-			if e := a.edit(a.active); e.SelText() != "" {
-				text := e.SelText()
-				e.Sel = false
-				return copyText(text)
-			}
+		// Like mIRC, Ctrl+C copies the editbox's selection and never
+		// quits: File > Exit and /exit do. Text selected in the message
+		// pane was copied when the mouse let go.
+		if a.dlg != nil || len(a.menus) > 0 || a.active == nil {
+			return nil
 		}
-		return a.quit()
+		if e := a.edit(a.active); e.SelText() != "" {
+			text := e.SelText()
+			e.Sel = false
+			return copyText(text)
+		}
+		a.addLine(a.active, state.RoleInfo, "* Ctrl+C copies what's selected; File > Exit or /exit quits")
+		return nil
 	case "f2":
 		a.themeIdx = (a.themeIdx + 1) % len(themes)
 		return nil
@@ -1249,9 +1252,6 @@ func clamp(v, lo, hi int) int {
 func (a *App) quit() tea.Cmd {
 	if !a.confirmExit || a.opts.Demo {
 		return tea.Quit
-	}
-	if d, ok := a.dlg.(*msgBox); ok && d.Title == "Quit" {
-		return tea.Quit // Ctrl+C twice
 	}
 	d := message("Quit trout?", "", "The bouncer keeps you on your networks.")
 	d.Title = "Quit"

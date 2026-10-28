@@ -183,8 +183,8 @@ func TestOtherOptions(t *testing.T) {
 	if b.quit() != nil {
 		t.Fatal("quitting didn't ask")
 	}
-	if _, ok := b.dlg.(*msgBox); !ok || b.quit() == nil {
-		t.Fatal("no Quit dialog, or Ctrl+C twice didn't quit")
+	if d, ok := b.dlg.(*msgBox); !ok || d.Title != "Quit" {
+		t.Fatalf("quitting opened %T, not the Quit dialog", b.dlg)
 	}
 }
 

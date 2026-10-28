@@ -231,7 +231,7 @@ trout was checked against mIRC's help (https://www.mirc.com/help/html/, October 
   (up to 5 rows, then it scrolls; Up/Down move between lines, Ctrl+Up/Down is the history;
   Enter sends each line as if typed alone). Alt+Q opens a second editbox under it. Shift
   with the arrows, Home and End, or a drag, selects; Ctrl+B/K/U/R/E put codes around the
-  selection, Ctrl+C copies it (Ctrl+C with nothing selected still asks to quit), Ctrl+X
+  selection, Ctrl+C copies it (and never quits, like mIRC: File > Exit or /exit does), Ctrl+X
   cuts, Ctrl+V pastes the system clipboard. Tab completes `*bob*`-style wildcards.
 - **Message pane:** nicks in a channel's text are hotlinks (double-click for a query,
   right-click or hold for the nick popup). Ctrl+drag copies whole lines with their codes,

@@ -143,6 +143,10 @@ func TestEditboxSelection(t *testing.T) {
 	if copied != "hi" || e.Sel {
 		t.Fatalf("Ctrl+C copied %q, selection left %v", copied, e.Sel)
 	}
+	// With nothing selected it doesn't quit, like mIRC.
+	if cmd := a.key(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd != nil || !strings.Contains(lastLine(a.active), "/exit quits") {
+		t.Fatalf("Ctrl+C with nothing selected: %q", lastLine(a.active))
+	}
 }
 
 func TestMultiLineEditbox(t *testing.T) {
