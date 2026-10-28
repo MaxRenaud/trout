@@ -131,6 +131,18 @@ func TestEditboxSelection(t *testing.T) {
 	if len(e.Buf) != 0 {
 		t.Fatalf("Ctrl+X: %q", string(e.Buf))
 	}
+
+	var copied string
+	write := writeClipboard
+	writeClipboard = func(text string) { copied = text }
+	t.Cleanup(func() { writeClipboard = write })
+	press(a, "h", "i", "shift+left", "shift+left")
+	if cmd := a.key(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd != nil {
+		cmd()
+	}
+	if copied != "hi" || e.Sel {
+		t.Fatalf("Ctrl+C copied %q, selection left %v", copied, e.Sel)
+	}
 }
 
 func TestMultiLineEditbox(t *testing.T) {

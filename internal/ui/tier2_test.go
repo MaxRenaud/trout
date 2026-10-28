@@ -152,6 +152,13 @@ func TestPrivateMessageModes(t *testing.T) {
 	if string(ch.Edit.Buf) != "/msg dave " {
 		t.Fatalf("Tab replies with %q", string(ch.Edit.Buf))
 	}
+
+	// An open query still gets its own messages, both ways.
+	q := n.Add(&state.Window{Kind: state.KQuery, Name: "erin"})
+	feed(":max!m@h PRIVMSG erin :hi", ":erin!e@h PRIVMSG max :yo")
+	if got := lineTexts(q); len(got) < 2 || !strings.Contains(got[len(got)-2], "hi") || !strings.Contains(got[len(got)-1], "yo") {
+		t.Fatalf("the erin query got %q", got)
+	}
 }
 
 func TestOtherOptions(t *testing.T) {

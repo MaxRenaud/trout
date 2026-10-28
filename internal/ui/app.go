@@ -173,6 +173,7 @@ type App struct {
 	messaged     map[string]time.Time // whom you last messaged, by network ID + " " + nick
 	transfers    []*transfer
 	chats        []*dccChat
+	waiting      []func(a *App) tea.Cmd // dialogs to open once nothing is (whenFree)
 	dccSeq       int
 
 	urls         []seenURL                    // URLs List
@@ -373,6 +374,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		cmd = a.mouse(msg)
 	}
+	cmd = tea.Batch(cmd, a.openWaiting())
 	if t := "trout - [" + a.winTitle(a.active) + "]"; t != a.title {
 		a.title = t
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
@@ -389,8 +391,9 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		// asks to quit (twice quits), as terminals expect.
 		if a.dlg == nil && len(a.menus) == 0 && a.active != nil {
 			if e := a.edit(a.active); e.SelText() != "" {
+				text := e.SelText()
 				e.Sel = false
-				return copyText(e.SelText())
+				return copyText(text)
 			}
 		}
 		return a.quit()

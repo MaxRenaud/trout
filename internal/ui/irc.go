@@ -216,8 +216,14 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		if a.servReply(n, m) || a.ignored(n, m) || a.ctcp(n, m, t) {
 			return nil
 		}
-		if m.Command == "PRIVMSG" && !n.IsChannel(arg(0)) && a.privateTo != 0 {
-			a.privateElsewhere(n, nick, arg(0), arg(1), isMe, t) // Options > Messages
+		peer := nick
+		if isMe {
+			peer = arg(0)
+		}
+		// Options > Messages, for people you don't already have a query
+		// window with.
+		if m.Command == "PRIVMSG" && !n.IsChannel(arg(0)) && a.privateTo != 0 && n.Find(state.KQuery, peer) == nil {
+			a.privateElsewhere(n, nick, arg(0), arg(1), isMe, t)
 			return nil
 		}
 		newQuery := m.Command == "PRIVMSG" && !isMe && !n.IsChannel(arg(0)) && n.Find(state.KQuery, nick) == nil

@@ -121,21 +121,26 @@ func (a *App) selectedText() string {
 // terminal's OSC 52 clipboard sequence instead.
 func copyText(text string) tea.Cmd {
 	return func() tea.Msg {
-		var cmd *exec.Cmd
-		switch {
-		case runtime.GOOS == "darwin":
-			cmd = exec.Command("pbcopy")
-		case runtime.GOOS == "windows":
-			cmd = exec.Command("clip")
-		case os.Getenv("WAYLAND_DISPLAY") != "":
-			cmd = exec.Command("wl-copy")
-		default:
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		}
-		cmd.Stdin = strings.NewReader(text)
-		_ = cmd.Run()
+		writeClipboard(text)
 		return nil
 	}
+}
+
+// writeClipboard is copyText's clipboard; tests replace it.
+var writeClipboard = func(text string) {
+	var cmd *exec.Cmd
+	switch {
+	case runtime.GOOS == "darwin":
+		cmd = exec.Command("pbcopy")
+	case runtime.GOOS == "windows":
+		cmd = exec.Command("clip")
+	case os.Getenv("WAYLAND_DISPLAY") != "":
+		cmd = exec.Command("wl-copy")
+	default:
+		cmd = exec.Command("xclip", "-selection", "clipboard")
+	}
+	cmd.Stdin = strings.NewReader(text)
+	_ = cmd.Run()
 }
 
 // selectedLines is every line the selection touches, as received: color

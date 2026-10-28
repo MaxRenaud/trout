@@ -35,6 +35,9 @@ var dccModes = []string{"ask", "auto", "ignore"}
 // to count as one you asked for (/msg Bot xdcc send #5).
 const askedWithin = 5 * time.Minute
 
+// errCancelled ends a download you stopped.
+var errCancelled = errors.New("cancelled")
+
 // transfer is one DCC download.
 type transfer struct {
 	net        *state.Network
@@ -46,7 +49,8 @@ type transfer struct {
 	size       int64  // 0 if not said
 	from, got  int64  // resumed from, and received so far
 	started    time.Time
-	resuming   bool // sent DCC RESUME, waiting for DCC ACCEPT
+	ended      time.Time // when it failed or finished
+	resuming   bool      // sent DCC RESUME, waiting for DCC ACCEPT
 	done       bool
 	err        error
 	cancel     context.CancelFunc
@@ -106,11 +110,13 @@ func (a *App) dccOffer(n *state.Network, m ircmsg.Message, args string, t time.T
 		return
 	}
 	tr := &transfer{net: n, nick: nick, trusted: a.dccTrusted(m.Source), file: file, addr: net.JoinHostPort(ip.String(), port), port: port, size: size}
-	if a.dccWarn {
-		a.openDialog(a.dccPrivacyBox(tr, ip))
-		return
-	}
-	a.later(a.dccDecide(tr, ip))
+	a.whenFree(func(a *App) tea.Cmd {
+		if a.dccWarn {
+			a.openDialog(a.dccPrivacyBox(tr, ip))
+			return nil
+		}
+		return a.dccDecide(tr, ip)
+	})
 }
 
 // parseDCCSend reads `filename ip port size [token]`; the file name may
@@ -191,11 +197,12 @@ func (a *App) dccDecide(tr *transfer, ip net.IP) tea.Cmd {
 		return nil
 	}
 	// Asked for: you messaged them just now (XDCC), or it's the same file
-	// from the same sender after a failed try, which senders often re-offer.
-	asked := time.Since(a.messaged[tr.net.ID+" "+strings.ToLower(tr.nick)]) < askedWithin ||
-		slices.ContainsFunc(a.transfers, func(o *transfer) bool {
-			return o.err != nil && o.net == tr.net && strings.EqualFold(o.nick, tr.nick) && o.file == tr.file
-		})
+	// from the same sender just after a failed try, which senders often
+	// re-offer. One you cancelled isn't asked for again.
+	asked := time.Since(a.messaged[tr.net.ID+" "+strings.ToLower(tr.nick)]) < askedWithin
+	if o := a.earlierTry(tr); o != nil && !errors.Is(o.err, errCancelled) && time.Since(o.ended) < askedWithin {
+		asked = true
+	}
 	if !localAddr(ip) && (a.dccGet == 1 || tr.trusted || (a.dccAutoAsked && asked)) {
 		return a.dccStart(tr)
 	}
@@ -221,7 +228,7 @@ func (a *App) dccDecide(tr *transfer, ip net.IP) tea.Cmd {
 	if localAddr(ip) {
 		d.Lines = append(d.Lines, "", "Careful: it points at "+ip.String()+", on this computer or your",
 			"own network. Only accept if you expect that.")
-		d.Sel = 1
+		d.Sel = d.Cancel
 	}
 	d.OnClose = func(a *App, button int) tea.Cmd {
 		switch d.Buttons[button] {
@@ -242,9 +249,10 @@ func (a *App) dccDecide(tr *transfer, ip net.IP) tea.Cmd {
 }
 
 // dccTarget picks where tr goes in the download folder when nobody's
-// asked: a partial file of the same name is resumed, a complete one isn't
-// overwritten (a new name instead). It notes the file that's there, if
-// any, for the get dialog's Resume / Overwrite / Rename.
+// asked: what an earlier try at it from the same sender left is resumed,
+// any other file of that name is kept (a new name instead: it may have
+// nothing to do with the offer). It notes the file that's there, if any,
+// for the get dialog's Resume / Overwrite / Rename.
 func (a *App) dccTarget(tr *transfer) error {
 	name := safeName(tr.file)
 	dir, err := a.dccFolder(name) // Options > DCC > Folders
@@ -259,17 +267,32 @@ func (a *App) dccTarget(tr *transfer) error {
 	}
 	for i := 1; tr.renamed == ""; i++ { // the first free "name (n).ext"
 		path := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
-		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		switch _, err := os.Stat(path); {
+		case errors.Is(err, os.ErrNotExist):
 			tr.renamed = path
+		case err != nil:
+			return err
 		}
 	}
-	switch {
-	case tr.existing < 0:
-		tr.path = tr.base
-	case tr.existing < tr.size:
-		tr.path, tr.from = tr.base, tr.existing
-	default:
+	tr.path = tr.base
+	if tr.existing >= 0 {
 		tr.path = tr.renamed
+	}
+	if o := a.earlierTry(tr); o != nil {
+		if info, err := os.Stat(o.path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() < tr.size {
+			tr.path, tr.from = o.path, info.Size()
+		}
+	}
+	return nil
+}
+
+// earlierTry is the latest download of the same file from the same
+// sender that didn't finish, or nil.
+func (a *App) earlierTry(tr *transfer) *transfer {
+	for _, o := range slices.Backward(a.transfers) {
+		if o.err != nil && o.net == tr.net && strings.EqualFold(o.nick, tr.nick) && o.file == tr.file {
+			return o
+		}
 	}
 	return nil
 }
@@ -320,7 +343,7 @@ func (a *App) dccGo(tr *transfer) tea.Cmd {
 	return func() tea.Msg {
 		got, err := download(ctx, dial, timeout, addr, path, from, size, func(got int64) { send(dccProgressMsg{tr, got}) })
 		if ctx.Err() != nil {
-			err = errors.New("cancelled")
+			err = errCancelled
 		}
 		return dccDoneMsg{tr, got, err}
 	}
@@ -398,7 +421,7 @@ func (a *App) dccUpdate(msg tea.Msg) {
 		tr.got, tr.lastAt = msg.got, time.Now()
 	case dccDoneMsg:
 		tr := msg.t
-		tr.got, tr.done, tr.err = msg.got, true, msg.err
+		tr.got, tr.done, tr.err, tr.ended = msg.got, true, msg.err, time.Now()
 		if tr.win != nil && tr.win != a.active {
 			tr.win.Act = state.ActMsg
 		}
@@ -440,7 +463,7 @@ func (a *App) cancelTransfer(tr *transfer) {
 	case tr.cancel != nil:
 		tr.cancel()
 	default:
-		tr.done, tr.err, tr.resuming = true, errors.New("cancelled"), false
+		tr.done, tr.err, tr.resuming, tr.ended = true, errCancelled, false, time.Now()
 	}
 }
 

@@ -76,7 +76,7 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 		if localAddr(ip) {
 			d.Lines = append(d.Lines, "", "Careful: it points at "+ip.String()+", on this computer or your",
 				"own network. Only accept if you expect that.")
-			d.Sel = 1
+			d.Sel = d.Cancel
 		}
 		d.OnClose = func(a *App, button int) tea.Cmd {
 			if button != 0 {
@@ -88,7 +88,10 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 		a.openDialog(d)
 		return nil
 	}
-	if a.dccWarn {
+	a.whenFree(func(a *App) tea.Cmd {
+		if !a.dccWarn {
+			return decide(a)
+		}
 		d := a.dccPrivacyBox(&transfer{net: n, nick: nick, file: "a chat"}, ip)
 		d.Lines[0] = nick + " on " + n.Name + " wants to chat with you over DCC."
 		d.OnClose = func(a *App, button int) tea.Cmd {
@@ -105,9 +108,8 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 			return nil
 		}
 		a.openDialog(d)
-		return
-	}
-	a.later(decide(a))
+		return nil
+	})
 }
 
 // chatStart opens the =nick window and connects.
@@ -117,6 +119,8 @@ func (a *App) chatStart(c *dccChat, focus bool) tea.Cmd {
 	if c.win == nil {
 		c.win = n.Add(&state.Window{Kind: state.KChat, Name: "=" + c.nick, Host: c.addr})
 	}
+	// A new chat in an old =nick window replaces the one it showed.
+	a.chatClose(c.win)
 	a.chats = append(a.chats, c)
 	if focus {
 		a.activate(c.win)
@@ -166,6 +170,9 @@ func (a *App) chatUpdate(msg tea.Msg) {
 		a.beepFor(c.win, l)
 	case chatDownMsg:
 		c := msg.c
+		if c.conn != nil {
+			c.conn.Close()
+		}
 		c.conn = nil
 		if a.chatOpen(c) {
 			a.addLine(c.win, state.RoleQuit, "* DCC chat with "+c.nick+" ended")
@@ -173,7 +180,11 @@ func (a *App) chatUpdate(msg tea.Msg) {
 	}
 }
 
-func (a *App) chatOpen(c *dccChat) bool { return c.win != nil && slices.Contains(c.net.Wins, c.win) }
+// chatOpen reports whether c still has its window: it hasn't closed, and
+// no newer chat has taken it over.
+func (a *App) chatOpen(c *dccChat) bool {
+	return slices.Contains(a.chats, c) && c.win != nil && slices.Contains(c.net.Wins, c.win)
+}
 
 // chatFor is the chat a =nick window shows.
 func (a *App) chatFor(w *state.Window) *dccChat {
@@ -205,9 +216,16 @@ func (a *App) chatSay(w *state.Window, text string, action bool) {
 	}
 }
 
-// chatClose ends a chat when its window closes.
+// chatClose ends the chat a window shows, when it closes or a new one
+// takes it over.
 func (a *App) chatClose(w *state.Window) {
-	if c := a.chatFor(w); c != nil && c.conn != nil {
-		c.conn.Close()
-	}
+	a.chats = slices.DeleteFunc(a.chats, func(c *dccChat) bool {
+		if c.win != w {
+			return false
+		}
+		if c.conn != nil {
+			c.conn.Close()
+		}
+		return true
+	})
 }

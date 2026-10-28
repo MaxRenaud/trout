@@ -25,6 +25,28 @@ func (a *App) openDialog(d modal) {
 	a.dlg = d
 }
 
+// whenFree runs open, which may open a dialog, now if no dialog or menu
+// is open, or else once they've closed: something from the network (a
+// DCC offer) mustn't replace the dialog you're typing in.
+func (a *App) whenFree(open func(a *App) tea.Cmd) {
+	if a.dlg == nil && len(a.menus) == 0 {
+		a.later(open(a))
+		return
+	}
+	a.waiting = append(a.waiting, open)
+}
+
+// openWaiting runs what whenFree held back, now that nothing's open.
+func (a *App) openWaiting() tea.Cmd {
+	var cmds []tea.Cmd
+	for a.dlg == nil && len(a.menus) == 0 && len(a.waiting) > 0 {
+		open := a.waiting[0]
+		a.waiting = a.waiting[1:]
+		cmds = append(cmds, open(a))
+	}
+	return tea.Batch(cmds...)
+}
+
 // drawModal draws the open dialog's frame, title bar and close box
 // centered on screen, then lets the dialog fill it in.
 func (a *App) drawModal(c *Canvas) {

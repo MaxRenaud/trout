@@ -224,6 +224,9 @@ type ignoreEntry struct {
 
 func parseIgnore(s string) ignoreEntry {
 	f := strings.Fields(s)
+	if len(f) == 0 { // a blank entry in a hand-edited config.toml
+		return ignoreEntry{}
+	}
 	e := ignoreEntry{mask: ignoreMask(f[0]), flags: "pcntid"}
 	for _, x := range f[1:] {
 		if ts, ok := strings.CutPrefix(x, "until="); ok {
@@ -276,8 +279,8 @@ func (a *App) ignoreMatch(n *state.Network, m ircmsg.Message) (ignoreEntry, bool
 	}
 	for _, s := range a.netList(listIgnore, n) {
 		e := parseIgnore(s)
-		if !e.until.IsZero() && time.Now().After(e.until) {
-			continue // a timed ignore that's run out
+		if e.mask == "" || !e.until.IsZero() && time.Now().After(e.until) {
+			continue // blank, or a timed ignore that's run out
 		}
 		if wildMatch(e.mask, src) {
 			return e, true

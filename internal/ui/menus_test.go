@@ -118,6 +118,13 @@ func TestIgnoreAndCTCP(t *testing.T) {
 	if lastLine(ch) != "<spammer> back" {
 		t.Fatal("unignore didn't let them through")
 	}
+	// Blank entries, as a hand-edited config.toml might have, ignore no one.
+	a.listMap(listIgnore)[n.Name] = []string{"", "  "}
+	feed(":spammer!s@h PRIVMSG #go :still here")
+	if lastLine(ch) != "<spammer> still here" {
+		t.Fatal("a blank ignore entry hid a message")
+	}
+	a.listMap(listIgnore)[n.Name] = nil
 
 	statusBefore := len(n.Status().Lines)
 	feed(":alice!a@h PRIVMSG max :\x01VERSION\x01")
@@ -245,9 +252,10 @@ func TestDCCOffer(t *testing.T) {
 		t.Fatal("closing the Get window didn't close it")
 	}
 
-	// The sender re-offers after a failed try, much later: resume, no dialog.
+	// The sender re-offers just after a failed try, long after you
+	// messaged them: resume, no dialog.
 	tr := a.transfers[0]
-	tr.done, tr.err = true, errors.New("connection reset by peer")
+	tr.done, tr.err, tr.ended = true, errors.New("connection reset by peer"), time.Now()
 	os.WriteFile(tr.path, make([]byte, 100), 0o644)
 	clear(a.messaged)
 	feed(":bot!b@h PRIVMSG max :\x01DCC SEND pack.bin 134744072 6800 1024\x01")
@@ -259,6 +267,118 @@ func TestDCCOffer(t *testing.T) {
 	feed(offer)
 	if a.dlg != nil || !strings.Contains(lastLine(n.Status()), "Ignored pack.bin") {
 		t.Fatal("Ignore all still asked")
+	}
+}
+
+// TestDCCOfferSafety covers offers that mustn't harm files or interrupt:
+// a LAN offer of a file that's there focuses Decline, an offer you
+// asked for doesn't resume into someone else's file, a folder trout
+// can't look in fails instead of hanging, an offer waits for the open
+// dialog, and a cancelled download asks again.
+func TestDCCOfferSafety(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn = false
+	a.downloadDir = t.TempDir()
+	os.WriteFile(filepath.Join(a.downloadDir, "notes.txt"), make([]byte, 10), 0o644)
+
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND notes.txt 3232235777 6800 1024\x01") // 192.168.1.1
+	d, ok := a.dlg.(*msgBox)
+	if !ok || d.Buttons[d.Sel] != "Decline" {
+		t.Fatalf("a LAN offer of a file that's there focuses %v", d)
+	}
+	a.dlg.key(a, "esc")
+
+	a.messaged[n.ID+" bot"] = time.Now()
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND notes.txt 134744072 6800 1024\x01") // 8.8.8.8
+	if a.dlg != nil || len(a.transfers) != 1 {
+		t.Fatalf("an offer you asked for: dialog %T, transfers %d", a.dlg, len(a.transfers))
+	}
+	tr := a.transfers[0]
+	if tr.resuming || tr.from != 0 || tr.path != filepath.Join(a.downloadDir, "notes (1).txt") {
+		t.Fatalf("an offer resumed into a file trout didn't start: %q from %d", tr.path, tr.from)
+	}
+	for tr.cancel == nil {
+		time.Sleep(time.Millisecond) // dccGo runs in the background
+	}
+	a.closeWindow(tr.win)
+	a.Update(dccDoneMsg{tr, 0, errCancelled}) // as dccGo reports it
+
+	// You cancelled it: the sender's re-offer asks.
+	clear(a.messaged)
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND notes.txt 134744072 6800 1024\x01")
+	if _, ok := a.dlg.(*msgBox); !ok {
+		t.Fatal("a re-offer of a download you cancelled didn't ask")
+	}
+	a.dlg.key(a, "esc")
+	// A failed one, long ago, asks too.
+	tr.err, tr.ended = errors.New("connection reset by peer"), time.Now().Add(-time.Hour)
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND notes.txt 134744072 6800 1024\x01")
+	if _, ok := a.dlg.(*msgBox); !ok {
+		t.Fatal("a re-offer long after a failure didn't ask")
+	}
+	a.dlg.key(a, "esc")
+
+	// An offer while you're in a dialog waits for it to close.
+	a.openSetAway()
+	open := a.dlg
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND other.bin 134744072 6800 1024\x01")
+	if open == nil || a.dlg != open {
+		t.Fatalf("a DCC offer replaced the open dialog with %T", a.dlg)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if g, ok := a.dlg.(*msgBox); !ok || g.Title != "DCC Get" {
+		t.Fatalf("after the dialog closed, %T opened, not the offer", a.dlg)
+	}
+	a.dlg.key(a, "esc")
+
+	// A folder trout can't look in: an error, not a hang.
+	locked := filepath.Join(t.TempDir(), "locked")
+	os.Mkdir(locked, 0o700)
+	os.Chmod(locked, 0o600)
+	t.Cleanup(func() { os.Chmod(locked, 0o700) })
+	a.downloadDir = locked
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND x.bin 134744072 6800 1024\x01")
+	if !strings.Contains(lastLine(n.Status()), "Can't get x.bin") {
+		t.Fatalf("a folder trout can't search: %q", lastLine(n.Status()))
+	}
+}
+
+// TestChatReoffer: a second chat from the same nick takes over the =nick
+// window, so typing reaches it and the first one is closed.
+func TestChatReoffer(t *testing.T) {
+	a, n, _ := realApp(t)
+	first, firstFar := net.Pipe()
+	c1 := &dccChat{net: n, nick: "bob", addr: "8.8.8.8:5000"}
+	a.chatStart(c1, false)
+	c1.conn = first
+	c2 := &dccChat{net: n, nick: "bob", addr: "8.8.8.8:5001"}
+	a.chatStart(c2, false)
+	if c2.win != c1.win || a.chatFor(c2.win) != c2 {
+		t.Fatal("the new chat didn't take over =bob")
+	}
+	if _, err := firstFar.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the old chat's connection is still open")
+	}
+	before := len(c2.win.Lines)
+	a.chatUpdate(chatDownMsg{c1, nil}) // its reader ending
+	if len(c2.win.Lines) != before {
+		t.Fatalf("the old chat's end showed in =bob: %q", lastLine(c2.win))
+	}
+	second, secondFar := net.Pipe()
+	c2.conn = second
+	got := make(chan string, 1)
+	go func() {
+		b := make([]byte, 64)
+		k, _ := secondFar.Read(b)
+		got <- string(b[:k])
+	}()
+	a.chatSay(c2.win, "hi again", false)
+	if s := <-got; s != "hi again\n" {
+		t.Fatalf("the new chat got %q", s)
+	}
+	a.closeWindow(c2.win)
+	if len(a.chats) != 0 {
+		t.Fatalf("closing =bob left %d chats", len(a.chats))
 	}
 }
 
