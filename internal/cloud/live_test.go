@@ -10,10 +10,12 @@ package cloud
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +41,12 @@ func providers(t *testing.T) []Provider {
 	}
 	if tok := env["DO_TOKEN"]; tok != "" {
 		ps = append(ps, NewDigitalOcean(tok))
+	}
+	if p := env["GCP_PROJECT"]; p != "" {
+		ps = append(ps, NewGCloud(p))
+	}
+	if only := os.Getenv("TROUT_CLOUD"); only != "" { // just one: hetzner, digitalocean, gcloud
+		ps = slices.DeleteFunc(ps, func(p Provider) bool { return p.ID() != only })
 	}
 	return ps
 }
@@ -87,7 +95,7 @@ func TestCloudServer(t *testing.T) {
 			for deadline := time.Now().Add(3 * time.Minute); ; time.Sleep(3 * time.Second) {
 				out, err = exec.Command("ssh", "-i", filepath.Join("..", "..", "tmp", "pve_ed25519"), "-o", "BatchMode=yes",
 					"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "ConnectTimeout=5", "-o", "LogLevel=ERROR",
-					"root@"+s.IPv4, "--", "id -u; . /etc/os-release; echo $PRETTY_NAME; uname -m").CombinedOutput()
+					cmp.Or(s.User, "root")+"@"+s.IPv4, "--", "sudo -n id -u; . /etc/os-release; echo $PRETTY_NAME; uname -m").CombinedOutput()
 				if err == nil || time.Now().After(deadline) {
 					break
 				}

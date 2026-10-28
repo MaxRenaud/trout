@@ -43,6 +43,9 @@ func TestCloudBouncer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if home, err := os.UserHomeDir(); err == nil { // gcloud's login, before installApp moves HOME
+		t.Setenv("CLOUDSDK_CONFIG", filepath.Join(home, ".config", "gcloud"))
+	}
 	soju := map[string][2]string{}
 	for _, arch := range []string{"amd64", "arm64"} { // before installApp moves HOME
 		s, c, err := install.FindBinaries(arch)
@@ -51,8 +54,11 @@ func TestCloudBouncer(t *testing.T) {
 		}
 		soju[arch] = [2]string{s, c}
 	}
-	for i, id := range []string{"hetzner", "digitalocean"} {
-		tok := env[map[string]string{"hetzner": "HCLOUD_TOKEN", "digitalocean": "DO_TOKEN"}[id]]
+	for i, id := range []string{"hetzner", "digitalocean", "gcloud"} {
+		if only := os.Getenv("TROUT_CLOUD"); only != "" && only != id {
+			continue
+		}
+		tok := env[map[string]string{"hetzner": "HCLOUD_TOKEN", "digitalocean": "DO_TOKEN", "gcloud": "GCP_PROJECT"}[id]]
 		t.Run(id, func(t *testing.T) { // not parallel: installApp sets HOME
 			a, _ := installApp(t, &fakeServer{})
 			a.hooks = &installHooks{
@@ -114,7 +120,7 @@ func TestCloudBouncer(t *testing.T) {
 					}
 				case <-time.After(2 * time.Second):
 					out, _ := exec.Command("ssh", append(ssh.Options, ssh.Host, "--",
-						"/usr/local/bin/sojuctl -config /etc/soju/config user run max channel status -network Libera")...).CombinedOutput()
+						"sudo -n /usr/local/bin/sojuctl -config /etc/soju/config user run max channel status -network Libera")...).CombinedOutput()
 					moved = strings.Contains(string(out), "#go")
 					if !moved && time.Now().After(deadline) {
 						t.Fatalf("no #go on the new bouncer:\n%s\n%s", out, strings.Join(lineTexts(a.home.Status()), "\n"))

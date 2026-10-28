@@ -20,7 +20,7 @@ import (
 
 // Provider is one cloud.
 type Provider interface {
-	ID() string   // "hetzner", "digitalocean": config.toml's and the credentials file's
+	ID() string   // "hetzner", "digitalocean", "gcloud": config.toml's and the credentials file's
 	Name() string // for people
 	Regions(ctx context.Context) ([]Region, error)
 	// Create makes a server and returns once it's running with a public
@@ -52,6 +52,7 @@ func (r Region) Price() string {
 type Server struct {
 	ID   string
 	IPv4 string
+	User string // who ssh logs in as; root when empty
 }
 
 // Fingerprint is an OpenSSH public key's MD5 fingerprint, aa:bb:..., the

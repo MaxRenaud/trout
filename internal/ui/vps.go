@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -27,20 +28,27 @@ import (
 // as root. The server stays yours to delete (Bouncers > Remove).
 
 // whereOptions are the wizard's first choice.
-var whereOptions = []string{"My own server (over SSH)", "Hetzner Cloud", "DigitalOcean"}
+var whereOptions = []string{"My own server (over SSH)", "Hetzner Cloud", "DigitalOcean", "Google Cloud"}
 
 var whereNotes = []string{
 	"A Linux server you can already SSH into: trout installs soju there.",
 	"A new server at Hetzner, billed by the hour by Hetzner. From about $8/month.",
 	"A new droplet at DigitalOcean, billed by DigitalOcean. From $4/month.",
+	"The free tier's e2-micro, through your gcloud login and project; Google bills about $3.65/month for its IPv4.",
 }
+
+// whereIDs are whereOptions' providers.
+var whereIDs = []string{"", "hetzner", "digitalocean", "gcloud"}
 
 func (a *App) provider(id, token string) cloud.Provider {
 	if a.hooks != nil && a.hooks.cloud != nil {
 		return a.hooks.cloud(id, token)
 	}
-	if id == "hetzner" {
+	switch id {
+	case "hetzner":
 		return cloud.NewHetzner(token)
+	case "gcloud":
+		return cloud.NewGCloud(token) // the "token" is the project, gcloud's own if empty
 	}
 	return cloud.NewDigitalOcean(token)
 }
@@ -101,9 +109,9 @@ func (a *App) cloudRemote(host string) remote {
 
 // chooseCloud goes on with the provider picked: its token, then regions.
 func (w *installWizard) chooseCloud(a *App) tea.Cmd {
-	id := []string{"", "hetzner", "digitalocean"}[w.where]
+	id := whereIDs[w.where]
 	w.provID = id
-	if tok := a.cloudToken(id); tok != "" {
+	if tok := a.cloudToken(id); tok != "" || id == "gcloud" { // gcloud has its own login
 		return w.loadRegions(a, tok)
 	}
 	return w.askToken(a, "")
@@ -187,7 +195,9 @@ func (w *installWizard) cloudPhase(a *App, m instPhaseMsg) (tea.Cmd, bool) {
 		case len(m.regions) == 0:
 			return w.fail(w.prov.Name() + " has nowhere to make a server just now."), true
 		}
-		a.saveCloudToken(w.provID, w.token)
+		if w.provID != "gcloud" {
+			a.saveCloudToken(w.provID, w.token)
+		}
 		w.regions, w.region, w.step = m.regions, 0, instRegion
 		return nil, true
 	case "create":
@@ -201,7 +211,7 @@ func (w *installWizard) cloudPhase(a *App, m instPhaseMsg) (tea.Cmd, bool) {
 		if a.hooks == nil { // a recycled IP's old host key isn't this server's
 			exec.Command("ssh-keygen", "-R", m.server.IPv4).Run()
 		}
-		w.typed = "root@" + m.server.IPv4
+		w.typed = cmp.Or(m.server.User, "root") + "@" + m.server.IPv4
 		return w.start(a), true
 	case "deleted":
 		if m.err != nil {

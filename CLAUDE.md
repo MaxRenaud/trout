@@ -51,7 +51,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
-- `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens):
+- `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens) or
+  Google Cloud (the gcloud command: free e2-micro, reserved IPv4, `trout-bouncer` firewall rule):
   regions with the cheapest plan and price, create with your SSH key, delete. `ui/vps.go`
   puts it in the setup wizard, then hands the server to the same install, as root.
 - `internal/local`: trout's own soju for the This Computer bouncer, run while trout is
@@ -119,7 +120,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   user it deletes afterwards. With `-tags cloud` (tokens in `tmp/cloud.env`),
   `cloud/live_test.go` lists regions and makes and deletes a server per provider, and
   `ui/cloud_test.go` runs the whole wizard on one, then deletes it from Bouncers. Check
-  nothing's left at either provider afterwards; only touch what trout made.
+  nothing's left at any provider afterwards (Google: instances, addresses, disks, the
+  `trout-bouncer` firewall rule), and only touch what trout made. `TROUT_CLOUD=gcloud`
+  runs one provider.
 - `local/local_test.go` and `ui/localbnc_test.go` run the real soju for this computer
   (skipped until `dev/build-soju` has built it), in a short folder under /tmp: Unix
   socket paths can't be long.
@@ -127,6 +130,6 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 
 ## Not built yet
 
-Google Cloud (through gcloud) for a bouncer server, and publishing releases (GitHub
+Publishing releases (GitHub
 releases and the Homebrew tap wait until trout is public; `.goreleaser.yaml` has release
 disabled). Lock was skipped. See `docs/architecture.md` and `tmp/plan.md`.

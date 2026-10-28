@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -100,5 +101,29 @@ func TestFingerprint(t *testing.T) {
 	}
 	if _, err := Fingerprint("not a key"); err == nil {
 		t.Fatal("no error for junk")
+	}
+}
+
+// TestGCloudCleansUp: when the VM can't be made after its IPv4 was
+// reserved, the address is released, not left billing unattached.
+func TestGCloudCleansUp(t *testing.T) {
+	var ran []string
+	g := &GCloud{Project: "p", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		cmd := strings.Join(args[:3], " ")
+		ran = append(ran, cmd)
+		switch cmd {
+		case "compute addresses create":
+			return []byte("192.0.2.9\n"), nil
+		case "compute instances create":
+			return nil, errors.New("gcloud compute instances: quota exceeded")
+		}
+		return nil, nil
+	}}
+	_, err := g.Create(context.Background(), Region{ID: "us-west1-b", Plan: "e2-micro", Image: "debian-13"}, "trout-x", "ssh-ed25519 AAAA")
+	if err == nil || !strings.Contains(err.Error(), "quota") {
+		t.Fatalf("got %v", err)
+	}
+	if !slices.Contains(ran, "compute addresses delete") {
+		t.Fatalf("the address wasn't released: %q", ran)
 	}
 }

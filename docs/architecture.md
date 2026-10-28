@@ -319,8 +319,12 @@ passwords, so trout says to set those again.
 
 ## A new server for it
 
-The setup wizard's first question is where: your own server, or a new one at Hetzner Cloud
-or DigitalOcean (`internal/cloud`, the wizard steps in `ui/vps.go`). For a provider, trout
+The setup wizard's first question is where: your own server, or a new one at Hetzner Cloud,
+DigitalOcean or Google Cloud (`internal/cloud`, the wizard steps in `ui/vps.go`). Google
+goes through the `gcloud` command (its login and project, no API token): the free tier's
+e2-micro in us-west1, us-central1 or us-east1, a reserved IPv4 (about $3.65/month, released
+with the server), a `trout-bouncer` firewall rule for 6697 and 8443, and your key for user
+`trout` (Google's images don't let root in; its agent gives that user sudo). For a provider, trout
 asks for an API token once (kept in the credentials file as `(hetzner)` or
 `(digitalocean)`; DigitalOcean's prompt shows trout's referral link, labeled), lists its
 regions with the cheapest plan that can be ordered there and its monthly price with the
@@ -346,6 +350,4 @@ there is untested. The About box links soju's source.
 
 ## Later
 
-- **Google Cloud** for the bouncer's server, through `gcloud` (the free e2-micro, about
-  $3.60/month for its IPv4).
 - **Clipboard over SSH** via OSC 52 (copying uses pbcopy/xclip/clip locally).
