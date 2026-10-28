@@ -851,6 +851,9 @@ func (a *App) sendNet(n *state.Network, command string, params ...string) bool {
 	}
 	if err := c.Send(command, params...); err != nil {
 		a.addLine(n.Status(), state.RoleInfo, "* Couldn't send: "+err.Error())
+		if a.active != nil && a.active.Net == n && a.active != n.Status() { // where you typed it
+			a.addLine(a.active, state.RoleInfo, "* Couldn't send: "+err.Error())
+		}
 		return false
 	}
 	// Who this trout messaged, for DCC offers you asked for. Not from

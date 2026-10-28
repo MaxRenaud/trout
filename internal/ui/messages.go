@@ -46,6 +46,8 @@ func splitText(text string, limit int) []string {
 // sendText sends a PRIVMSG or NOTICE, split as needed; wrap puts each
 // piece in a CTCP ACTION and so on. It returns the pieces sent.
 func (a *App) sendText(n *state.Network, command, target, text string, wrap func(string) string) []string {
+	// An IRC line can't hold these: the line would be refused whole.
+	text = strings.NewReplacer("\x00", "", "\r\n", " ", "\r", " ", "\n", " ").Replace(text)
 	extra := len(wrap(""))
 	var sent []string
 	for _, part := range splitText(text, maxText(n, command, target)-extra) {

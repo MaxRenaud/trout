@@ -445,3 +445,19 @@ func TestSurrogates(t *testing.T) {
 		t.Fatalf("pasted: %q", got)
 	}
 }
+
+// TestControlRunes: a NUL from the Windows console (or any control
+// character but line breaks, tabs and format codes) doesn't get into the
+// editbox, where it would make the message impossible to send; one between
+// an emoji's halves doesn't keep them apart.
+func TestControlRunes(t *testing.T) {
+	a, n, _ := realApp(t)
+	a.activate(n.Find(state.KChannel, "#go"))
+	e := a.edit(a.active)
+	for _, r := range []rune{'a', 0, 0xD83D, 0, 0xDC1F, 0x07, 0x02, 'b', 0x7f} {
+		a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got := string(e.Buf); got != "a🐟\x02b" {
+		t.Fatalf("got %q", got)
+	}
+}

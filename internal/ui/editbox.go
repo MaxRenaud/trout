@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"unicode/utf16"
 
 	"github.com/MaxRenaud/trout/internal/state"
@@ -59,17 +61,23 @@ func typedRunes(k tea.KeyMsg) ([]rune, bool) {
 	return rs, true
 }
 
-// joinSurrogates puts characters outside the BMP (emoji) back together on
-// Windows, where Bubble Tea hands over the console's UTF-16 one unit at a
-// time: a high surrogate waits for the low one that follows. A half on its
-// own is dropped; it isn't a character. ok is false when nothing's left.
+// joinSurrogates cleans up typed and pasted characters for Windows, where
+// Bubble Tea hands over the console's UTF-16 one unit at a time: a high
+// surrogate waits for the low one that follows (emoji), a half on its own
+// is dropped, and so are control characters (the console sends NULs with
+// some key events) other than line breaks, tabs and mIRC's format codes.
+// Nothing can be sent with those in it. ok is false when nothing's left.
 func (a *App) joinSurrogates(k tea.KeyMsg) (tea.KeyMsg, bool) {
-	if k.Type != tea.KeyRunes || !slices.ContainsFunc(k.Runes, utf16.IsSurrogate) && a.highHalf == 0 {
+	if k.Type != tea.KeyRunes || !slices.ContainsFunc(k.Runes, oddRune) && a.highHalf == 0 {
 		return k, true
 	}
 	var rs []rune
 	for _, r := range k.Runes {
 		switch {
+		case oddRune(r) && !utf16.IsSurrogate(r):
+			if a.opts.Debug != nil {
+				a.opts.Debug("key", fmt.Sprintf("dropped %U", r))
+			}
 		case r >= 0xd800 && r < 0xdc00: // high: wait for the low half
 			a.highHalf = r
 		case r >= 0xdc00 && r < 0xe000:
@@ -85,3 +93,21 @@ func (a *App) joinSurrogates(k tea.KeyMsg) (tea.KeyMsg, bool) {
 	k.Runes = rs
 	return k, len(rs) > 0
 }
+
+// oddRune is a character the editbox doesn't take as is: a UTF-16 half, or
+// a control character that isn't a line break, a tab or a format code.
+func oddRune(r rune) bool {
+	switch {
+	case utf16.IsSurrogate(r):
+		return true
+	case r == '\n' || r == '\r' || r == '\t':
+		return false
+	case r < 0x20:
+		return !strings.ContainsRune(formatCodes, r)
+	}
+	return r == 0x7f
+}
+
+// formatCodes are mIRC's: bold, color, hex color, reset, monospace,
+// reverse, italic, strikethrough, underline.
+const formatCodes = "\x02\x03\x04\x0f\x11\x16\x1d\x1e\x1f"
