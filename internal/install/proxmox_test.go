@@ -13,7 +13,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -236,5 +235,3 @@ func sshAs(ip, user string) SSH {
 	return SSH{Host: user + "@" + ip, Options: []string{"-i", repo("tmp/pve_ed25519"),
 		"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"}}
 }
-
-func repo(p string) string { return filepath.Join("..", "..", p) }

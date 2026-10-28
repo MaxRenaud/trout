@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -677,11 +678,55 @@ func (a *App) finishInstall(w *installWizard) tea.Cmd {
 		a.saveConfig()
 	}
 	cmd := a.switchBouncer(b, in.Password)
-	a.moving = moving
-	if len(moving) > 0 {
-		a.addLine(a.home.Status(), state.RoleInfo, fmt.Sprintf("* Bouncer: moving %d networks here once it's connected", len(moving)))
-	}
+	a.moveTo(b.Name, moving)
 	return cmd
+}
+
+// moveTo has the networks made on bouncer name once trout is connected to
+// it and knows what it has.
+func (a *App) moveTo(name string, nets []movedNet) {
+	a.moving, a.movingTo = nets, name
+	if len(nets) > 0 {
+		a.addLine(a.home.Status(), state.RoleInfo, fmt.Sprintf("* Bouncer: moving %d networks here once it's connected", len(nets)))
+	}
+}
+
+// askMove switches to bouncer b with connect, after asking whether your
+// networks come along, when there are any and it's another bouncer.
+func (a *App) askMove(b config.Bouncer, connect func(a *App) tea.Cmd, back modal) tea.Cmd {
+	nets := a.networksToMove()
+	if len(nets) == 0 || b.Name == a.bnc.Name {
+		return connect(a)
+	}
+	var names []string
+	for _, n := range nets {
+		names = append(names, n.name)
+	}
+	what := fmt.Sprintf("%d networks", len(nets))
+	if len(nets) == 1 {
+		what = "1 network"
+	}
+	d := message("Bring your "+what+" ("+strings.Join(names, ", ")+")", "to "+b.Name+"?", "",
+		"Move Them has "+b.Name+" connect to them too, with your channels.",
+		"They stay on "+a.bnc.Name+" as well.")
+	d.Title = "Switch Bouncer"
+	d.Buttons, d.Cancel = []string{"Move Them", "Don't", "Cancel"}, 2
+	d.OnClose = func(a *App, button int) tea.Cmd {
+		switch button {
+		case 0:
+			cmd := connect(a)
+			a.moveTo(b.Name, nets)
+			return cmd
+		case 1:
+			return connect(a)
+		}
+		if back != nil {
+			a.openDialog(back)
+		}
+		return nil
+	}
+	a.openDialog(d)
+	return nil
 }
 
 // movedNet is a network on the old bouncer, to make on the new one.
@@ -710,7 +755,13 @@ func (a *App) networksToMove() []movedNet {
 // those have to be set again.
 func (a *App) moveNetworks() {
 	home := a.home.Status()
+	moved := 0
 	for _, m := range a.moving {
+		if slices.ContainsFunc(a.nets[1:], func(n *state.Network) bool { return strings.EqualFold(n.Name, m.name) }) {
+			a.addLine(home, state.RoleInfo, "* Bouncer: it already has "+m.name+", so that one stays as it is")
+			continue
+		}
+		moved++
 		args := []string{"network", "create", "-addr", m.addr, "-name", m.name}
 		for _, f := range [][2]string{{"-nick", m.nick}, {"-username", m.user}, {"-realname", m.real}} {
 			if f[1] != "" {
@@ -722,7 +773,9 @@ func (a *App) moveNetworks() {
 			a.serv(a.home, home, true, "channel", "create", ch+"/"+m.name)
 		}
 	}
-	a.addLine(home, state.RoleInfo, fmt.Sprintf("* Bouncer: moved %d networks here. Network passwords (SASL, NickServ) "+
-		"stay on the old bouncer: set them again in File > Select Server > Edit.", len(a.moving)))
-	a.moving = nil
+	if moved > 0 {
+		a.addLine(home, state.RoleInfo, fmt.Sprintf("* Bouncer: moved %d networks here. Network passwords (SASL, NickServ) "+
+			"stay on the old bouncer: set them again in File > Select Server > Edit.", moved))
+	}
+	a.moving, a.movingTo = nil, ""
 }

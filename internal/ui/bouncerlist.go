@@ -147,9 +147,11 @@ func (d *savedBouncersBox) press(a *App, button string) tea.Cmd {
 			a.addLine(a.home.Status(), state.RoleQuit, "* "+err.Error())
 			return nil
 		}
-		a.cfg.Active = b.Name
-		a.saveConfig()
-		return a.connectWith(b, pw)
+		return a.askMove(b, func(a *App) tea.Cmd {
+			a.cfg.Active = b.Name
+			a.saveConfig()
+			return a.connectWith(b, pw)
+		}, d)
 	case "Edit":
 		if b.Local {
 			a.openDialog(&msgBox{Title: "Bouncers", Buttons: []string{"OK"},

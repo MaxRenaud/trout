@@ -109,9 +109,6 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 			c.Send("BOUNCER", "LISTNETWORKS")
 			a.refreshDisabled()
 			a.pinClientCert(c)
-			if len(a.moving) > 0 { // a bouncer trout just set up
-				a.moveNetworks()
-			}
 		} else {
 			a.conns[n] = c
 			a.addLine(n.Status(), state.RoleInfo, "* Connected to "+n.Name+" through the bouncer")
@@ -632,12 +629,21 @@ func (a *App) batch(n *state.Network, m ircmsg.Message) {
 	}
 	if id, ok := strings.CutPrefix(m.Params[0], "+"); ok {
 		switch {
+		case n == a.home && len(m.Params) >= 2 && m.Params[1] == "soju.im/bouncer-networks":
+			a.netsBatch = id // its BOUNCER NETWORK lines are handled as they come
 		case len(m.Params) >= 3 && m.Params[1] == "chathistory":
 			a.batches[n.ID+" "+id] = &histBatch{target: m.Params[2]}
 		case len(m.Params) >= 2 && m.Params[1] == "draft/chathistory-targets":
 			a.batches[n.ID+" "+id] = &histBatch{targets: true}
 		case len(m.Params) >= 2 && (m.Params[1] == "soju.im/search" || m.Params[1] == "search"):
 			a.batches[n.ID+" "+id] = &histBatch{search: true}
+		}
+		return
+	}
+	if n == a.home && a.netsBatch != "" && strings.TrimPrefix(m.Params[0], "-") == a.netsBatch {
+		a.netsBatch = "" // the bouncer's networks are all known now
+		if len(a.moving) > 0 && a.movingTo == a.bnc.Name {
+			a.moveNetworks()
 		}
 		return
 	}

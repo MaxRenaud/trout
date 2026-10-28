@@ -178,6 +178,8 @@ type App struct {
 	installing   *installWizard         // the setup running, whose messages count
 	hooks        *installHooks          // tests: no ssh, binaries or login for real
 	moving       []movedNet             // networks to make on a new bouncer once it's connected
+	movingTo     string                 // that bouncer's name
+	netsBatch    string                 // the batch of the bouncer's network list, while it comes
 	local        *local.Soju            // trout's own soju, for the This Computer bouncer
 	dccSeq       int
 

@@ -309,9 +309,13 @@ Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/in
 - **Check** logs in from here with the pin and the password. If that fails it looks on
   the server for what's missing; if the server's fine, it's the provider's firewall.
 - **Then** the bouncer is saved (its `ssh` host marks it as trout's, for Update and
-  Uninstall in Tools > Bouncers), and once its control connection is up trout moves the old
-  bouncer's networks over (`network create`, `channel create`). soju never hands out
-  network passwords, so trout says to set those again.
+  Uninstall in Tools > Bouncers), and trout moves the old bouncer's networks over.
+
+Moving networks happens here and when you switch bouncers (Bouncers > Use, This Computer),
+which asks first. Once the new bouncer's network list is complete (the end of its
+`soju.im/bouncer-networks` batch), trout has it `network create` each network it doesn't
+already have, and `channel create` its joined channels. soju never hands out network
+passwords, so trout says to set those again.
 
 ## This Computer: trout's own soju
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ergochat/irc-go/ircmsg"
 
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
@@ -179,25 +180,69 @@ func TestInstallWizard(t *testing.T) {
 	if pw, _ := a.cfg.StoredPassword("vps"); pw != a.password || len(pw) != 24 {
 		t.Fatalf("password %q / %q", pw, a.password)
 	}
-	if len(a.moving) != 1 || a.moving[0].name != "Libera" || a.moving[0].addr != "ircs://irc.libera.chat:6697" ||
+	if a.movingTo != "vps" || len(a.moving) != 1 || a.moving[0].name != "Libera" || a.moving[0].addr != "ircs://irc.libera.chat:6697" ||
 		!slices.Equal(a.moving[0].channels, []string{"#go"}) || a.moving[0].nick != "max" {
 		t.Fatalf("moving %+v", a.moving)
 	}
 }
 
-// TestMoveNetworks: once the new bouncer's control connection is up,
-// trout has it make the old one's networks and channels.
+// TestMoveNetworks: once the new bouncer has listed its networks, trout
+// has it make the old one's, except those it already has, and their
+// channels.
 func TestMoveNetworks(t *testing.T) {
 	a, sent := fakeSoju(t)
-	a.moving = []movedNet{{name: "Libera", addr: "ircs://irc.libera.chat:6697", nick: "max", real: "Max",
-		channels: []string{"#go", "#trout"}}}
-	up := a.connectBouncer()()
-	a.Update(up)
+	a.moveTo(a.bnc.Name, []movedNet{
+		{name: "Libera", addr: "ircs://irc.libera.chat:6697", nick: "max", real: "Max", channels: []string{"#go", "#trout"}},
+		{name: "OFTC", addr: "ircs://irc.oftc.net:6697", channels: []string{"#debian"}},
+	})
+	for _, l := range []string{
+		"BATCH +n soju.im/bouncer-networks",
+		"@batch=n BOUNCER NETWORK 3 name=OFTC;host=irc.oftc.net;port=6697;tls=1;state=connected",
+	} {
+		m, _ := ircmsg.ParseLine(l)
+		a.Update(ircLineMsg{a.home, m})
+	}
+	if len(a.moving) != 2 {
+		t.Fatal("moved before the bouncer's list was complete")
+	}
+	if len(a.nets) != 2 || a.nets[1].Name != "OFTC" {
+		t.Fatalf("the list's networks weren't handled as they came: %d", len(a.nets))
+	}
+	m, _ := ircmsg.ParseLine("BATCH -n")
+	a.Update(ircLineMsg{a.home, m})
 	expectSent(t, sent, `PRIVMSG BouncerServ :network create -addr ircs://irc.libera.chat:6697 -name Libera -nick max -realname Max`)
 	expectSent(t, sent, `PRIVMSG BouncerServ :channel create #go/Libera`)
 	expectSent(t, sent, `PRIVMSG BouncerServ :channel create #trout/Libera`)
-	if a.moving != nil || !strings.Contains(lastLine(a.home.Status()), "Network passwords") {
-		t.Fatalf("after moving: %v, %q", a.moving, lastLine(a.home.Status()))
+	texts := strings.Join(lineTexts(a.home.Status()), "\n")
+	if a.moving != nil || !strings.Contains(texts, "already has OFTC") || !strings.Contains(texts, "moved 1 networks") {
+		t.Fatalf("after moving: %v\n%s", a.moving, texts)
+	}
+	select {
+	case l := <-sent:
+		if strings.Contains(l, "oftc") || strings.Contains(l, "#debian") {
+			t.Fatalf("made OFTC again: %q", l)
+		}
+	default:
+	}
+}
+
+// TestSwitchMoves: Bouncers > Use on another bouncer asks whether your
+// networks come along.
+func TestSwitchMoves(t *testing.T) {
+	a, _ := installApp(t, &fakeServer{})
+	a.cfg.Use(config.Bouncer{Name: "other", Address: "irc+insecure://127.0.0.1:1", User: "max"})
+	a.cfg.SetPassword("other", "pw")
+	a.openSavedBouncers()
+	d := a.dlg.(*savedBouncersBox)
+	d.sel = slices.IndexFunc(a.savedBouncers(), func(b config.Bouncer) bool { return b.Name == "other" })
+	d.press(a, "Use")
+	box, ok := a.dlg.(*msgBox)
+	if !ok || box.Title != "Switch Bouncer" || !strings.Contains(box.Lines[0], "1 network (Libera)") {
+		t.Fatalf("Use opened %T", a.dlg)
+	}
+	box.close(a, 0) // Move Them
+	if a.bnc.Name != "other" || a.movingTo != "other" || len(a.moving) != 1 || a.cfg.Active != "other" {
+		t.Fatalf("switched to %q, moving %v to %q", a.bnc.Name, a.moving, a.movingTo)
 	}
 }
 

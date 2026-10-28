@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -536,5 +537,64 @@ func TestSelfCTCPLive(t *testing.T) {
 		if k := count("[" + tn.Nick + " " + p); k != 1 {
 			t.Errorf("%q shown %d times, want once:\n%s", p, k, dump(st))
 		}
+	}
+}
+
+// TestMoveNetworksLive switches from tester to a fresh soju user with Move
+// Them, and checks on the dev soju that tester's networks and channels
+// were made for it.
+func TestMoveNetworksLive(t *testing.T) {
+	sojuctl := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("docker", append([]string{"compose", "-f", "../../dev/compose.yaml", "exec", "-T", "soju",
+			"sojuctl", "-config", "/etc/soju/config"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("sojuctl %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	user := "movetest" + strconv.FormatInt(time.Now().Unix()%100000, 10)
+	sojuctl("user", "create", "-username", user, "-password", "movetest")
+	t.Cleanup(func() {
+		out, _ := exec.Command("docker", "compose", "-f", "../../dev/compose.yaml", "exec", "-T", "soju",
+			"sojuctl", "-config", "/etc/soju/config", "user", "delete", user).CombinedOutput()
+		// It asks to confirm: To confirm user deletion, send "user delete <user> <token>"
+		if f := strings.Fields(string(out)); len(f) > 0 {
+			exec.Command("docker", "compose", "-f", "../../dev/compose.yaml", "exec", "-T", "soju",
+				"sojuctl", "-config", "/etc/soju/config", "user", "delete", user, strings.Trim(f[len(f)-1], `"`)).Run()
+		}
+	})
+
+	a, pump := liveApp(t)
+	pump("tester's networks and channels", func() bool {
+		joined := 0
+		for _, n := range a.nets[1:] {
+			for _, ch := range []string{"#trout", "#dev"} {
+				if w := n.Find(state.KChannel, ch); w != nil && w.Joined {
+					joined++
+				}
+			}
+		}
+		return joined == 2
+	})
+	to := config.Bouncer{Name: "movetest", Address: a.bnc.Address, User: user}
+	a.askMove(to, func(a *App) tea.Cmd { return a.switchBouncer(to, "movetest") }, nil)
+	box, ok := a.dlg.(*msgBox)
+	if !ok || box.Title != "Switch Bouncer" {
+		t.Fatalf("no question: %T", a.dlg)
+	}
+	cmd := box.close(a, 0) // Move Them
+	go func() { a.send(cmd()) }()
+	pump("the networks made on the new user", func() bool { return a.moving == nil && a.control != nil })
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		out := sojuctl("user", "run", user, "channel", "status")
+		if strings.Contains(out, "#trout") && strings.Contains(out, "#dev") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the new user's channels:\n%s\nnetworks:\n%s", out, sojuctl("user", "run", user, "network", "status"))
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }

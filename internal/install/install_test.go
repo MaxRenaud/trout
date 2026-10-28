@@ -323,3 +323,6 @@ func TestModes(t *testing.T) {
 		}
 	}
 }
+
+// repo is a path from the repository's root.
+func repo(p string) string { return filepath.Join("..", "..", p) }

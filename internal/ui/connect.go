@@ -206,7 +206,10 @@ func (a *App) openConnectFor(b config.Bouncer, password, note string, back modal
 		},
 		OnButton: map[string]func(*App) tea.Cmd{
 			"Set One Up...": func(a *App) tea.Cmd { a.openInstall(); return nil },
-			"This Computer": func(a *App) tea.Cmd { a.dlg = nil; return a.useLocal() },
+			"This Computer": func(a *App) tea.Cmd {
+				a.dlg = nil
+				return a.askMove(config.Bouncer{Name: localName, Local: true}, (*App).useLocal, back)
+			},
 		},
 		OnCancel: func(a *App) tea.Cmd {
 			switch {

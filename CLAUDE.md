@@ -17,6 +17,7 @@ go test ./...                                      # unit and frame tests, no ne
 go test -tags integration ./internal/ui -v         # needs the dev env
 dev/build-soju                                     # the soju trout installs on servers
 go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
+go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
 
@@ -56,7 +57,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   asks at startup.
 - `internal/demo`: the fake world for `--demo`; the dev bot reuses its chatter.
 - `dev/`: Docker setup (two ergo networks, soju, a chatter bot); `build-soju`; `proxmox/`,
-  throwaway test VMs for bouncer setup (credentials and their SSH key in `tmp/`).
+  throwaway test VMs for bouncer setup (credentials and their SSH key in `tmp/`);
+  `systemd/`, a Debian image with systemd and sshd for the arm64 install test.
 - `tmp/`: git-ignored scratch space until v1.0. The roadmap is `tmp/plan.md`; keep it updated.
 
 ## Rules
@@ -105,7 +107,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   networks. `install/install_test.go` checks the installer's commands against a fake
   runner. With `-tags proxmox`, `install/proxmox_test.go` installs on all six Proxmox
   templates through every root tier, and `ui/proxmox_test.go` drives the wizard for real.
-  Only touch VMs in the trout-test pool (IDs 9900-9999).
+  Only touch VMs in the trout-test pool (IDs 9900-9999). With `-tags docker`,
+  `install/docker_test.go` installs in a privileged systemd container (`dev/systemd`), which
+  is arm64 on this Mac. `TestMoveNetworksLive` moves tester's networks to a throwaway soju
+  user it deletes afterwards.
 - `local/local_test.go` and `ui/localbnc_test.go` run the real soju for this computer
   (skipped until `dev/build-soju` has built it), in a short folder under /tmp: Unix
   socket paths can't be long.
