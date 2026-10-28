@@ -174,15 +174,17 @@ type App struct {
 	messaged     map[string]time.Time // whom you last messaged, by network ID + " " + nick
 	transfers    []*transfer
 	chats        []*dccChat
-	waiting      []func(a *App) tea.Cmd // dialogs to open once nothing is (whenFree)
-	installing   *installWizard         // the setup running, whose messages count
-	hooks        *installHooks          // tests: no ssh, binaries or login for real
-	moving       []movedNet             // networks to make on a new bouncer once it's connected
-	movingTo     string                 // that bouncer's name
-	netsBatch    string                 // the batch of the bouncer's network list, while it comes
-	highHalf     rune                   // Windows: an emoji's first UTF-16 half, waiting for its second
-	local        *local.Soju            // trout's own soju, for the This Computer bouncer
-	cloudTokens  map[string]string      // without a config (tests): cloud API tokens
+	waiting      []func(a *App) tea.Cmd       // dialogs to open once nothing is (whenFree)
+	installing   *installWizard               // the setup running, whose messages count
+	hooks        *installHooks                // tests: no ssh, binaries or login for real
+	moving       []movedNet                   // networks to make on a new bouncer once it's connected
+	movingTo     string                       // that bouncer's name
+	netsBatch    string                       // the batch of the bouncer's network list, while it comes
+	highHalf     rune                         // Windows: an emoji's first UTF-16 half, waiting for its second
+	unechoed     map[*state.Network][]sentMsg // sent, not yet echoed back by the bouncer
+	liveness     [3]time.Duration             // tests: irc.Config's Idle, AfterSend, PingWait
+	local        *local.Soju                  // trout's own soju, for the This Computer bouncer
+	cloudTokens  map[string]string            // without a config (tests): cloud API tokens
 	dccSeq       int
 
 	urls         []seenURL                    // URLs List

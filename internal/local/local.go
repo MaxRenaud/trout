@@ -188,6 +188,14 @@ func (s *Soju) Stop() {
 	s.cmd = nil
 }
 
+// PID is the soju process Start started, or 0 (one it found running).
+func (s *Soju) PID() int {
+	if s == nil || s.cmd == nil || s.cmd.Process == nil {
+		return 0
+	}
+	return s.cmd.Process.Pid
+}
+
 // Running reports whether the soju Start started is still up.
 func (s *Soju) Running() bool {
 	if s == nil || s.done == nil {

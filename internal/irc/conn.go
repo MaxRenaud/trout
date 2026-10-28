@@ -6,6 +6,7 @@ package irc
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -38,6 +39,14 @@ type Config struct {
 	// Debug, if set, sees every raw line; dir is "<-" or "->".
 	Debug func(dir, line string)
 
+	// Liveness, for a server that vanishes without closing the connection
+	// (its machine gone): whenever we send something, a PING with a token
+	// follows, and Run gives up with ErrNoReply when its PONG doesn't come
+	// within AfterSend; with nothing heard for Idle, the same with
+	// PingWait. Only that PONG counts: lines the server sent before it
+	// froze are no proof it's there. Zero means 60s, 15s and 20s.
+	Idle, AfterSend, PingWait time.Duration
+
 	// Dial, if set, makes the connection (through a proxy, say).
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 }
@@ -57,6 +66,22 @@ type Conn struct {
 	early []ircmsg.Message
 	// Mech is the SASL mechanism used to log in: "PLAIN", "EXTERNAL", or "".
 	Mech string
+
+	live     sync.Mutex // guards the rest, shared by Run and Raw
+	running  bool       // Run has started: liveness applies
+	sent     bool       // sent something before Run started
+	token    string     // our PING's, while its PONG is due
+	due      time.Time  // when it's too late
+	lastRead time.Time
+	pings    int
+	partial  string // a line cut off by a read deadline
+}
+
+// ErrNoReply is a server that stopped answering, even PINGs.
+var ErrNoReply = errors.New("no answer, even to a ping")
+
+func (c *Conn) timing() (idle, afterSend, pingWait time.Duration) {
+	return cmp.Or(c.cfg.Idle, 60*time.Second), cmp.Or(c.cfg.AfterSend, 15*time.Second), cmp.Or(c.cfg.PingWait, 20*time.Second)
 }
 
 // Dial connects and registers. It returns once the server has sent
@@ -89,6 +114,7 @@ func Dial(ctx context.Context, cfg Config) (*Conn, error) {
 		return nil, fmt.Errorf("registering with %s: %w", cfg.Addr, err)
 	}
 	nc.SetDeadline(time.Time{})
+	c.sent = false // registration's own lines: nothing's due
 	return c, nil
 }
 
@@ -198,10 +224,55 @@ func (c *Conn) Run(handle func(ircmsg.Message)) error {
 		handle(m)
 	}
 	c.early = nil
+	idle, afterSend, pingWait := c.timing()
+	c.live.Lock()
+	c.running, c.lastRead = true, time.Now()
+	if c.sent { // sent before Run started
+		if err := c.pingLocked(afterSend); err != nil {
+			c.live.Unlock()
+			return err
+		}
+	}
+	c.live.Unlock()
 	for {
+		c.live.Lock()
+		deadline := c.lastRead.Add(idle)
+		if c.token != "" {
+			deadline = c.due
+		}
+		c.live.Unlock()
+		c.nc.SetReadDeadline(deadline)
 		m, err := c.read()
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			c.live.Lock()
+			switch {
+			case c.token != "" && !time.Now().Before(c.due):
+				c.live.Unlock()
+				return ErrNoReply
+			case c.token == "" && !time.Now().Before(c.lastRead.Add(idle)): // quiet: still there?
+				err = c.pingLocked(pingWait)
+			default:
+				err = nil // a deadline that moved on meanwhile
+			}
+			c.live.Unlock()
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		if err != nil {
 			return err
+		}
+		c.live.Lock()
+		c.lastRead = time.Now()
+		ours := m.Command == "PONG" && c.token != "" && len(m.Params) > 0 && m.Params[len(m.Params)-1] == c.token
+		if ours {
+			c.token = ""
+		}
+		c.live.Unlock()
+		if ours {
+			continue
 		}
 		if m.Command == "PING" {
 			c.Send("PONG", m.Params...)
@@ -214,6 +285,12 @@ func (c *Conn) Run(handle func(ircmsg.Message)) error {
 func (c *Conn) read() (ircmsg.Message, error) {
 	for {
 		line, err := c.r.ReadString('\n')
+		c.live.Lock()
+		line, c.partial = c.partial+line, ""
+		if err != nil {
+			c.partial = line // a deadline can cut a line short; keep its start
+		}
+		c.live.Unlock()
 		if err != nil {
 			return ircmsg.Message{}, err
 		}
@@ -248,10 +325,41 @@ func (c *Conn) Raw(line string) error {
 	if c.cfg.Debug != nil {
 		c.cfg.Debug("->", line)
 	}
+	if err := c.write(line); err != nil {
+		return err
+	}
+	// Something sent: a dead server takes writes into the OS's buffer for
+	// minutes, so ask it to answer (unless we're already asking).
+	c.live.Lock()
+	defer c.live.Unlock()
+	switch {
+	case !c.running:
+		c.sent = true // Run asks when it starts
+	case c.token == "" && !strings.HasPrefix(line, "PONG "):
+		_, afterSend, _ := c.timing()
+		return c.pingLocked(afterSend)
+	}
+	return nil
+}
+
+func (c *Conn) write(line string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	_, err := c.nc.Write([]byte(line + "\r\n"))
 	return err
+}
+
+// pingLocked sends a PING whose PONG must come within wait. c.live is held.
+func (c *Conn) pingLocked(wait time.Duration) error {
+	c.pings++
+	c.token = fmt.Sprintf("trout-%d", c.pings)
+	c.due = time.Now().Add(wait)
+	c.nc.SetReadDeadline(c.due) // a Read in progress waits no longer than that
+	line := "PING " + c.token
+	if c.cfg.Debug != nil {
+		c.cfg.Debug("->", line)
+	}
+	return c.write(line)
 }
 
 func (c *Conn) Close() error { return c.nc.Close() }

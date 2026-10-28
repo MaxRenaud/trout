@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/ergochat/irc-go/ircmsg"
 
 	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -89,5 +91,29 @@ func TestHandleIRC(t *testing.T) {
 	feed(":trout!t@h PART #test")
 	if n.Find(state.KChannel, "#test") != nil {
 		t.Error("parting didn't close the channel window")
+	}
+}
+
+// TestNotSent: with echo-message, your messages show when the bouncer
+// echoes them; if the connection dies first (a bouncer that vanished),
+// the ones it never echoed say so instead of quietly disappearing.
+func TestNotSent(t *testing.T) {
+	a, n, _, feed := optionsApp(t)
+	q := a.openQuery(n, "bob")
+	a.say(q, "first")
+	a.say(q, "second")
+	a.action(q, "waves")
+	feed(":max!m@h PRIVMSG bob :first") // the echo of the first
+	a.Update(ircDownMsg{n, irc.ErrNoReply})
+	lines := lineTexts(q)
+	want := []string{"<max> first", "* Not sent, the connection died first: second", "* Not sent, the connection died first: /me waves"}
+	if !slices.Equal(lines, want) {
+		t.Fatalf("query:\n%q\nwant\n%q", lines, want)
+	}
+	if !strings.Contains(lastLine(n.Status()), "no answer, even to a ping") {
+		t.Fatalf("status: %q", lastLine(n.Status()))
+	}
+	if len(a.unechoed[n]) != 0 {
+		t.Fatal("still waiting on the dead connection's messages")
 	}
 }

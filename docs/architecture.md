@@ -27,6 +27,13 @@ trout ──per net──▶ soju ──▶ IRC network   (BOUNCER BIND <netid> 
   (`SHA256:` + base64 of the public key's SHA-256, so renewing with the same key keeps
   the pin). Trusting it saves `pin` on the bouncer; a different key later is refused.
 - A failed SASL login or an untrusted certificate stops the retry loop and asks instead.
+- A bouncer can vanish without closing the connection (its machine gone): writes still go
+  into the OS's buffer for minutes and nothing comes back. So after anything trout sends, a
+  `PING` with a token follows, and the connection is dropped if its `PONG` doesn't come
+  within 15 seconds (or 20 after a `PING` for 60 quiet seconds); only that `PONG` counts,
+  not lines the bouncer sent before it froze (`irc.Conn`). Then the usual reconnect loop.
+  With echo-message your messages only show when echoed, so the ones never echoed are
+  listed as not sent instead of vanishing.
 - Capabilities requested per network: `server-time`, `message-tags`, `batch`,
   `echo-message`, `multi-prefix`, `draft/chathistory`, `draft/read-marker`,
   `soju.im/bouncer-networks`.

@@ -58,7 +58,8 @@ const reconnectDelay = 5 * time.Second
 func (a *App) dial(n *state.Network, bind string, caps []string) tea.Cmd {
 	addr, useTLS, err := irc.ParseAddress(a.bnc.Address)
 	cfg := irc.Config{Addr: addr, TLS: useTLS, Pin: a.bnc.Pin, Nick: a.bnc.User, User: a.bnc.User,
-		Password: a.password, Caps: caps, Bind: bind, Debug: a.opts.Debug, Dial: a.dialer(false)}
+		Password: a.password, Caps: caps, Bind: bind, Debug: a.opts.Debug, Dial: a.dialer(false),
+		Idle: a.liveness[0], AfterSend: a.liveness[1], PingWait: a.liveness[2]}
 	if useTLS { // this computer's certificate, for logging in without the password
 		cfg.ClientCert = a.loadClientCert()
 		cfg.External = a.bnc.Login == "certificate" && !a.certFailed
@@ -142,6 +143,7 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 		if !slices.Contains(a.nets, n) {
 			return nil
 		}
+		a.notSent(n)
 		for _, w := range n.Wins {
 			if w.Kind == state.KChannel {
 				w.Joined, w.Nicks = false, nil
@@ -216,6 +218,9 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 			return a.bouncerNetwork(b)
 		}
 	case "PRIVMSG", "NOTICE":
+		if isMe && m.Command == "PRIVMSG" {
+			a.delivered(n, arg(0), arg(1))
+		}
 		if a.servReply(n, m) || a.ignored(n, m) || a.ctcp(n, m, t) {
 			return nil
 		}
@@ -888,8 +893,48 @@ func (a *App) privmsg(w *state.Window, target, text string) {
 	for _, part := range a.sendText(w.Net, "PRIVMSG", target, text, plain) {
 		if !a.echoed(w.Net) {
 			a.addLine(w, state.RoleOwn, "<"+w.Net.Nick+"> "+part)
+		} else {
+			a.awaitEcho(w.Net, target, part)
 		}
 	}
+}
+
+// awaitEcho remembers a message sent where the bouncer echoes it (and only
+// then shows it), so that if the connection dies first it says so instead
+// of the message quietly vanishing.
+func (a *App) awaitEcho(n *state.Network, target, text string) {
+	if a.unechoed == nil {
+		a.unechoed = map[*state.Network][]sentMsg{}
+	}
+	a.unechoed[n] = append(a.unechoed[n], sentMsg{target, text})
+}
+
+type sentMsg struct{ target, text string }
+
+// delivered is a message of ours coming back (echo-message).
+func (a *App) delivered(n *state.Network, target, text string) {
+	if i := slices.IndexFunc(a.unechoed[n], func(s sentMsg) bool { return n.Same(s.target, target) && s.text == text }); i >= 0 {
+		a.unechoed[n] = slices.Delete(a.unechoed[n], i, i+1)
+	}
+}
+
+// notSent says which messages a connection that just died never delivered.
+func (a *App) notSent(n *state.Network) {
+	for _, s := range a.unechoed[n] {
+		w := n.Find(state.KQuery, s.target)
+		if n.IsChannel(s.target) {
+			w = n.Find(state.KChannel, s.target)
+		}
+		if w == nil {
+			w = n.Status()
+		}
+		text := s.text
+		if inner, ok := strings.CutPrefix(text, "\x01ACTION "); ok {
+			text = "/me " + strings.TrimSuffix(inner, "\x01")
+		}
+		a.addLine(w, state.RoleQuit, "* Not sent, the connection died first: "+text)
+	}
+	delete(a.unechoed, n)
 }
 
 // action is /me.
@@ -905,6 +950,8 @@ func (a *App) action(w *state.Window, text string) {
 	for _, part := range a.sendText(w.Net, "PRIVMSG", w.Name, text, asAction) {
 		if !a.echoed(w.Net) {
 			a.addLine(w, state.RoleAction, "* "+w.Net.Nick+" "+part)
+		} else {
+			a.awaitEcho(w.Net, w.Name, asAction(part))
 		}
 	}
 }

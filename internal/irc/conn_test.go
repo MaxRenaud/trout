@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -91,5 +92,89 @@ func TestParseBouncerNetwork(t *testing.T) {
 	}
 	if modes, prefixes, ok := ParsePrefix("(qaohv)~&@%+"); !ok || modes != "qaohv" || prefixes != "~&@%+" {
 		t.Errorf("ParsePrefix = %q %q %v", modes, prefixes, ok)
+	}
+}
+
+// TestLiveness: a server that goes silent without closing the connection
+// (its machine gone) is noticed: after a quiet spell, or sooner after we
+// send something, Run pings, and gives up when that goes unanswered. One
+// that answers the ping stays.
+func TestLiveness(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		answers bool // PONGs
+		chatty  bool // sends other lines all along
+		send    bool // we send something first
+		want    error
+	}{
+		{"silent", false, false, false, ErrNoReply},
+		{"silent after a send", false, false, true, ErrNoReply},
+		// Lines a server sent before it froze aren't proof it's there.
+		{"talks but never answers", false, true, true, ErrNoReply},
+		{"answers pings", true, false, false, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ln.Close()
+			go func() {
+				nc, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer nc.Close()
+				if c.chatty {
+					go func() {
+						for range time.Tick(30 * time.Millisecond) {
+							if _, err := nc.Write([]byte(":soju NOTICE trout :still here, sort of\r\n")); err != nil {
+								return
+							}
+						}
+					}()
+				}
+				r := bufio.NewReader(nc)
+				for {
+					line, err := r.ReadString('\n')
+					if err != nil {
+						return
+					}
+					switch line = strings.TrimSpace(line); {
+					case line == "CAP LS 302":
+						nc.Write([]byte(":soju CAP * LS :\r\n"))
+					case line == "CAP END":
+						nc.Write([]byte(":soju 001 trout :Welcome\r\n"))
+					case strings.HasPrefix(line, "PING ") && c.answers:
+						nc.Write([]byte(":soju PONG soju " + strings.TrimPrefix(line, "PING ") + "\r\n"))
+					}
+				}
+			}()
+			idle := time.Second
+			if c.send {
+				idle = time.Hour // only the send should make it check
+			}
+			conn, err := Dial(t.Context(), Config{Addr: ln.Addr().String(), Nick: "trout", User: "trout",
+				Idle: idle, AfterSend: 100 * time.Millisecond, PingWait: 200 * time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			done := make(chan error, 1)
+			go func() { done <- conn.Run(func(ircmsg.Message) {}) }()
+			if c.send {
+				conn.Send("PRIVMSG", "bob", "hello?")
+			}
+			select {
+			case err := <-done:
+				if c.want == nil || !errors.Is(err, c.want) {
+					t.Fatalf("Run ended with %v, want %v", err, c.want)
+				}
+			case <-time.After(3 * time.Second):
+				if c.want != nil {
+					t.Fatal("still waiting on a silent server")
+				}
+			}
+		})
 	}
 }
