@@ -1,0 +1,25 @@
+# Quick checks on every push: vet, unit tests, and modern-Go fixes. The
+# integration test needs the Docker dev environment, so it stays local.
+name: ci
+on:
+  push:
+    paths-ignore: ["**.md", "docs/**", "dev/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - name: go fix has nothing to change
+        run: test -z "$(go fix -diff ./...)"

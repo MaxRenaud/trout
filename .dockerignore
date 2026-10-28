@@ -1,0 +1,6 @@
+.git
+.claude
+dev/soju
+dev/ergo
+*.log
+tmp

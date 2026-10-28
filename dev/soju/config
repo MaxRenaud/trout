@@ -1,0 +1,5 @@
+# Plain-text IRC for trout, and the admin socket sojuctl talks to.
+listen irc+insecure://0.0.0.0:6667
+listen unix+admin:///run/soju/admin
+db sqlite3 /data/soju.db
+hostname soju.test

@@ -1,0 +1,39 @@
+# trout's local IRC world: two ergo networks, soju in front of them, and a
+# bot that fills the channels with people. trout connects to soju on
+# 127.0.0.1:6667 as trout/trout.
+#
+#   docker compose -f dev/compose.yaml up -d --build
+#   go run ./cmd/trout
+#
+# `down -v` wipes soju's database (user, networks, history) for a fresh start.
+name: trout-dev
+
+x-ergo: &ergo
+  image: ghcr.io/ergochat/ergo:v2.19.1
+  entrypoint: ["/bin/sh", "/dev-ergo/start.sh"]
+  volumes: ["./ergo:/dev-ergo:ro"]
+  restart: unless-stopped
+
+services:
+  troutnet:
+    <<: *ergo
+    environment: { NETWORK: TroutNet, SERVER: troutnet.test }
+  devnet:
+    <<: *ergo
+    environment: { NETWORK: DevNet, SERVER: devnet.test }
+
+  soju:
+    build: ./soju
+    ports: ["127.0.0.1:6667:6667"]
+    volumes: ["soju-data:/data"]
+    depends_on: [troutnet, devnet]
+    restart: unless-stopped
+
+  bot:
+    build: { context: .., dockerfile: dev/bot/Dockerfile }
+    command: ["-servers", "troutnet:6667=#trout,#lobby;devnet:6667=#dev", "-user", "trout"]
+    depends_on: [troutnet, devnet]
+    restart: unless-stopped
+
+volumes:
+  soju-data:

@@ -1,0 +1,5 @@
+/trout
+*.log
+
+# Scratch space until v1.0: notes, plans, throwaway files.
+/tmp/
