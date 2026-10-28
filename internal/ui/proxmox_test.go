@@ -79,25 +79,3 @@ func TestProxmoxWizard(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 }
-
-// runUntil runs cmd (and batches inside it) until one gives a T.
-func runUntil[T any](t *testing.T, cmd tea.Cmd) T {
-	t.Helper()
-	queue := []tea.Cmd{cmd}
-	for len(queue) > 0 {
-		c := queue[0]
-		queue = queue[1:]
-		if c == nil {
-			continue
-		}
-		switch m := c().(type) {
-		case T:
-			return m
-		case tea.BatchMsg:
-			queue = append(queue, m...)
-		}
-	}
-	var zero T
-	t.Fatalf("never got a %T", zero)
-	return zero
-}

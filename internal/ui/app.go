@@ -18,6 +18,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/demo"
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/local"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
 
@@ -177,6 +178,7 @@ type App struct {
 	installing   *installWizard         // the setup running, whose messages count
 	hooks        *installHooks          // tests: no ssh, binaries or login for real
 	moving       []movedNet             // networks to make on a new bouncer once it's connected
+	local        *local.Soju            // trout's own soju, for the This Computer bouncer
 	dccSeq       int
 
 	urls         []seenURL                    // URLs List
@@ -243,6 +245,7 @@ func Run(opts Options) error {
 	a.term, a.termHome = termkeys.Detect(env), env.Home
 	_, err := p.Run()
 	a.stopITermProfile() // back to the tab's own profile
+	a.local.Stop()       // trout's own soju, if it started one
 	return err
 }
 
@@ -301,7 +304,7 @@ func (a *App) Init() tea.Cmd {
 	if a.opts.Demo {
 		return tick()
 	}
-	if a.bnc.Address == "" || a.bnc.User == "" {
+	if !a.bouncerSet() {
 		a.stopped = true
 		a.openConnect("")
 		return nil
@@ -349,6 +352,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.uploaded(msg)
 	case instStepMsg, instPhaseMsg:
 		cmd = a.installUpdate(msg)
+	case localUpMsg:
+		cmd = a.localUp(msg)
 	case tea.FocusMsg:
 		a.focused = true
 	case tea.BlurMsg:

@@ -104,9 +104,13 @@ func bouncerDetails(a *App, b config.Bouncer) [][2]string {
 			status = "in use, connected"
 		}
 	}
+	addr := b.Address
+	if b.Local {
+		addr, key = "this computer, while trout is open", "none: it never leaves this computer"
+	}
 	rows := [][2]string{
 		{"Name", b.Name},
-		{"Address", b.Address},
+		{"Address", addr},
 		{"User", b.User},
 		{"TLS key", key},
 		{"Login", pw},
@@ -147,6 +151,12 @@ func (d *savedBouncersBox) press(a *App, button string) tea.Cmd {
 		a.saveConfig()
 		return a.connectWith(b, pw)
 	case "Edit":
+		if b.Local {
+			a.openDialog(&msgBox{Title: "Bouncers", Buttons: []string{"OK"},
+				Lines:   []string{"There's nothing to edit: trout runs this one itself."},
+				OnClose: func(a *App, _ int) tea.Cmd { a.openDialog(d); return nil }})
+			return nil
+		}
 		pw := a.password
 		if a.cfg != nil && b.Name != a.bnc.Name {
 			pw, _ = a.cfg.StoredPassword(b.Name)

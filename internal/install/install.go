@@ -217,6 +217,9 @@ func Existing(r Runner, f Facts, host, account, password, pin, mode string) (*In
 		Password: password, Pin: pin}, nil
 }
 
+// NewPassword is a new random password for a soju account.
+func NewPassword() string { return password() }
+
 // password is 24 letters and digits: plenty, and nothing to quote in sh.
 func password() string {
 	const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -468,24 +471,33 @@ ss -ltn 2>/dev/null | grep -q ':6697 ' || echo "nothing listens on port 6697"`)
 	return "the setup isn't finished: " + strings.Join(strings.Split(out, "\n"), "; ")
 }
 
-// FindBinaries finds soju and sojuctl for linux/arch: next to trout (in
-// soju-linux-<arch>/, as release archives have them), or where
+// FindBinaries finds soju and sojuctl for linux/arch, to install on a
+// server (see FindFor).
+func FindBinaries(arch string) (soju, sojuctl string, err error) { return FindFor("linux", arch) }
+
+// FindFor finds soju and sojuctl for goos/arch: next to trout (in
+// soju-<goos>-<arch>/, as release archives have them), or where
 // dev/build-soju puts them.
-func FindBinaries(arch string) (soju, sojuctl string, err error) {
+func FindFor(goos, arch string) (soju, sojuctl string, err error) {
+	platform := goos + "-" + arch
 	var dirs []string
 	if exe, err := os.Executable(); err == nil {
-		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "soju-linux-"+arch))
+		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "soju-"+platform))
 	}
 	if cache, err := os.UserCacheDir(); err == nil {
-		dirs = append(dirs, filepath.Join(cache, "trout", "soju", SojuVersion, "linux-"+arch))
+		dirs = append(dirs, filepath.Join(cache, "trout", "soju", SojuVersion, platform))
+	}
+	ext := ""
+	if goos == "windows" {
+		ext = ".exe"
 	}
 	for _, d := range dirs {
-		s, c := filepath.Join(d, "soju"), filepath.Join(d, "sojuctl")
+		s, c := filepath.Join(d, "soju"+ext), filepath.Join(d, "sojuctl"+ext)
 		if fileExists(s) && fileExists(c) {
 			return s, c, nil
 		}
 	}
-	return "", "", fmt.Errorf("no soju %s for linux/%s next to trout; dev/build-soju builds it", SojuVersion, arch)
+	return "", "", fmt.Errorf("no soju %s for %s/%s next to trout; dev/build-soju builds it", SojuVersion, goos, arch)
 }
 
 func fileExists(p string) bool {

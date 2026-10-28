@@ -58,6 +58,10 @@ func (a *App) switchBouncer(b config.Bouncer, password string) tea.Cmd {
 		c.Close()
 	}
 	clear(a.conns)
+	if !b.Local { // trout's own soju is for This Computer only
+		a.local.Stop()
+		a.local = nil
+	}
 	a.setBouncer(b, password)
 	return a.connectBouncer()
 }
@@ -200,7 +204,10 @@ func (a *App) openConnectFor(b config.Bouncer, password, note string, back modal
 		OnOK: func(a *App, vals []string) (tea.Cmd, error) {
 			return a.connectOK(b, password, vals)
 		},
-		OnButton: map[string]func(*App) tea.Cmd{"Set One Up...": func(a *App) tea.Cmd { a.openInstall(); return nil }},
+		OnButton: map[string]func(*App) tea.Cmd{
+			"Set One Up...": func(a *App) tea.Cmd { a.openInstall(); return nil },
+			"This Computer": func(a *App) tea.Cmd { a.dlg = nil; return a.useLocal() },
+		},
 		OnCancel: func(a *App) tea.Cmd {
 			switch {
 			case back != nil:
@@ -211,9 +218,14 @@ func (a *App) openConnectFor(b config.Bouncer, password, note string, back modal
 			return nil
 		},
 	}
-	if a.bnc.Address == "" && back == nil { // first run: no bouncer yet? trout can make one
-		f.Lines = append(f.Lines, "", "No bouncer yet? Set One Up installs soju on a server of yours.")
-		f.Buttons = []string{"Connect", "Set One Up...", "Cancel"}
+	switch {
+	case a.bnc.Address == "" && back == nil: // first run: no bouncer yet? trout can make one
+		f.Lines = append(f.Lines, "", "No bouncer yet? Set One Up installs soju on a server of yours;",
+			"This Computer runs it here, while trout is open.")
+		f.Buttons = []string{"Connect", "Set One Up...", "This Computer", "Cancel"}
+	case b.Name == "" && !a.hasLocal(): // Bouncers > Add
+		f.Lines = append(f.Lines, "", "Or This Computer: one trout runs here, while it's open.")
+		f.Buttons = []string{"Connect", "This Computer", "Cancel"}
 	}
 	// Start in the first empty field, or the password after a failed login.
 	f.focus = slices.IndexFunc(f.Fields, func(fl *formField) bool { return len(fl.Edit.Buf) == 0 })

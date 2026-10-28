@@ -79,7 +79,10 @@ func (a *App) dial(n *state.Network, bind string, caps []string) tea.Cmd {
 
 func (a *App) connectBouncer() tea.Cmd {
 	a.stopped = false
-	a.addLine(a.home.Status(), state.RoleInfo, "* Connecting to the bouncer at "+a.bnc.Address+" as "+a.bnc.User+"...")
+	if a.bnc.Local && !a.local.Running() {
+		return a.startLocal()
+	}
+	a.addLine(a.home.Status(), state.RoleInfo, "* Connecting to the bouncer at "+a.bncAddress()+" as "+a.bnc.User+"...")
 	return a.dial(a.home, "", controlCaps)
 }
 

@@ -144,7 +144,7 @@ func (a *App) openOptions(page int) {
 			optItem{Label: "Option key as Alt (" + a.term.Name + ")...", Action: (*App).openOptionKey})
 	}
 	if !a.opts.Demo { // setting up and managing bouncers is a mock-up so far
-		notes := []string{"", "Address: " + a.bnc.Address, "User:    " + a.bnc.User}
+		notes := []string{"", "Address: " + a.bncAddress(), "User:    " + a.bnc.User}
 		if a.bnc.Pin != "" {
 			notes = append(notes, "Trusted: "+a.bnc.Pin)
 		}
@@ -180,7 +180,7 @@ func (a *App) connectPage(n *state.Network) optPage {
 		{Label: "Perform on connect (" + id.Name + ")...", Action: func(a *App) { a.openPerform(id) }},
 		{Label: a.proxyLabel(), Action: (*App).openProxy},
 		{Label: "Bouncers...", Action: (*App).openSavedBouncers},
-	}, Notes: []string{"", "Bouncer:   " + a.bnc.Address + " as " + a.bnc.User,
+	}, Notes: []string{"", "Bouncer:   " + a.bncAddress() + " as " + a.bnc.User,
 		"Network:   " + id.Name}}
 }
 
@@ -496,7 +496,9 @@ func aboutBox(demo bool) *msgBox {
 	}
 	d.Lines = append(d.Lines, "",
 		"No trout were harmed in the making of this client.",
-		"Some were slapped around a bit.")
+		"Some were slapped around a bit.", "",
+		"The bouncer trout sets up and runs is soju (AGPL-3.0):",
+		"https://codeberg.org/emersion/soju")
 	d.Title = "About trout"
 	return d
 }

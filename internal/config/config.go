@@ -181,6 +181,10 @@ type Bouncer struct {
 	// trout set this soju up on, for Update and Uninstall; empty for a
 	// bouncer trout didn't install.
 	SSH string `toml:"ssh,omitempty"`
+
+	// Local is trout's own soju, run on this computer while trout runs
+	// (internal/local); it has no Address, as its port changes each time.
+	Local bool `toml:"local,omitempty"`
 }
 
 // Settings are the View menu and Options dialog choices.

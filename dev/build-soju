@@ -1,8 +1,9 @@
 #!/bin/sh
-# Builds the soju that trout installs on servers (install.SojuVersion), for
-# linux amd64 and arm64, into the cache install.FindBinaries looks in. Pure
-# Go (moderncsqlite, no cgo), so it runs on any Linux without packages.
-# Release archives will ship these next to trout instead.
+# Builds the soju trout uses (install.SojuVersion) into the cache
+# install.FindFor looks in: linux amd64 and arm64, to install on servers,
+# and this computer's, for running its own (no bouncer). Pure Go
+# (moderncsqlite, no cgo), so it runs anywhere without packages. Release
+# archives will ship these next to trout instead.
 set -e
 cd "$(dirname "$0")/.."
 version=$(sed -n 's/^const SojuVersion = "\(.*\)"$/\1/p' internal/install/install.go)
@@ -11,17 +12,21 @@ cache=$(go run ./dev/cachedir)/trout/soju/$version
 modcache=$(go env GOMODCACHE)
 tmp=$(mktemp -d)
 trap 'chmod -R u+w "$tmp"; rm -rf "$tmp"' EXIT
-for arch in amd64 arm64; do
-	out=$cache/linux-$arch
+for platform in linux/amd64 linux/arm64 "$(go env GOOS)/$(go env GOARCH)"; do
+	os=${platform%/*} arch=${platform#*/}
+	out=$cache/$os-$arch
 	if [ -x "$out/soju" ] && [ -x "$out/sojuctl" ]; then
-		echo "soju $version linux/$arch: already built in $out"
+		echo "soju $version $os/$arch: already built in $out"
 		continue
 	fi
-	echo "soju $version linux/$arch..."
-	GOOS=linux GOARCH=$arch CGO_ENABLED=0 GOBIN= GOPATH=$tmp/gopath GOMODCACHE=$modcache \
+	echo "soju $version $os/$arch..."
+	GOOS=$os GOARCH=$arch CGO_ENABLED=0 GOBIN= GOPATH=$tmp/gopath GOMODCACHE=$modcache \
 		go install -trimpath -ldflags='-s -w' -tags moderncsqlite \
 		codeberg.org/emersion/soju/cmd/soju@"$version" codeberg.org/emersion/soju/cmd/sojuctl@"$version"
 	mkdir -p "$out"
-	mv "$tmp/gopath/bin/linux_$arch/soju" "$tmp/gopath/bin/linux_$arch/sojuctl" "$out/"
+	bin=$tmp/gopath/bin/${os}_$arch
+	[ -d "$bin" ] || bin=$tmp/gopath/bin # this computer's own: no subfolder
+	mv "$bin"/soju* "$out/"
+	rm -rf "$tmp/gopath/bin"
 	echo "  -> $out"
 done

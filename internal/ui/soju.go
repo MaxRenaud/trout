@@ -165,7 +165,7 @@ func (a *App) connectNet(n *state.Network) tea.Cmd {
 		switch {
 		case a.control != nil:
 			a.addLine(status, state.RoleInfo, "* Already connected to the bouncer")
-		case a.bnc.Address == "" || a.bnc.User == "":
+		case !a.bouncerSet():
 			a.openConnect("")
 		case a.stopped:
 			return a.connectBouncer()

@@ -48,6 +48,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
+- `internal/local`: trout's own soju for the This Computer bouncer, run while trout is
+  open on 127.0.0.1 (a random port each time), in `soju/` next to config.toml;
+  `ui/localbnc.go` starts it before connecting and `ui.Run` stops it.
 - `internal/termkeys`: which terminal this is, whether its Option key sends Alt, and the
   fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `optionkey.go`
   asks at startup.
@@ -103,9 +106,12 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   runner. With `-tags proxmox`, `install/proxmox_test.go` installs on all six Proxmox
   templates through every root tier, and `ui/proxmox_test.go` drives the wizard for real.
   Only touch VMs in the trout-test pool (IDs 9900-9999).
+- `local/local_test.go` and `ui/localbnc_test.go` run the real soju for this computer
+  (skipped until `dev/build-soju` has built it), in a short folder under /tmp: Unix
+  socket paths can't be long.
 - Tests never touch the real config: demo mode and `Options{}` without `Config` save nothing.
 
 ## Not built yet
 
-The embedded "None" mode (trout starting its own soju) and VPS provisioning (Lock was
-skipped). See `docs/architecture.md` and `tmp/plan.md`.
+VPS provisioning (Hetzner, DigitalOcean), and release archives that ship soju next to
+trout (Lock was skipped). See `docs/architecture.md` and `tmp/plan.md`.

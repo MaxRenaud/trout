@@ -19,7 +19,7 @@ trout ──per net──▶ soju ──▶ IRC network   (BOUNCER BIND <netid> 
 ```
 
 - TCP, with soju's address syntax: `ircs://host[:port]` (TLS, the default, port 6697) or
-  `irc+insecure://host:port` (plain text, for localhost). TCP is the one transport that
+  `irc+insecure://host:port` (plain text, for localhost, like trout's own soju). TCP is the one transport that
   works the same on macOS, Linux and Windows; Unix sockets don't reach out of Docker
   Desktop's VM on macOS, and soju doesn't target Windows.
 - TLS checks the system's authorities first. A certificate none of them signed (a
@@ -313,9 +313,21 @@ Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/in
   bouncer's networks over (`network create`, `channel create`). soju never hands out
   network passwords, so trout says to set those again.
 
+## This Computer: trout's own soju
+
+With no bouncer anywhere, This Computer (on the first-run Connect dialog, or Bouncers >
+Add) has trout run soju itself (`internal/local`): a separate process (soju is AGPL),
+started before connecting and stopped when trout quits or switches bouncers, so it's
+connected to your networks only while trout is open. It listens on `127.0.0.1` in plain
+text on a port picked each start, with an admin account whose random password lives in
+the credentials file (`sojuctl` sets it each start, so the two can't drift); its database,
+config and log are in `soju/` next to config.toml. A soju already serving that folder (a
+trout that crashed, or a second one open) is used as it is, and left running. The config
+entry has `local = true` and no address. soju builds for Windows, but trout's own soju
+there is untested. The About box links soju's source.
+
 ## Later
 
-- **"None" mode:** trout starts its own soju on a random localhost port.
 - **A new VPS** (Hetzner, DigitalOcean) for the bouncer, with the same pinning and moving.
   The demo shows the planned UI.
 - **Clipboard over SSH** via OSC 52 (copying uses pbcopy/xclip/clip locally).
