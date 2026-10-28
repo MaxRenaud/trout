@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -331,7 +332,11 @@ func TestDCCOfferSafety(t *testing.T) {
 	}
 	a.dlg.key(a, "esc")
 
-	// A folder trout can't look in: an error, not a hang.
+	// A folder trout can't look in: an error, not a hang. (Windows ignores
+	// these permission bits, so there's no such folder to make there.)
+	if runtime.GOOS == "windows" {
+		return
+	}
 	locked := filepath.Join(t.TempDir(), "locked")
 	os.Mkdir(locked, 0o700)
 	os.Chmod(locked, 0o600)

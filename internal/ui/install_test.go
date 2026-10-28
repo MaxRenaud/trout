@@ -81,6 +81,7 @@ func installApp(t *testing.T, srv *fakeServer) (*App, chan string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows' home
 	os.MkdirAll(filepath.Join(home, ".ssh"), 0o700)
 	os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Host vps\n  HostName 192.0.2.10\nHost *\n  ServerAliveInterval 30\n"), 0o600)
 	a, n, sent, feed := optionsApp(t)

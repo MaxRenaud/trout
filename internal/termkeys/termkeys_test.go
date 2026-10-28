@@ -79,7 +79,7 @@ func TestConfigLine(t *testing.T) {
 
 	k := env(t, map[string]string{"KITTY_WINDOW_ID": "1"})
 	term = Detect(k)
-	if term.Name != "kitty" || term.OK || !strings.HasSuffix(term.Config, ".config/kitty/kitty.conf") {
+	if term.Name != "kitty" || term.OK || !strings.HasSuffix(filepath.ToSlash(term.Config), ".config/kitty/kitty.conf") {
 		t.Fatalf("kitty: %+v", term)
 	}
 	os.MkdirAll(filepath.Dir(term.Config), 0o755)

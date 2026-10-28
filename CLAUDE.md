@@ -20,6 +20,7 @@ go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean   
 go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
+dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
 
@@ -64,7 +65,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/demo`: the fake world for `--demo`; the dev bot reuses its chatter.
 - `dev/`: Docker setup (two ergo networks, soju, a chatter bot); `build-soju`; `proxmox/`,
   throwaway test VMs for bouncer setup (credentials and their SSH key in `tmp/`);
-  `systemd/`, a Debian image with systemd and sshd for the arm64 install test.
+  `systemd/`, a Debian image with systemd and sshd for the arm64 install test;
+  `windows/`, the Windows 11 VM's answer file (`proxmox/pve_windows.py` makes the VM) and
+  `run-tests`, which runs cross-compiled tests there over ssh (PowerShell: no `-test.x`
+  flags unquoted, it splits them at the dot).
 - `tmp/`: git-ignored scratch space until v1.0. The roadmap is `tmp/plan.md`; keep it updated.
 
 ## Rules

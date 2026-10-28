@@ -354,8 +354,9 @@ text on a port picked each start, with an admin account whose random password li
 the credentials file (`sojuctl` sets it each start, so the two can't drift); its database,
 config and log are in `soju/` next to config.toml. A soju already serving that folder (a
 trout that crashed, or a second one open) is used as it is, and left running. The config
-entry has `local = true` and no address. soju builds for Windows, but trout's own soju
-there is untested. The About box links soju's source.
+entry has `local = true` and no address. Its config names the admin socket and database relative to
+that folder (soju runs there, and so does `sojuctl`): a Windows path in a listen URL loses
+its backslashes. Tested on Windows 11 (`dev/windows/run-tests`). The About box links soju's source.
 
 ## Later
 

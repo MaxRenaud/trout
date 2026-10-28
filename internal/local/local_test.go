@@ -18,7 +18,7 @@ func TestLocal(t *testing.T) {
 		t.Skip(err)
 	}
 	// A short folder: Unix socket paths can't be long, and t.TempDir's are.
-	dir, err := os.MkdirTemp("/tmp", "trout-local-")
+	dir, err := os.MkdirTemp(shortTemp(), "trout-local-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,4 +73,13 @@ func TestLocal(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "soju.db")); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// shortTemp is where to make a test's soju folder: /tmp where there is one
+// (t.TempDir's paths are too long for a Unix socket), else the system's.
+func shortTemp() string {
+	if st, err := os.Stat("/tmp"); err == nil && st.IsDir() {
+		return "/tmp"
+	}
+	return os.TempDir()
 }

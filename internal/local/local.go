@@ -58,7 +58,7 @@ func Start(ctx context.Context, dir, account, password string) (*Soju, error) {
 			return nil, err
 		}
 	}
-	if err := setAccount(ctx, sojuctl, conf, account, password); err != nil {
+	if err := setAccount(ctx, sojuctl, dir, account, password); err != nil {
 		s.Stop()
 		return nil, err
 	}
@@ -97,12 +97,14 @@ func freePort() (string, error) {
 
 func (s *Soju) start(soju, conf string) error {
 	os.Remove(s.admin()) // left by a soju that didn't stop cleanly
-	config := fmt.Sprintf(`# Written by trout each time it starts its own soju.
+	// Paths relative to Dir, where soju runs: a Windows path in a listen
+	// URL loses its backslashes and its drive letter reads as a port.
+	config := fmt.Sprintf(`# Written by trout each time it starts its own soju, from this folder.
 listen irc+insecure://%s
-listen unix+admin://%s
-db sqlite3 %s
+listen unix+admin://admin
+db sqlite3 soju.db
 hostname localhost
-`, s.Addr, s.admin(), filepath.Join(s.Dir, "soju.db"))
+`, s.Addr)
 	if err := os.WriteFile(conf, []byte(config), 0o600); err != nil {
 		return err
 	}
@@ -154,9 +156,11 @@ hostname localhost
 
 // setAccount makes account, or sets its password, so it always matches
 // what trout has in its credentials file.
-func setAccount(ctx context.Context, sojuctl, conf, account, password string) error {
+func setAccount(ctx context.Context, sojuctl, dir, account, password string) error {
 	ctl := func(args ...string) error {
-		out, err := exec.CommandContext(ctx, sojuctl, append([]string{"-config", conf}, args...)...).CombinedOutput()
+		cmd := exec.CommandContext(ctx, sojuctl, append([]string{"-config", "config"}, args...)...)
+		cmd.Dir = dir // the config's paths are relative to it
+		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("sojuctl %s: %v: %s", args[0]+" "+args[1], err, strings.TrimSpace(string(out)))
 		}

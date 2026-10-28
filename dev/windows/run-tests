@@ -1,0 +1,31 @@
+#!/bin/sh
+# Runs trout's unit tests on the Windows test VM (dev/proxmox/pve_windows.py):
+# cross-compiles each package's tests here, copies them with the Windows
+# soju (dev/build-soju dist-soju windows/amd64) next to them, and runs
+# them over ssh. Usage: dev/windows/run-tests [ip]
+set -e
+cd "$(dirname "$0")/../.."
+ip=${1:-$(python3 -I dev/proxmox/pve_windows.py ip)}
+ssh="ssh -i tmp/pve_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes"
+dev/build-soju dist-soju windows/amd64 >/dev/null
+out=$(mktemp -d)
+trap 'rm -r "$out"' EXIT
+mkdir "$out/trout-tests"
+for pkg in config install local cloud ui termkeys state irc proxy; do
+	GOOS=windows GOARCH=amd64 go test -c -o "$out/trout-tests/$pkg.test.exe" ./internal/$pkg
+done
+cp -R dist-soju/windows-amd64 "$out/trout-tests/soju-windows-amd64"
+$ssh trout@"$ip" 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue trout-tests' || true
+scp -q -r -i tmp/pve_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+	"$out/trout-tests" trout@"$ip":
+status=0
+for pkg in config install local cloud ui termkeys state irc proxy; do
+	if $ssh trout@"$ip" "cd trout-tests; .\\$pkg.test.exe 2>&1 | Select-Object -Last 15; exit \$LASTEXITCODE" >"$out/$pkg.log" 2>&1; then
+		echo "ok   $pkg"
+	else
+		status=1
+		echo "FAIL $pkg"
+		sed 's/^/     /' "$out/$pkg.log"
+	fi
+done
+exit $status

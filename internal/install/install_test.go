@@ -263,6 +263,7 @@ func TestFindBinaries(t *testing.T) {
 	cache := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cache) // Linux
 	t.Setenv("HOME", cache)           // macOS: ~/Library/Caches
+	t.Setenv("LocalAppData", cache)   // Windows
 	if _, _, err := FindBinaries("arm64"); err == nil || !strings.Contains(err.Error(), "dev/build-soju") {
 		t.Fatalf("with nothing built: %v", err)
 	}

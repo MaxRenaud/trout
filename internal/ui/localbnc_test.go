@@ -19,7 +19,7 @@ func TestThisComputer(t *testing.T) {
 	if _, _, err := local.Find(); err != nil {
 		t.Skip(err)
 	}
-	dir, err := os.MkdirTemp("/tmp", "trout-ui-") // short: soju's admin socket path
+	dir, err := os.MkdirTemp(shortTemp(), "trout-ui-") // short: soju's admin socket path
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,4 +75,13 @@ func TestThisComputer(t *testing.T) {
 	if a2.control == nil {
 		t.Fatal("not connected the second time")
 	}
+}
+
+// shortTemp is where to make a test's soju folder: /tmp where there is one
+// (t.TempDir's paths are too long for a Unix socket), else the system's.
+func shortTemp() string {
+	if st, err := os.Stat("/tmp"); err == nil && st.IsDir() {
+		return "/tmp"
+	}
+	return os.TempDir()
 }
