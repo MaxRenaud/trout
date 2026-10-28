@@ -233,7 +233,29 @@ func (d *savedBouncersBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) 
 
 // uninstallBox asks what removing a bouncer trout set up should do: take
 // soju off the server (and maybe its history), or only forget it here.
+// On a server trout created, the choice is deleting the server.
 func (d *savedBouncersBox) uninstallBox(b config.Bouncer) *msgBox {
+	if b.Cloud != "" {
+		box := &msgBox{Title: "Remove Bouncer", Buttons: []string{"Delete Server", "Forget", "Cancel"}, Sel: 2, Cancel: 2,
+			Lines: []string{"Remove " + b.Name + "?", "",
+				"Delete Server deletes it at the provider, chat history and all,",
+				"and its billing stops. Forget only removes it from trout:",
+				"the server keeps running, and billing."}}
+		box.OnClose = func(a *App, button int) tea.Cmd {
+			switch button {
+			case 0:
+				a.dlg = nil
+				return a.deleteBouncerServer(b, d)
+			case 1:
+				if a.cfg != nil {
+					a.cfg.Remove(b.Name)
+				}
+			}
+			a.openDialog(d)
+			return nil
+		}
+		return box
+	}
 	box := &msgBox{Title: "Remove Bouncer", Buttons: []string{"Uninstall", "Forget", "Cancel"}, Sel: 2, Cancel: 2,
 		Lines: []string{"Remove " + b.Name + "?", "",
 			"Uninstall takes the bouncer off " + b.SSH + ". Forget only",

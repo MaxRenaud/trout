@@ -12,9 +12,11 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/MaxRenaud/trout/internal/cloud"
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/state"
@@ -35,6 +37,18 @@ type installWizard struct {
 	account string   // the soju user to make
 	b       config.Bouncer
 
+	// A new server at a cloud provider (vps.go): where is 0 for your own
+	// server, else whereOptions' provider.
+	where      int
+	provID     string
+	token      string
+	prov       cloud.Provider
+	regions    []cloud.Region
+	region     int
+	regionTop  int
+	server     *cloud.Server // once created
+	serverName string
+
 	remote remote
 	in     *install.Installer
 	host   string // the server's real name or address (ssh -G)
@@ -47,7 +61,9 @@ type installWizard struct {
 }
 
 const (
-	instPick = iota
+	instWhere = iota
+	instRegion
+	instPick
 	instWorking
 	instByHand
 	instDone
@@ -67,6 +83,8 @@ type installHooks struct {
 	remote   func(host string) remote
 	binaries func(arch string) (soju, sojuctl string, err error)
 	check    func(ctx context.Context, in *install.Installer) error
+	cloud    func(id, token string) cloud.Provider
+	sshKey   string
 }
 
 type (
@@ -78,12 +96,14 @@ type (
 	// instPhaseMsg is a step that ran in the background finishing:
 	// "probe", "stage", "setup", "check", or "ssh" (ssh had the terminal).
 	instPhaseMsg struct {
-		w     *installWizard
-		seq   int
-		phase string
-		facts install.Facts
-		host  string
-		err   error
+		w       *installWizard
+		seq     int
+		phase   string
+		facts   install.Facts
+		host    string
+		regions []cloud.Region
+		server  cloud.Server
+		err     error
 	}
 )
 
@@ -103,7 +123,7 @@ func (a *App) checkInstall(in *install.Installer) func(context.Context) error {
 }
 
 func (a *App) openInstall() {
-	a.openDialog(&installWizard{hosts: sshConfigHosts(), account: a.defaultAccount()})
+	a.openDialog(&installWizard{step: instWhere, hosts: sshConfigHosts(), account: a.defaultAccount()})
 }
 
 // openReinstall updates or uninstalls bouncer b, which trout set up (mode
@@ -155,7 +175,7 @@ func sshConfigHosts() []string {
 
 // target is what ssh is told to connect to.
 func (w *installWizard) target() string {
-	if w.choice < len(w.hosts) && w.mode == "" {
+	if w.choice < len(w.hosts) && w.mode == "" && w.server == nil {
 		return w.hosts[w.choice]
 	}
 	return w.typed
@@ -181,19 +201,37 @@ func (w *installWizard) start(a *App) tea.Cmd {
 	w.step, w.log, w.err, w.in = instWorking, nil, "", nil
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	a.installing = w
-	w.remote = a.remote(w.target())
-	w.say("Connecting to " + w.target() + " with ssh...")
+	if w.server != nil {
+		w.remote = a.cloudRemote(w.target())
+		w.say("Connecting to it with ssh (a new server takes a minute)...")
+	} else {
+		w.remote = a.remote(w.target())
+		w.say("Connecting to " + w.target() + " with ssh...")
+	}
 	return w.probe()
 }
 
 func (w *installWizard) probe() tea.Cmd {
-	r, seq, ctx := w.remote, w.seq, w.ctx
+	r, seq, ctx, fresh := w.remote, w.seq, w.ctx, w.server != nil
 	return func() tea.Msg {
 		host, _, err := r.Resolve(ctx)
 		if err != nil {
 			return instPhaseMsg{w: w, seq: seq, phase: "probe", err: err}
 		}
 		f, err := install.Probe(ctx, r)
+		// A new server's sshd (and root's key) can take a minute.
+		for deadline := time.Now().Add(3 * time.Minute); fresh && err != nil && time.Now().Before(deadline); {
+			var se *install.SSHError
+			if !errors.As(err, &se) || (se.Kind != install.SSHUnreachable && se.Kind != install.SSHAuth && se.Kind != install.SSHOther) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return instPhaseMsg{w: w, seq: seq, phase: "probe", err: ctx.Err()}
+			case <-time.After(3 * time.Second):
+			}
+			f, err = install.Probe(ctx, r)
+		}
 		return instPhaseMsg{w: w, seq: seq, phase: "probe", facts: f, host: host, err: err}
 	}
 }
@@ -220,6 +258,9 @@ func (a *App) installUpdate(msg tea.Msg) tea.Cmd {
 
 // phaseDone goes on to the next step, or asks, or stops.
 func (w *installWizard) phaseDone(a *App, m instPhaseMsg) tea.Cmd {
+	if cmd, ok := w.cloudPhase(a, m); ok {
+		return cmd
+	}
 	var se *install.SSHError
 	if errors.As(m.err, &se) && se.NeedsYou() {
 		if !w.asked {
@@ -460,6 +501,10 @@ func (w *installWizard) size(a *App) (int, int) { return 72, 19 }
 
 func (w *installWizard) buttons() []string {
 	switch w.step {
+	case instWhere:
+		return []string{"Next", "Cancel"}
+	case instRegion:
+		return []string{"Create Server", "Back", "Cancel"}
 	case instPick:
 		return []string{"Install", "Cancel"}
 	case instWorking:
@@ -470,6 +515,9 @@ func (w *installWizard) buttons() []string {
 		}
 		return []string{"Check", "View Script", "Cancel"}
 	case instFailed:
+		if w.server != nil {
+			return []string{"Try Again", "Delete Server", "Close"}
+		}
 		return []string{"Try Again", "Close"}
 	}
 	return []string{"Finish"}
@@ -496,6 +544,24 @@ func (w *installWizard) draw(a *App, c *Canvas, x, y, wd, h int) {
 		}
 	}
 	switch w.step {
+	case instWhere:
+		text("Where should your bouncer run?", bold)
+		row++
+		for i, o := range whereOptions {
+			box := "( ) "
+			if i == w.where {
+				box = "(•) "
+			}
+			c.Text(tx, row, tw, box+o, face)
+			a.addRegion(Region{X: tx - 1, Y: row, W: tw + 2, H: 1, Kind: HitDlg, S: "where", I: i})
+			row++
+		}
+		row++
+		text(whereNotes[w.where], face)
+		row++
+		text("trout installs soju there and moves your networks onto it.", face)
+	case instRegion:
+		w.drawRegions(a, c, x, y, wd, h, text)
 	case instPick:
 		text("trout sets up soju, the bouncer, on a Linux server you can", face)
 		text("SSH into, and moves your networks onto it.", face)
@@ -572,7 +638,28 @@ func wrapPlain(s string, w int) []string {
 
 func (w *installWizard) press(a *App, button string) tea.Cmd {
 	switch button {
-	case "Install", "Try Again":
+	case "Next":
+		if w.where == 0 {
+			w.step = instPick
+			return nil
+		}
+		return w.chooseCloud(a)
+	case "Back":
+		w.step = instWhere
+		return nil
+	case "Create Server":
+		return w.create(a)
+	case "Delete Server":
+		return w.deleteServer()
+	case "Try Again":
+		if w.server != nil { // the server's there: set it up again
+			return w.start(a)
+		}
+		if w.provID != "" && w.regions == nil {
+			return w.chooseCloud(a)
+		}
+		return w.start(a)
+	case "Install":
 		if w.step == instPick && w.choice == len(w.hosts) && w.typed == "" {
 			w.anotherServer(a)
 			return nil
@@ -586,6 +673,10 @@ func (w *installWizard) press(a *App, button string) tea.Cmd {
 	case "View Script":
 		w.viewScript(a)
 	case "Cancel", "Close":
+		if w.server != nil && w.step != instDone {
+			w.keepOrDelete(a)
+			return nil
+		}
 		w.close(a)
 	case "Finish":
 		w.close(a)
@@ -595,6 +686,14 @@ func (w *installWizard) press(a *App, button string) tea.Cmd {
 }
 
 func (w *installWizard) key(a *App, k string) tea.Cmd {
+	switch {
+	case w.step == instWhere && (k == "up" || k == "down"):
+		w.where = (w.where + map[string]int{"up": len(whereOptions) - 1, "down": 1}[k]) % len(whereOptions)
+		return nil
+	case w.step == instRegion && (k == "up" || k == "down"):
+		w.region = clamp(w.region+map[string]int{"up": -1, "down": 1}[k], 0, len(w.regions)-1)
+		return nil
+	}
 	if w.step == instPick {
 		n := len(w.options())
 		switch k {
@@ -620,6 +719,13 @@ func (w *installWizard) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea
 		return nil
 	}
 	switch r.S {
+	case "where":
+		w.where = r.I
+		if double {
+			return w.press(a, "Next")
+		}
+	case "region":
+		w.region = r.I
 	case "opt":
 		w.choice = r.I
 		if r.I == len(w.hosts) && (double || w.typed == "") {
@@ -668,7 +774,7 @@ func (a *App) finishInstall(w *installWizard) tea.Cmd {
 	for i := 2; a.cfg != nil && a.cfg.Find(name) != nil; i++ {
 		name = fmt.Sprintf("%s-%d", w.targetName(), i)
 	}
-	b := config.Bouncer{Name: name, Address: in.Address(), User: in.Account, Pin: in.Pin, SSH: w.target()}
+	b := w.cloudBouncer(config.Bouncer{Name: name, Address: in.Address(), User: in.Account, Pin: in.Pin, SSH: w.target()})
 	moving := a.networksToMove()
 	if a.cfg != nil {
 		a.cfg.Use(b)

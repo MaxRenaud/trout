@@ -19,6 +19,7 @@ dev/build-soju                                     # the soju trout installs on 
 go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean   # release archives in dist/, nothing published
 go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
+go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
 
@@ -50,6 +51,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
+- `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens):
+  regions with the cheapest plan and price, create with your SSH key, delete. `ui/vps.go`
+  puts it in the setup wizard, then hands the server to the same install, as root.
 - `internal/local`: trout's own soju for the This Computer bouncer, run while trout is
   open on 127.0.0.1 (a random port each time), in `soju/` next to config.toml;
   `ui/localbnc.go` starts it before connecting and `ui.Run` stops it.
@@ -80,7 +84,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - On screen, say "bouncer", not "soju": soju is how it's done, the bouncer is the idea.
   Name soju only where the product matters (the first-run Connect dialog, the setup
   wizard). Code, docs and comments say soju.
-- Demo-only features (bouncer setup wizard, Bouncers manager) stay behind `a.opts.Demo`
+- The demo keeps its mock-ups (`setupWizard`, `bouncerBox`) behind `a.opts.Demo`; the real
+  ones are `installWizard` and `savedBouncersBox`. New demo-only features stay behind it
   until they're real.
 
 ## Tests
@@ -111,7 +116,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   Only touch VMs in the trout-test pool (IDs 9900-9999). With `-tags docker`,
   `install/docker_test.go` installs in a privileged systemd container (`dev/systemd`), which
   is arm64 on this Mac. `TestMoveNetworksLive` moves tester's networks to a throwaway soju
-  user it deletes afterwards.
+  user it deletes afterwards. With `-tags cloud` (tokens in `tmp/cloud.env`),
+  `cloud/live_test.go` lists regions and makes and deletes a server per provider, and
+  `ui/cloud_test.go` runs the whole wizard on one, then deletes it from Bouncers. Check
+  nothing's left at either provider afterwards; only touch what trout made.
 - `local/local_test.go` and `ui/localbnc_test.go` run the real soju for this computer
   (skipped until `dev/build-soju` has built it), in a short folder under /tmp: Unix
   socket paths can't be long.
@@ -119,6 +127,6 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 
 ## Not built yet
 
-VPS provisioning (Google Cloud, Hetzner, DigitalOcean), and publishing releases (GitHub
+Google Cloud (through gcloud) for a bouncer server, and publishing releases (GitHub
 releases and the Homebrew tap wait until trout is public; `.goreleaser.yaml` has release
 disabled). Lock was skipped. See `docs/architecture.md` and `tmp/plan.md`.

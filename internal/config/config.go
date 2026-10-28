@@ -185,6 +185,11 @@ type Bouncer struct {
 	// Local is trout's own soju, run on this computer while trout runs
 	// (internal/local); it has no Address, as its port changes each time.
 	Local bool `toml:"local,omitempty"`
+
+	// Cloud and ServerID are the provider ("hetzner", "digitalocean") and
+	// server trout created for this bouncer, for Remove > Delete Server.
+	Cloud    string `toml:"cloud,omitempty"`
+	ServerID string `toml:"server-id,omitempty"`
 }
 
 // Settings are the View menu and Options dialog choices.

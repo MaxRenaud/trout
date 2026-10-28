@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
 
+	"github.com/MaxRenaud/trout/internal/cloud"
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/state"
@@ -27,6 +28,7 @@ type fakeServer struct {
 	sudo     string // the probe's sudo= line: "nopasswd", "password" or ""
 	password string // what sudo -S takes
 	hostKey  bool   // the first command fails like an unknown host key
+	root     bool   // logged in as root
 	ran      []string
 }
 
@@ -51,6 +53,9 @@ func (f *fakeServer) Run(ctx context.Context, c install.Cmd) error {
 	switch {
 	case strings.Contains(c.Line, "uname"):
 		out := "uname=Linux x86_64\nuid=1000\nuser=max\nhome=/home/max\nsystemd=yes\nos=Debian GNU/Linux 13 (trixie)\ngroups=max sudo\n"
+		if f.root {
+			out = "uname=Linux x86_64\nuid=0\nuser=root\nhome=/root\nsystemd=yes\nos=Debian GNU/Linux 13 (trixie)\ngroups=root\n"
+		}
 		if f.sudo != "" {
 			out += "sudo=" + f.sudo + "\n"
 		}
@@ -134,6 +139,12 @@ func drive(a *App, cmd tea.Cmd) {
 	}
 }
 
+// openOwnServer opens Set Up a Bouncer and picks your own server.
+func openOwnServer(a *App) {
+	a.openInstall()
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Next: My own server
+}
+
 func wizard(t *testing.T, a *App) *installWizard {
 	t.Helper()
 	w, ok := a.dlg.(*installWizard)
@@ -149,7 +160,7 @@ func wizard(t *testing.T, a *App) *installWizard {
 func TestInstallWizard(t *testing.T) {
 	srv := &fakeServer{sudo: "nopasswd"}
 	a, _ := installApp(t, srv)
-	a.openInstall()
+	openOwnServer(a)
 	w := wizard(t, a)
 	if !slices.Equal(w.options(), []string{"vps", "Another server..."}) || w.account != "max" {
 		t.Fatalf("pick step: %q, account %q", w.options(), w.account)
@@ -250,7 +261,7 @@ func TestSwitchMoves(t *testing.T) {
 func TestInstallSudoPassword(t *testing.T) {
 	srv := &fakeServer{sudo: "password", password: "hunter2"}
 	a, _ := installApp(t, srv)
-	a.openInstall()
+	openOwnServer(a)
 	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	drive(a, cmd)
 	f, ok := a.dlg.(*formBox)
@@ -285,7 +296,7 @@ func TestInstallByHand(t *testing.T) {
 		}
 		return nil
 	}
-	a.openInstall()
+	openOwnServer(a)
 	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	drive(a, cmd)
 	w := wizard(t, a)
@@ -317,7 +328,7 @@ func TestInstallByHand(t *testing.T) {
 func TestInstallSSHNeedsYou(t *testing.T) {
 	srv := &fakeServer{sudo: "nopasswd", hostKey: true}
 	a, _ := installApp(t, srv)
-	a.openInstall()
+	openOwnServer(a)
 	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	w := a.installing
 	drive(a, cmd)
@@ -384,4 +395,138 @@ func runUntil[T any](t *testing.T, cmd tea.Cmd) T {
 	var zero T
 	t.Fatalf("never got a %T", zero)
 	return zero
+}
+
+// fakeCloud is a provider that makes servers in pretend.
+type fakeCloud struct {
+	token   string
+	created []string
+	deleted []string
+}
+
+func (f *fakeCloud) ID() string   { return "hetzner" }
+func (f *fakeCloud) Name() string { return "Hetzner Cloud" }
+func (f *fakeCloud) Regions(context.Context) ([]cloud.Region, error) {
+	if f.token != "good" {
+		return nil, cloud.ErrToken
+	}
+	return []cloud.Region{
+		{ID: "fsn1", Label: "Falkenstein, DE", Plan: "cax11", Monthly: 7.59, Currency: "USD", PlanDetail: "2 CPUs, 4 GB, arm64"},
+		{ID: "ash", Label: "Ashburn, VA, US", Plan: "cpx11", Monthly: 21.09, Currency: "USD", PlanDetail: "2 CPUs, 2 GB, amd64"},
+	}, nil
+}
+func (f *fakeCloud) Create(_ context.Context, r cloud.Region, name, key string) (cloud.Server, error) {
+	f.created = append(f.created, r.ID+" "+name+" "+key)
+	return cloud.Server{ID: "42", IPv4: "192.0.2.10"}, nil
+}
+func (f *fakeCloud) Delete(_ context.Context, id string) error {
+	f.deleted = append(f.deleted, id)
+	return nil
+}
+
+// TestCloudWizard makes a Hetzner server for the bouncer: the token (a bad
+// one first), a region, Create Server, then the same install as root; the
+// bouncer remembers the server, and Bouncers > Remove deletes it.
+func TestCloudWizard(t *testing.T) {
+	srv := &fakeServer{}
+	a, _ := installApp(t, srv)
+	var clouds []*fakeCloud
+	a.hooks.cloud = func(id, token string) cloud.Provider {
+		c := &fakeCloud{token: token}
+		clouds = append(clouds, c)
+		return c
+	}
+	a.hooks.sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample max@laptop"
+	var hosts []string
+	a.hooks.remote = func(host string) remote { hosts = append(hosts, host); return srv }
+	srv.sudo = "" // root: the probe says uid 0 below
+	srv.root = true
+
+	a.openInstall()
+	w := wizard(t, a)
+	w.where = 1 // Hetzner Cloud
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	f, ok := a.dlg.(*formBox)
+	if !ok || f.Title != "Hetzner Cloud API Token" || !f.Fields[0].Mask {
+		t.Fatalf("no token prompt: %T", a.dlg)
+	}
+	answer := func(tok string) {
+		f.Fields[0].Edit = state.EditBox{Buf: []rune(tok), Pos: len(tok)}
+		_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		drive(a, cmd)
+	}
+	answer("bad")
+	if f, ok = a.dlg.(*formBox); !ok || !strings.Contains(f.Note, "didn't take") {
+		t.Fatalf("a bad token: %T", a.dlg)
+	}
+	answer("good")
+	if w.step != instRegion || len(w.regions) != 2 || a.cloudToken("hetzner") != "good" {
+		t.Fatalf("step %d, regions %d, token %q", w.step, len(w.regions), a.cloudToken("hetzner"))
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyDown}) // Ashburn
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	drive(a, cmd)
+	if w.step != instDone {
+		t.Fatalf("step %d, err %q, log %q", w.step, w.err, w.log)
+	}
+	c := clouds[len(clouds)-1]
+	if len(c.created) != 1 || !strings.HasPrefix(c.created[0], "ash trout-ash-") || !strings.HasSuffix(c.created[0], a.hooks.sshKey) {
+		t.Fatalf("created %q", c.created)
+	}
+	if hosts[len(hosts)-1] != "root@192.0.2.10" || !slices.Contains(srv.lines(), "sh /root/.trout-install/setup.sh ") {
+		t.Fatalf("installed through %q: %q", hosts, srv.lines())
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Finish
+	b := a.cfg.Find(w.serverName)
+	if b == nil || b.Cloud != "hetzner" || b.ServerID != "42" || b.SSH != "root@192.0.2.10" || b.Address != "ircs://192.0.2.10:6697" {
+		t.Fatalf("saved %+v", b)
+	}
+
+	// Bouncers > Remove > Delete Server.
+	a.openSavedBouncers()
+	d := a.dlg.(*savedBouncersBox)
+	d.sel = slices.IndexFunc(a.savedBouncers(), func(o config.Bouncer) bool { return o.Name == b.Name })
+	d.press(a, "Remove")
+	box := a.dlg.(*msgBox)
+	if box.Buttons[0] != "Delete Server" {
+		t.Fatalf("Remove offers %q", box.Buttons)
+	}
+	cmd = box.close(a, 0)
+	a.Update(cmd())
+	c = clouds[len(clouds)-1]
+	if !slices.Equal(c.deleted, []string{"42"}) || a.cfg.Find(b.Name) != nil {
+		t.Fatalf("deleted %q, still saved %v", c.deleted, a.cfg.Find(b.Name) != nil)
+	}
+}
+
+// TestCloudWizardFails: when the setup fails after the server is made,
+// the wizard offers to delete it, so it isn't left billing.
+func TestCloudWizardFails(t *testing.T) {
+	srv := &fakeServer{root: true}
+	a, _ := installApp(t, srv)
+	fc := &fakeCloud{token: "good"}
+	a.hooks.cloud = func(string, string) cloud.Provider { return fc }
+	a.hooks.sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample"
+	a.hooks.remote = func(string) remote { return srv }
+	a.hooks.check = func(context.Context, *install.Installer) error { return errors.New("can't reach it") }
+	a.saveCloudToken("hetzner", "good")
+	a.openInstall()
+	w := wizard(t, a)
+	w.where = 1
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	drive(a, cmd)
+	_, cmd = a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Create Server in Falkenstein
+	drive(a, cmd)
+	if w.step != instFailed || !slices.Equal(w.buttons(), []string{"Try Again", "Delete Server", "Close"}) {
+		t.Fatalf("step %d, buttons %q", w.step, w.buttons())
+	}
+	w.press(a, "Close") // asks first
+	box, ok := a.dlg.(*msgBox)
+	if !ok || box.Buttons[0] != "Delete Server" {
+		t.Fatalf("Close with a server made: %T", a.dlg)
+	}
+	drive(a, box.close(a, 0))
+	if !slices.Equal(fc.deleted, []string{"42"}) || a.dlg != nil {
+		t.Fatalf("deleted %q, dialog %T", fc.deleted, a.dlg)
+	}
 }

@@ -181,6 +181,7 @@ type App struct {
 	movingTo     string                 // that bouncer's name
 	netsBatch    string                 // the batch of the bouncer's network list, while it comes
 	local        *local.Soju            // trout's own soju, for the This Computer bouncer
+	cloudTokens  map[string]string      // without a config (tests): cloud API tokens
 	dccSeq       int
 
 	urls         []seenURL                    // URLs List
@@ -356,6 +357,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.installUpdate(msg)
 	case localUpMsg:
 		cmd = a.localUp(msg)
+	case serverDeletedMsg:
+		a.serverDeleted(msg)
 	case tea.FocusMsg:
 		a.focused = true
 	case tea.BlurMsg:

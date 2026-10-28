@@ -317,6 +317,20 @@ which asks first. Once the new bouncer's network list is complete (the end of it
 already have, and `channel create` its joined channels. soju never hands out network
 passwords, so trout says to set those again.
 
+## A new server for it
+
+The setup wizard's first question is where: your own server, or a new one at Hetzner Cloud
+or DigitalOcean (`internal/cloud`, the wizard steps in `ui/vps.go`). For a provider, trout
+asks for an API token once (kept in the credentials file as `(hetzner)` or
+`(digitalocean)`; DigitalOcean's prompt shows trout's referral link, labeled), lists its
+regions with the cheapest plan that can be ordered there and its monthly price with the
+public IPv4, and Create Server makes a Debian 13 server with your SSH key (the agent's
+first, or `~/.ssh/id_*.pub`; uploaded to the provider once). Then it's the install above,
+as root over ssh (`accept-new` for the new host key, retrying while it boots). If anything
+fails, or you stop, with a server made, the wizard offers to delete it so it isn't left
+billing. The bouncer is saved with `cloud` and `server-id`, and Bouncers > Remove offers
+Delete Server.
+
 ## This Computer: trout's own soju
 
 With no bouncer anywhere, This Computer (on the first-run Connect dialog, or Bouncers >
@@ -332,6 +346,6 @@ there is untested. The About box links soju's source.
 
 ## Later
 
-- **A new VPS** (Hetzner, DigitalOcean) for the bouncer, with the same pinning and moving.
-  The demo shows the planned UI.
+- **Google Cloud** for the bouncer's server, through `gcloud` (the free e2-micro, about
+  $3.60/month for its IPv4).
 - **Clipboard over SSH** via OSC 52 (copying uses pbcopy/xclip/clip locally).

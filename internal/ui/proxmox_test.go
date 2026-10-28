@@ -48,7 +48,7 @@ func TestProxmoxWizard(t *testing.T) {
 	// doesn't really join Libera from the test VM.
 	a.nets[1].Server = "irc.example.invalid"
 
-	a.openInstall()
+	openOwnServer(a)
 	w := wizard(t, a)
 	w.typed, w.choice = ssh.Host, len(w.hosts)
 	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Install

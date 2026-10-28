@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/MaxRenaud/trout/internal/cloud"
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/irc"
@@ -189,7 +191,20 @@ func TestFrames(t *testing.T) {
 		{"dcc privacy", func() {
 			a.openDialog(a.dccPrivacyBox(&transfer{net: a.nets[0], nick: "xdcc", file: "pack.bin"}, nil))
 		}},
-		{"set up bouncer", func() { a.openDialog(&installWizard{hosts: []string{"vps", "homelab"}, account: "max"}) }},
+		{"set up bouncer: where", func() {
+			a.openDialog(&installWizard{step: instWhere, where: 1, hosts: []string{"vps"}, account: "max"})
+		}},
+		{"set up bouncer: region", func() {
+			var rs []cloud.Region
+			for i := range 14 {
+				rs = append(rs, cloud.Region{ID: fmt.Sprint(i), Label: fmt.Sprintf("Region %d, XX", i), Plan: "s-1vcpu-512mb-10gb",
+					Monthly: 4, Currency: "USD", PlanDetail: "1 CPU, 512 MB, amd64"})
+			}
+			a.openDialog(&installWizard{step: instRegion, where: 2, prov: cloud.NewDigitalOcean(""), regions: rs, region: 12})
+		}},
+		{"set up bouncer", func() {
+			a.openDialog(&installWizard{step: instPick, hosts: []string{"vps", "homelab"}, account: "max"})
+		}},
 		{"set up bouncer: working", func() {
 			a.openDialog(&installWizard{hosts: []string{"vps"}, account: "max", step: instWorking, log: []string{
 				"Connecting to vps with ssh...", "Found Debian GNU/Linux 13 (trixie), Linux x86_64",
