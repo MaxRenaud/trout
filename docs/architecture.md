@@ -335,6 +335,15 @@ fails, or you stop, with a server made, the wizard offers to delete it so it isn
 billing. The bouncer is saved with `cloud` and `server-id`, and Bouncers > Remove offers
 Delete Server.
 
+## Phones
+
+There's no trout for phones: Goguma (App Store, F-Droid, Google Play) speaks soju's
+extensions and its push notifications (`soju.im/webpush`, on in soju by default). Tools >
+Connect a Phone (`ui/phone.go`) shows a QR code of `ircs://user:password@host:port` for the
+bouncer in use, which the phone's camera hands to Goguma. Goguma doesn't know trout's pin:
+the first time it shows the certificate's SHA-1 and asks, so the dialog shows that SHA-1
+(`irc.CertSHA1`, fetched through the pin) to compare before Accept Always.
+
 ## This Computer: trout's own soju
 
 With no bouncer anywhere, This Computer (on the first-run Connect dialog, or Bouncers >

@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/ergochat/irc-go v0.7.0
 	github.com/mattn/go-runewidth v0.0.31
+	rsc.io/qr v0.2.0
 )
 
 require (

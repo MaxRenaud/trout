@@ -191,6 +191,10 @@ func TestFrames(t *testing.T) {
 		{"dcc privacy", func() {
 			a.openDialog(a.dccPrivacyBox(&transfer{net: a.nets[0], nick: "xdcc", file: "pack.bin"}, nil))
 		}},
+		{"connect a phone", func() {
+			a.bnc, a.password = config.Bouncer{Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x"}, "abcdefghijkmnpqrstuvwxyz"
+			a.openDialog(&phoneBox{withPassword: true, sha1: "0123456789abcdef0123456789abcdef01234567"})
+		}},
 		{"set up bouncer: where", func() {
 			a.openDialog(&installWizard{step: instWhere, where: 1, hosts: []string{"vps"}, account: "max"})
 		}},

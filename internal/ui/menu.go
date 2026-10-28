@@ -292,7 +292,8 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		} else {
 			items = append(items,
 				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openInstall(); return nil }},
-				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openSavedBouncers(); return nil }})
+				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openSavedBouncers(); return nil }},
+				MenuItem{Label: "Connect a Phone...", Disabled: !a.phoneOK(), Action: (*App).openPhone})
 		}
 		return append(items,
 			MenuItem{Label: "Options...", Key: "Alt+O", Action: func(a *App) tea.Cmd { a.openOptions(optDisplay); return nil }})

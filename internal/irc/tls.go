@@ -1,10 +1,13 @@
 package irc
 
 import (
+	"context"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -111,4 +114,25 @@ func (cfg Config) TLSConfig() *tls.Config {
 			return &CertError{Addr: cfg.Addr, Fingerprint: fp, Pinned: cfg.Pin, Err: err}
 		},
 	}
+}
+
+// CertSHA1 connects to cfg.Addr over TLS, checked as Dial checks it (so a
+// pin must match), and returns the certificate's SHA-1 in lowercase hex:
+// how Goguma, the phone client, shows a certificate it asks you to accept.
+func CertSHA1(ctx context.Context, cfg Config) (string, error) {
+	dial := cfg.Dial
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+	nc, err := dial(ctx, "tcp", cfg.Addr)
+	if err != nil {
+		return "", err
+	}
+	defer nc.Close()
+	tc := tls.Client(nc, cfg.TLSConfig())
+	if err := tc.HandshakeContext(ctx); err != nil {
+		return "", err
+	}
+	sum := sha1.Sum(tc.ConnectionState().PeerCertificates[0].Raw)
+	return hex.EncodeToString(sum[:]), nil
 }

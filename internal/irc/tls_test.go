@@ -6,9 +6,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"errors"
 	"math/big"
 	"net"
@@ -122,4 +124,33 @@ func selfSigned(t *testing.T) tls.Certificate {
 		t.Fatal(err)
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// TestCertSHA1 is the certificate's SHA-1 as Goguma shows it, only when
+// the pin matches.
+func TestCertSHA1(t *testing.T) {
+	cert := selfSigned(t)
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			nc, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() { nc.(*tls.Conn).Handshake(); nc.Close() }()
+		}
+	}()
+	leaf, _ := x509.ParseCertificate(cert.Certificate[0])
+	sum := sha1.Sum(cert.Certificate[0])
+	got, err := CertSHA1(t.Context(), Config{Addr: ln.Addr().String(), Pin: Fingerprint(leaf)})
+	if err != nil || got != hex.EncodeToString(sum[:]) {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if _, err := CertSHA1(t.Context(), Config{Addr: ln.Addr().String(), Pin: "SHA256:other"}); err == nil {
+		t.Fatal("no error with the wrong pin")
+	}
 }

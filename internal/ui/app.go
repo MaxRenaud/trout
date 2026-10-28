@@ -359,6 +359,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.localUp(msg)
 	case serverDeletedMsg:
 		a.serverDeleted(msg)
+	case phoneSHA1Msg:
+		a.phoneSHA1(msg)
 	case tea.FocusMsg:
 		a.focused = true
 	case tea.BlurMsg:

@@ -47,7 +47,7 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `upload.go` (Send File through the bouncer's file host); `winopts.go` a window's own
   options and Window > Order; `editwin.go` the multi-line and second editboxes;
   `proxy.go` Options > Connect > Proxy; `form.go` is the text-field dialog they and Kick
-  (why) use.
+  (why) use; `phone.go` Tools > Connect a Phone (a QR code for Goguma).
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
