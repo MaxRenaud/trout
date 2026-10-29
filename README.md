@@ -21,14 +21,16 @@ trout is a hobby project. There's no hosted service and nothing to sign up for.
 ## Install and run
 
 ```sh
-go install github.com/MaxRenaud/trout/cmd/trout@latest
+brew install --cask maxrenaud/tap/trout     # macOS and Linux
 trout                 # the Connect dialog the first time, then your saved bouncer
 trout --demo          # a fake world, no network: look around first
 ```
 
-Release archives for macOS, Linux and Windows, and a Homebrew tap, come once trout is
-public; they carry the soju trout installs and runs. Built from source, `dev/build-soju`
-builds that soju.
+Or download an archive for macOS, Linux or Windows (Intel/AMD or ARM) from
+[Releases](https://github.com/MaxRenaud/trout/releases) and run `trout` from where you
+unpack it: the soju it installs and runs comes in the same archive, next to it. From
+source, `go install github.com/MaxRenaud/trout/cmd/trout@latest` works too, and
+`dev/build-soju` builds that soju.
 
 The first run asks for the bouncer's address (`ircs://host[:port]`), user and password,
 or offers to set one up (Set One Up) or to run one here (This Computer).
