@@ -420,7 +420,7 @@ func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
 		for i, req := range []string{"PING", "TIME", "VERSION"} {
 			ctcp[i].Action = do(func() { a.sendCTCP(win, nick, req) })
 		}
-		slap.Action = do(func() { a.action(win, "slaps "+nick+" around a bit with a large trout") })
+		slap.Action = do(func() { a.action(win, slapText(nick)) })
 	}
 	a.closeMenus()
 	a.pushMenu([]MenuItem{

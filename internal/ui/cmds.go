@@ -43,6 +43,15 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 		} else {
 			a.say(w, rest)
 		}
+	case "slap": // not mIRC's own (its slap is the nick popup's), but the alias everyone wrote
+		switch {
+		case arg == "":
+			need()
+		case w.Kind != state.KChannel && w.Kind != state.KQuery && w.Kind != state.KChat:
+			a.addLine(w, state.RoleInfo, "* /slap: slap someone from a channel or a query")
+		default:
+			a.action(w, slapText(arg))
+		}
 	case "describe": // /describe <nick|#chan> action
 		if tail == "" {
 			need()
@@ -204,3 +213,6 @@ func (a *App) markWindowRead(w *state.Window) {
 
 // lastInvited is the channel you were last invited to, for /join -i.
 func (a *App) lastInvited(n *state.Network) string { return cmp.Or(a.invitedTo[n], "") }
+
+// slapText is mIRC's slap, for the nick popup and /slap.
+func slapText(nick string) string { return "slaps " + nick + " around a bit with a large trout" }

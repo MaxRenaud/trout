@@ -535,3 +535,21 @@ func TestChannelCentralLists(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// TestSlap: /slap nick is the nick popup's slap, as a /me where you are.
+func TestSlap(t *testing.T) {
+	a, n, sent, _ := optionsApp(t)
+	feedJoin := func(l string) { m, _ := ircmsg.ParseLine(l); a.Update(ircLineMsg{n, m}) }
+	feedJoin(":max!m@h JOIN #go")
+	a.activate(n.Find(state.KChannel, "#go"))
+	a.ircCommand(a.active, "slap bob")
+	expectSent(t, sent, "PRIVMSG #go :\x01ACTION slaps bob around a bit with a large trout\x01")
+	a.ircCommand(n.Status(), "slap bob")
+	if !strings.Contains(lastLine(n.Status()), "slap someone from a channel") {
+		t.Fatalf("from the status window: %q", lastLine(n.Status()))
+	}
+	a.ircCommand(a.active, "slap")
+	if !strings.Contains(lastLine(a.active), "insufficient parameters") {
+		t.Fatalf("/slap alone: %q", lastLine(a.active))
+	}
+}

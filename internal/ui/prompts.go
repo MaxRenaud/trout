@@ -92,6 +92,7 @@ func commandsBox() *msgBox {
 		"/msg nick message       Send a private message",
 		"/notice target message  Send a notice",
 		"/me action              Describe what you're doing",
+		"/slap nick              Slap them around a bit with a large trout",
 		"/nick name              Change your nick",
 		"/topic [text]           Show or set the channel topic",
 		"/whois nick             Who someone is",
