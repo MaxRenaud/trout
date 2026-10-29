@@ -357,6 +357,27 @@ func TestSelfCTCP(t *testing.T) {
 	if asked != 1 || len(a.ctcpSent) != 1 {
 		t.Fatalf("a CTCP to yourself: shown %d times, answered %d", asked, len(a.ctcpSent))
 	}
+	// On a network without msgids (Rizon), the second copy of the request
+	// and of our reply are known by what they say: one answer, one reply
+	// shown, not two and four.
+	a.selfCTCP = ""
+	a.ctcpSent = nil
+	before := len(st.Lines)
+	feed(":max!m@h PRIVMSG max :\x01TIME\x01", ":max!m@h PRIVMSG max :\x01TIME\x01")
+	if len(a.ctcpSent) != 1 {
+		t.Fatalf("a CTCP to yourself without msgids: answered %d times", len(a.ctcpSent))
+	}
+	feed(":max!m@h NOTICE max :\x01TIME now\x01", ":max!m@h NOTICE max :\x01TIME now\x01")
+	replies := 0
+	for _, l := range st.Lines[before:] {
+		if strings.HasPrefix(l.Text, "[max TIME reply]") {
+			replies++
+		}
+	}
+	if replies != 1 {
+		t.Fatalf("our reply to ourselves shown %d times", replies)
+	}
+	a.ctcpSent = []time.Time{time.Now()}
 	// Your own CTCP to someone else, echoed, isn't a request.
 	feed("@msgid=2 :max!m@h PRIVMSG bob :\x01VERSION\x01")
 	if lastLine(st) == "[max VERSION]" && len(a.ctcpSent) != 1 {

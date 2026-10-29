@@ -71,17 +71,20 @@ func (a *App) ctcp(n *state.Network, m ircmsg.Message, t time.Time) bool {
 	nick := m.Nick()
 	if n.Same(nick, n.Nick) {
 		// Our own, echoed, unless it was to ourselves, which mIRC answers.
-		// That one comes twice (the echo and the delivery): skip the
-		// second by its msgid.
+		// That one comes twice (the echo and the delivery), and so does
+		// our reply: skip the second copy. By its msgid where the network
+		// gives one, else by what it says (Rizon gives none: four replies).
 		if !n.Same(m.Params[0], n.Nick) {
 			return true
 		}
+		key := m.Command + " " + m.Params[1]
 		if ok, id := m.GetTag("msgid"); ok {
-			if id == a.selfCTCP {
-				return true
-			}
-			a.selfCTCP = id
+			key = id
 		}
+		if key == a.selfCTCP && time.Since(a.selfCTCPAt) < 10*time.Second {
+			return true
+		}
+		a.selfCTCP, a.selfCTCPAt = key, time.Now()
 	}
 	if m.Command == "NOTICE" {
 		text := args

@@ -167,9 +167,10 @@ type App struct {
 	showAddress   bool
 	nicksOnJoin   bool
 	notifyActive  bool
-	memBook       config.Config          // the Address Book without a config.toml (tests)
-	nickLeftX     int                    // a left nicklist's x, for dragging its edge; -1 on the right
-	selfCTCP      string                 // the msgid of the last CTCP to ourselves, which comes twice
+	memBook       config.Config // the Address Book without a config.toml (tests)
+	nickLeftX     int           // a left nicklist's x, for dragging its edge; -1 on the right
+	selfCTCP      string        // the last CTCP to ourselves (msgid, or what it said), which comes twice
+	selfCTCPAt    time.Time
 	editDrag      int                    // the editbox (1 or 2) a drag is selecting in
 	namesOnJoin   map[*state.Window]bool // channels just joined, to list their nicks (Options > Messages)
 	lastFrom      string                 // who last messaged you, for Tab, when private messages
