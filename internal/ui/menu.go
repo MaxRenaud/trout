@@ -330,7 +330,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 	}
 	return []MenuItem{{Label: "Help Topics", Action: func(a *App) tea.Cmd { a.openDialog(commandsBox()); return nil }},
 		{Label: "Keyboard Shortcuts", Key: "F1", Action: func(a *App) tea.Cmd { a.openDialog(shortcutsBox()); return nil }}, sep,
-		{Label: "About trout", Action: func(a *App) tea.Cmd { a.openDialog(aboutBox(a.opts.Demo)); return nil }}}
+		{Label: "About trout", Action: func(a *App) tea.Cmd { a.openDialog(aboutBox(a.opts.Demo, a.opts.Version)); return nil }}}
 }
 
 // windowMenu is the popup for a switchbar or treebar button.

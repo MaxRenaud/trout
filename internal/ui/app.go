@@ -63,6 +63,10 @@ type Options struct {
 	Password string
 
 	Debug func(dir, line string) // sees every raw IRC line, if set
+
+	// Version is trout's, for About and CTCP VERSION: "v0.1.0", or a
+	// development build's "dev" and commit.
+	Version string
 }
 
 type App struct {

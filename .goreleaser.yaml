@@ -1,7 +1,9 @@
-# trout's release: archives for macOS, Linux and Windows, each with the
-# soju trout installs on servers (Linux amd64 and arm64) and the one it runs
-# itself (This Computer) for that platform, with soju's AGPL license and
-# source; and a Homebrew cask. Try it without publishing anything:
+# trout's release, from a v* tag (.github/workflows/release.yml): archives
+# for macOS, Linux and Windows, each with the soju trout installs on servers
+# (Linux amd64 and arm64) and the one it runs itself (This Computer) for
+# that platform, with soju's AGPL license and source; a GitHub release; and
+# the Homebrew cask, pushed to MaxRenaud/homebrew-tap with a deploy key
+# (TAP_DEPLOY_KEY). Try it without publishing anything:
 #
 #   go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean
 version: 2
@@ -18,7 +20,7 @@ builds:
     binary: trout
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
-    ldflags: [-s -w]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
     goos: [linux]
     goarch: [amd64, arm64]
   # One build per OS and arch below, so each archive can name its own soju
@@ -72,8 +74,9 @@ homebrew_casks:
     repository:
       owner: MaxRenaud
       name: homebrew-tap
-    url: # spelled out while release is disabled
-      template: "https://github.com/MaxRenaud/trout/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+      git:
+        url: git@github.com:MaxRenaud/homebrew-tap.git
+        private_key: "{{ .Env.TAP_DEPLOY_KEY }}"
     homepage: https://github.com/MaxRenaud/trout
     description: mIRC-inspired IRC client for the terminal
     binaries: [trout]
@@ -86,4 +89,6 @@ homebrew_casks:
           end
 
 release:
-  disable: true # until trout is public
+  github:
+    owner: MaxRenaud
+    name: trout

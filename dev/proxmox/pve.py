@@ -35,7 +35,7 @@ def env():
     return out
 
 
-NODE = env().get("PVE_NODE", "proxmox4")  # where trout's templates and clones live
+NODE = env()["PVE_NODE"]  # where trout's templates and clones live
 
 
 class PVE:

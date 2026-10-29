@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -15,8 +16,10 @@ import (
 // CTCP: asking clients things (/ctcp, the nick popup) and answering them,
 // like mIRC. DCC offers are CTCPs too; dcc.go takes those.
 
-// version is what trout answers CTCP VERSION with.
-const version = "trout, an mIRC-inspired IRC client for the terminal"
+// ctcpVersion is what trout answers CTCP VERSION with.
+func (a *App) ctcpVersion() string {
+	return "trout " + cmp.Or(a.opts.Version, "dev") + ", an mIRC-inspired IRC client for the terminal"
+}
 
 // ctcpBurst answers in ctcpWindow keep a CTCP flood from making trout
 // flood the network back, while a few requests in a row still get theirs.
@@ -102,7 +105,7 @@ func (a *App) ctcp(n *state.Network, m ircmsg.Message, t time.Time) bool {
 	reply := ""
 	switch cmd {
 	case "VERSION":
-		reply = version
+		reply = a.ctcpVersion()
 	case "PING":
 		reply = args
 	case "TIME":

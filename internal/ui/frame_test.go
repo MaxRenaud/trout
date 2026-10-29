@@ -95,7 +95,7 @@ func TestFrames(t *testing.T) {
 	frame("dark status + Window menu")
 
 	a.themeIdx = 0
-	a.openDialog(aboutBox(true))
+	a.openDialog(aboutBox(true, "v0.1.0"))
 	frame("about box")
 	a.dlg.key(a, "o")
 	if a.dlg != nil {

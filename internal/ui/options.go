@@ -484,9 +484,9 @@ func shortcutsBox() *msgBox {
 	return d
 }
 
-func aboutBox(demo bool) *msgBox {
+func aboutBox(demo bool, version string) *msgBox {
 	d := message(
-		"trout",
+		"trout "+cmp.Or(version, "dev"),
 		"Slapping people around with large trout since 1995.",
 		"",
 		"An mIRC-inspired IRC client for the terminal.",

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"slices"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,20 +20,54 @@ import (
 	"github.com/MaxRenaud/trout/internal/ui"
 )
 
+// version is set by the release build (goreleaser's -X main.version).
+var version string
+
+// appVersion is trout's version: the release's, the module version for
+// `go install …@v0.1.0`, or "dev" and the commit for a build from source.
+func appVersion() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var v strings.Builder
+	v.WriteString("dev")
+	for _, s := range info.Settings {
+		switch {
+		case s.Key == "vcs.revision" && len(s.Value) >= 7:
+			v.WriteString(" " + s.Value[:7])
+		case s.Key == "vcs.modified" && s.Value == "true":
+			v.WriteString("+changes")
+		}
+	}
+	return v.String()
+}
+
 func main() {
-	opts := ui.Options{}
+	opts := ui.Options{Version: appVersion()}
 	defaultPath, err := config.DefaultPath()
 	if err != nil {
 		fail(err)
 	}
 	var path, name, addr, user, password string
 	flag.BoolVar(&opts.Demo, "demo", false, "show the fake demo world instead of connecting")
+	showVersion := flag.Bool("version", false, "print trout's version and exit")
 	flag.StringVar(&path, "config", cmp.Or(os.Getenv("TROUT_CONFIG"), defaultPath), "config file, or $TROUT_CONFIG")
 	flag.StringVar(&name, "bouncer", "", "connect through this bouncer from the config instead of the active one")
 	flag.StringVar(&addr, "addr", os.Getenv("TROUT_ADDR"), "bouncer address, ircs://host[:port] or irc+insecure://host:port, or $TROUT_ADDR")
 	flag.StringVar(&user, "user", os.Getenv("TROUT_USER"), "bouncer username, or $TROUT_USER")
 	flag.StringVar(&password, "password", os.Getenv("TROUT_PASSWORD"), "bouncer password, or $TROUT_PASSWORD")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("trout", opts.Version)
+		return
+	}
 
 	// The demo neither reads nor writes the config.
 	if !opts.Demo {
