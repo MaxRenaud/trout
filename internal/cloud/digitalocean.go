@@ -126,7 +126,19 @@ func (d *DigitalOcean) Create(ctx context.Context, r Region, name, key string) (
 		}
 		return dr.Droplet.Status == "active" && ip != "", nil
 	})
-	return Server{ID: id, IPv4: ip}, err
+	if err != nil {
+		return d.undo(ctx, id, err)
+	}
+	return Server{ID: id, IPv4: ip}, nil
+}
+
+// undo deletes a droplet that was made but never came up, so it isn't left
+// billing; if that fails too, the ID goes back with the error.
+func (d *DigitalOcean) undo(ctx context.Context, id string, err error) (Server, error) {
+	if derr := d.Delete(context.WithoutCancel(ctx), id); derr != nil {
+		return Server{ID: id}, fmt.Errorf("%w (deleting the half-made droplet failed too: %v)", err, derr)
+	}
+	return Server{}, err
 }
 
 func (d *DigitalOcean) Delete(ctx context.Context, id string) error {

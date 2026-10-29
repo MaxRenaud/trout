@@ -52,15 +52,15 @@ func TestLocal(t *testing.T) {
 		t.Fatalf("second start: %+v %v", again, err)
 	}
 	again.Stop() // not its soju to stop
-	if !s.Running() || login(s.Addr, "first-pass") != nil {
+	if !s.Running() || !again.Running() || login(s.Addr, "first-pass") != nil {
 		t.Fatal("the second Stop stopped the first trout's soju")
 	}
 
 	// Stopped, then started again: the account is in the database, and
 	// the password follows what trout has.
 	s.Stop()
-	if s.Running() {
-		t.Fatal("still running after Stop")
+	if s.Running() || again.Running() {
+		t.Fatal("still running after Stop (or the other trout thinks so)")
 	}
 	s2, err := Start(ctx, dir, "max", "second-pass")
 	if err != nil {

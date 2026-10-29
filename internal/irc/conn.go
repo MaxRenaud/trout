@@ -43,8 +43,9 @@ type Config struct {
 	// (its machine gone): whenever we send something, a PING with a token
 	// follows, and Run gives up with ErrNoReply when its PONG doesn't come
 	// within AfterSend; with nothing heard for Idle, the same with
-	// PingWait. Only that PONG counts: lines the server sent before it
-	// froze are no proof it's there. Zero means 60s, 15s and 20s.
+	// PingWait. Lines still arriving while the PONG is due (a backlog over
+	// a slow link) buy another AfterSend each; a frozen server's last lines
+	// stop coming, so it's caught all the same. Zero means 60s, 15s and 20s.
 	Idle, AfterSend, PingWait time.Duration
 
 	// Dial, if set, makes the connection (through a proxy, say).
@@ -234,11 +235,19 @@ func (c *Conn) Run(handle func(ircmsg.Message)) error {
 		}
 	}
 	c.live.Unlock()
+	// due is when to give up on the PONG: its deadline, or later while
+	// lines keep coming.
+	due := func() time.Time {
+		if p := c.lastRead.Add(afterSend); p.After(c.due) {
+			return p
+		}
+		return c.due
+	}
 	for {
 		c.live.Lock()
 		deadline := c.lastRead.Add(idle)
 		if c.token != "" {
-			deadline = c.due
+			deadline = due()
 		}
 		c.live.Unlock()
 		c.nc.SetReadDeadline(deadline)
@@ -247,7 +256,7 @@ func (c *Conn) Run(handle func(ircmsg.Message)) error {
 		if errors.As(err, &ne) && ne.Timeout() {
 			c.live.Lock()
 			switch {
-			case c.token != "" && !time.Now().Before(c.due):
+			case c.token != "" && !time.Now().Before(due()):
 				c.live.Unlock()
 				return ErrNoReply
 			case c.token == "" && !time.Now().Before(c.lastRead.Add(idle)): // quiet: still there?

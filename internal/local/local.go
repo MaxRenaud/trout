@@ -196,10 +196,20 @@ func (s *Soju) PID() int {
 	return s.cmd.Process.Pid
 }
 
-// Running reports whether the soju Start started is still up.
+// Running reports whether the soju is still up: the one Start started, or
+// for one it found running (another trout's, which may have quit and
+// stopped it), whether its admin socket still answers.
 func (s *Soju) Running() bool {
-	if s == nil || s.done == nil {
-		return s != nil // one found running isn't watched
+	if s == nil {
+		return false
+	}
+	if s.done == nil {
+		c, err := net.DialTimeout("unix", s.admin(), 500*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		c.Close()
+		return true
 	}
 	select {
 	case <-s.done:

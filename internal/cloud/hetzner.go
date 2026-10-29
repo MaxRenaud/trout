@@ -167,7 +167,19 @@ func (h *Hetzner) Create(ctx context.Context, r Region, name, key string) (Serve
 		}
 		return s.Server.Status == "running" && s.Server.PublicNet.IPv4.IP != "", nil
 	})
-	return Server{ID: id, IPv4: s.Server.PublicNet.IPv4.IP}, err
+	if err != nil {
+		return h.undo(ctx, id, err)
+	}
+	return Server{ID: id, IPv4: s.Server.PublicNet.IPv4.IP}, nil
+}
+
+// undo deletes a server that was made but never came up, so it isn't left
+// billing; if that fails too, the ID goes back with the error.
+func (h *Hetzner) undo(ctx context.Context, id string, err error) (Server, error) {
+	if derr := h.Delete(context.WithoutCancel(ctx), id); derr != nil {
+		return Server{ID: id}, fmt.Errorf("%w (deleting the half-made server failed too: %v)", err, derr)
+	}
+	return Server{}, err
 }
 
 func (h *Hetzner) Delete(ctx context.Context, id string) error {

@@ -73,8 +73,13 @@ func (a *App) useLocal() tea.Cmd {
 	return a.switchBouncer(b, pw)
 }
 
-// startLocal starts trout's own soju, in the background.
+// startLocal starts trout's own soju, in the background; only one at a
+// time (picking This Computer again meanwhile mustn't start another).
 func (a *App) startLocal() tea.Cmd {
+	if a.localStarting {
+		return nil // the one starting connects when it's up
+	}
+	a.localStarting = true
 	if a.password == "" { // a config.toml whose credentials went missing
 		a.password = install.NewPassword()
 		if a.cfg != nil {
@@ -90,6 +95,7 @@ func (a *App) startLocal() tea.Cmd {
 }
 
 func (a *App) localUp(msg localUpMsg) tea.Cmd {
+	a.localStarting = false
 	if !a.bnc.Local { // switched away while it started
 		msg.s.Stop()
 		return nil

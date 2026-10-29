@@ -127,3 +127,29 @@ func TestGCloudCleansUp(t *testing.T) {
 		t.Fatalf("the address wasn't released: %q", ran)
 	}
 }
+
+// TestHetznerUndo: a server that was made but never came up is deleted, so
+// it isn't left billing.
+func TestHetznerUndo(t *testing.T) {
+	var deleted bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/ssh_keys":
+			w.Write([]byte(`{"ssh_keys":[{"id":1}]}`))
+		case r.Method == "POST" && r.URL.Path == "/servers":
+			w.Write([]byte(`{"server":{"id":42,"status":"initializing"}}`))
+		case r.Method == "GET" && r.URL.Path == "/servers/42":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error":{"message":"oops"}}`))
+		case r.Method == "DELETE" && r.URL.Path == "/servers/42":
+			deleted = true
+		}
+	}))
+	defer srv.Close()
+	h := NewHetzner("good")
+	h.base = srv.URL
+	s, err := h.Create(context.Background(), Region{ID: "fsn1", Plan: "cax11", Image: "debian-13"}, "trout-x", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample")
+	if err == nil || s.ID != "" || !deleted {
+		t.Fatalf("got %+v, %v, deleted %v", s, err, deleted)
+	}
+}

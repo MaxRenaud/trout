@@ -33,6 +33,7 @@ type installWizard struct {
 	step    int
 	hosts   []string // ~/.ssh/config's
 	choice  int      // a host, or len(hosts) for the one typed in
+	hostTop int      // the first host shown: the list scrolls to keep choice in view
 	typed   string   // [user@]host, from Another Server or the bouncer's ssh
 	account string   // the soju user to make
 	b       config.Bouncer
@@ -48,6 +49,8 @@ type installWizard struct {
 	regionTop  int
 	server     *cloud.Server // once created
 	serverName string
+	creating   bool // Create Server is still running
+	stopping   bool // stopped while creating: ask about the server once it exists
 
 	remote remote
 	in     *install.Installer
@@ -402,6 +405,27 @@ func (w *installWizard) close(a *App) {
 	a.dlg = nil
 }
 
+// leave is every way out of the wizard (Cancel, Close, its ×, the ssh and
+// sudo prompts' Cancel). A cloud server it made is never left behind
+// unrecorded: while it's being made, it's waited for; once made, you're
+// asked whether to delete it; once set up, it's saved like Finish.
+func (w *installWizard) leave(a *App) tea.Cmd {
+	switch {
+	case w.creating:
+		w.stopping = true
+		w.say("Stopping once " + w.prov.Name() + " has made the server, to ask about deleting it...")
+		a.openDialog(w)
+	case w.server != nil && w.step == instDone:
+		w.close(a)
+		return a.finishInstall(w)
+	case w.server != nil:
+		w.keepOrDelete(a)
+	default:
+		w.close(a)
+	}
+	return nil
+}
+
 // askSSH explains that ssh needs to ask you something, then hands it the
 // terminal for a moment.
 func (w *installWizard) askSSH(a *App, se *install.SSHError) tea.Cmd {
@@ -416,8 +440,7 @@ func (w *installWizard) askSSH(a *App, se *install.SSHError) tea.Cmd {
 	seq := w.seq
 	d.OnClose = func(a *App, button int) tea.Cmd {
 		if button != 0 {
-			w.close(a)
-			return nil
+			return w.leave(a)
 		}
 		w.asked = true
 		a.openDialog(w)
@@ -455,7 +478,7 @@ func (w *installWizard) askPassword(a *App, note string) tea.Cmd {
 			a.openDialog(w)
 			return w.setup(a)
 		}},
-		OnCancel: func(a *App) tea.Cmd { w.close(a); return nil },
+		OnCancel: func(a *App) tea.Cmd { return w.leave(a) },
 	}
 	a.openDialog(form)
 	return nil
@@ -515,7 +538,10 @@ func (w *installWizard) buttons() []string {
 		}
 		return []string{"Check", "View Script", "Cancel"}
 	case instFailed:
-		if w.server != nil {
+		switch {
+		case w.server != nil && w.server.IPv4 == "": // made, never came up: nothing to set up
+			return []string{"Delete Server", "Close"}
+		case w.server != nil:
 			return []string{"Try Again", "Delete Server", "Close"}
 		}
 		return []string{"Try Again", "Close"}
@@ -567,8 +593,11 @@ func (w *installWizard) draw(a *App, c *Canvas, x, y, wd, h int) {
 		text("SSH into, and moves your networks onto it.", face)
 		row++
 		text("Which server? (from ~/.ssh/config)", bold)
-		for i, o := range w.options()[max(0, len(w.hosts)-8):] {
-			i += max(0, len(w.hosts)-8)
+		opts, rows := w.options(), 9
+		w.hostTop = clamp(w.hostTop, w.choice-rows+1, w.choice)
+		w.hostTop = clamp(w.hostTop, 0, max(0, len(opts)-rows))
+		for i := w.hostTop; i < min(len(opts), w.hostTop+rows); i++ {
+			o := opts[i]
 			box := "( ) "
 			if i == w.choice {
 				box = "(•) "
@@ -652,11 +681,13 @@ func (w *installWizard) press(a *App, button string) tea.Cmd {
 	case "Delete Server":
 		return w.deleteServer()
 	case "Try Again":
-		if w.server != nil { // the server's there: set it up again
+		switch {
+		case w.server != nil: // the server's there: set it up again
 			return w.start(a)
-		}
-		if w.provID != "" && w.regions == nil {
+		case w.where != 0 && w.regions == nil: // the regions didn't load
 			return w.chooseCloud(a)
+		case w.where != 0: // the server wasn't made: make it, never your own servers
+			return w.create(a)
 		}
 		return w.start(a)
 	case "Install":
@@ -673,11 +704,7 @@ func (w *installWizard) press(a *App, button string) tea.Cmd {
 	case "View Script":
 		w.viewScript(a)
 	case "Cancel", "Close":
-		if w.server != nil && w.step != instDone {
-			w.keepOrDelete(a)
-			return nil
-		}
-		w.close(a)
+		return w.leave(a)
 	case "Finish":
 		w.close(a)
 		return a.finishInstall(w)
@@ -736,9 +763,7 @@ func (w *installWizard) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea
 	case "button":
 		return w.press(a, w.buttons()[r.I])
 	case "close":
-		if w.step != instWorking || w.in == nil {
-			w.close(a)
-		}
+		return w.leave(a)
 	}
 	return nil
 }

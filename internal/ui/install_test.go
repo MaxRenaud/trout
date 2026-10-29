@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -529,5 +530,132 @@ func TestCloudWizardFails(t *testing.T) {
 	drive(a, box.close(a, 0))
 	if !slices.Equal(fc.deleted, []string{"42"}) || a.dlg != nil {
 		t.Fatalf("deleted %q, dialog %T", fc.deleted, a.dlg)
+	}
+}
+
+// flakyCloud fails Create the first time, without making anything.
+type flakyCloud struct {
+	fakeCloud
+	fails int
+}
+
+func (f *flakyCloud) Create(ctx context.Context, r cloud.Region, name, key string) (cloud.Server, error) {
+	if f.fails > 0 {
+		f.fails--
+		return cloud.Server{}, errors.New("quota exceeded")
+	}
+	return f.fakeCloud.Create(ctx, r, name, key)
+}
+
+// TestCloudWizardEdges: Try Again after a failed create makes the server
+// again (never your own ~/.ssh/config hosts); stopping while it's being
+// made waits for it and asks; the × asks too, and saves a finished one;
+// after Delete Server, a late install step doesn't count.
+func TestCloudWizardEdges(t *testing.T) {
+	srv := &fakeServer{root: true}
+	a, _ := installApp(t, srv)
+	fc := &flakyCloud{fakeCloud: fakeCloud{token: "good"}, fails: 1}
+	a.hooks.cloud = func(string, string) cloud.Provider { return fc }
+	a.hooks.sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample"
+	var hosts []string
+	a.hooks.remote = func(h string) remote { hosts = append(hosts, h); return srv }
+	a.saveCloudToken("hetzner", "good")
+
+	a.openInstall()
+	w := wizard(t, a)
+	w.where = 1
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Next: regions
+	drive(a, cmd)
+	_, cmd = a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Create Server: fails
+	drive(a, cmd)
+	if w.step != instFailed || w.server != nil {
+		t.Fatalf("step %d, server %v", w.step, w.server)
+	}
+	drive(a, w.press(a, "Try Again"))
+	if len(fc.created) != 1 || slices.Contains(hosts, "vps") || w.step != instDone {
+		t.Fatalf("Try Again: created %q, ssh to %q, step %d %q", fc.created, hosts, w.step, w.err)
+	}
+
+	// The × once it's all set up: saved, like Finish.
+	a.Update(tea.MouseMsg{})
+	w.mouse(a, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}, Region{S: "close"}, false)
+	if a.cfg.Find(w.serverName) == nil {
+		t.Fatal("closing a finished cloud setup didn't save the bouncer")
+	}
+
+	// Stopping while the server is being made: wait, then ask.
+	a.openInstall()
+	w = wizard(t, a)
+	w.where = 1
+	_, cmd = a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	drive(a, cmd)
+	_, create := a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Create Server, still running
+	if !w.creating {
+		t.Fatal("not creating")
+	}
+	w.mouse(a, tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}, Region{S: "close"}, false)
+	if a.dlg != w || !w.stopping {
+		t.Fatalf("the × while creating: %T, stopping %v", a.dlg, w.stopping)
+	}
+	a.Update(runUntil[instPhaseMsg](t, create)) // the server exists now
+	box, ok := a.dlg.(*msgBox)
+	if !ok || box.Buttons[0] != "Delete Server" {
+		t.Fatalf("after the server was made: %T", a.dlg)
+	}
+
+	// Delete Server: a step from before doesn't count.
+	stale := instPhaseMsg{w: w, seq: w.seq, phase: "check"}
+	drive(a, box.close(a, 0))
+	a.Update(stale)
+	if w.step == instDone {
+		t.Fatal("a late install step finished a server being deleted")
+	}
+}
+
+// TestEditKeepsServer: the Connect dialog for a bouncer trout made keeps
+// what it knows about the server, so Delete Server stays possible.
+func TestEditKeepsServer(t *testing.T) {
+	a, _ := installApp(t, &fakeServer{})
+	b := config.Bouncer{Name: "trout-fsn1-ab12", Address: "ircs://192.0.2.10:6697", User: "max", Pin: "SHA256:x",
+		SSH: "root@192.0.2.10", Cloud: "hetzner", ServerID: "42"}
+	a.cfg.Use(b)
+	a.openConnectFor(b, "pw", "", nil)
+	f := a.dlg.(*formBox)
+	f.OnOK(a, []string{b.Address, "max", "new-password"})
+	got := a.cfg.Find(b.Name)
+	if got == nil || got.Cloud != "hetzner" || got.ServerID != "42" || got.SSH != "root@192.0.2.10" || got.Pin != "SHA256:x" {
+		t.Fatalf("saved %+v", got)
+	}
+}
+
+// TestManyHosts: with more ~/.ssh/config hosts than fit, the selected one
+// is always drawn.
+func TestManyHosts(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	var hosts []string
+	for i := range 12 {
+		hosts = append(hosts, fmt.Sprintf("host%d", i))
+	}
+	w := &installWizard{step: instPick, hosts: hosts, account: "max"}
+	a.openDialog(w)
+	for _, choice := range []int{0, 5, 12} {
+		w.choice = choice
+		a.View()
+		if !slices.ContainsFunc(a.regions, func(r Region) bool { return r.S == "opt" && r.I == choice }) {
+			t.Fatalf("choice %d isn't drawn", choice)
+		}
+	}
+}
+
+// TestOneLocalStart: picking This Computer again while its soju starts
+// doesn't start another.
+func TestOneLocalStart(t *testing.T) {
+	a := New(Options{Bouncer: config.Bouncer{Name: localName, Local: true, User: "max"}, Password: "pw"})
+	if a.startLocal() == nil {
+		t.Fatal("no start")
+	}
+	if a.startLocal() != nil {
+		t.Fatal("a second start while the first runs")
 	}
 }

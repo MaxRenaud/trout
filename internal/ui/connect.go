@@ -258,20 +258,23 @@ func (a *App) connectOK(was config.Bouncer, wasPassword string, vals []string) (
 		return nil, errors.New("type your bouncer user name")
 	}
 	host, _, _ := net.SplitHostPort(hostport)
-	b := config.Bouncer{Name: cmp.Or(was.Name, host), Address: addr, User: user}
 
-	// Keep what's known about the bouncer: its password command, and its
-	// pin if it's still the same host and port.
+	// Keep everything known about the bouncer (its password command, the
+	// server trout set it up on or made, This Computer's being local), and
+	// its pin and certificate login if it's still the same host and port.
 	prev := was
 	if a.cfg != nil && was.Name == "" && a.cfg.Find(host) != nil {
 		prev = *a.cfg.Find(host)
 	}
-	b.PasswordCommand = prev.PasswordCommand
-	if hp, _, err := irc.ParseAddress(prev.Address); err == nil && hp == hostport {
-		b.Pin = prev.Pin
-		if prev.User == user {
-			b.Login = prev.Login
-		}
+	b := prev
+	b.Name, b.Address, b.User = cmp.Or(was.Name, host), addr, user
+	if hp, _, err := irc.ParseAddress(prev.Address); err != nil || hp != hostport {
+		b.Pin, b.Login = "", ""
+	} else if prev.User != user {
+		b.Login = ""
+	}
+	if b.Local {
+		b.Address = "" // its port is picked each time it starts
 	}
 
 	var saveErr error

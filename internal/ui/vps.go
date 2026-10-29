@@ -171,7 +171,7 @@ func (w *installWizard) create(a *App) tea.Cmd {
 	r := w.regions[w.region]
 	w.seq++
 	w.ctx, w.cancel = context.WithCancel(context.Background())
-	w.step, w.log, w.err = instWorking, nil, ""
+	w.step, w.log, w.err, w.creating, w.stopping = instWorking, nil, "", true, false
 	b := make([]byte, 2)
 	rand.Read(b)
 	w.serverName = fmt.Sprintf("trout-%s-%x", r.ID, b)
@@ -201,10 +201,19 @@ func (w *installWizard) cloudPhase(a *App, m instPhaseMsg) (tea.Cmd, bool) {
 		w.regions, w.region, w.step = m.regions, 0, instRegion
 		return nil, true
 	case "create":
+		w.creating = false
 		if m.server.ID != "" {
 			w.server = &m.server
 		}
-		if m.err != nil {
+		switch {
+		case w.stopping && w.server != nil: // stopped meanwhile: delete it?
+			w.step, w.err = instFailed, "Stopped."
+			w.keepOrDelete(a)
+			return nil, true
+		case w.stopping:
+			w.close(a)
+			return nil, true
+		case m.err != nil:
 			return w.fail(m.err.Error()), true
 		}
 		w.say("The server is up at " + m.server.IPv4)
@@ -226,6 +235,10 @@ func (w *installWizard) cloudPhase(a *App, m instPhaseMsg) (tea.Cmd, bool) {
 }
 
 func (w *installWizard) deleteServer() tea.Cmd {
+	if w.cancel != nil { // the install on it stops: its results don't count
+		w.cancel()
+	}
+	w.seq++
 	w.say("Deleting " + w.serverName + "...")
 	w.step = instWorking
 	p, id, seq := w.prov, w.server.ID, w.seq
@@ -239,7 +252,8 @@ func (w *installWizard) deleteServer() tea.Cmd {
 // keepOrDelete asks, when the setup is stopped with a server made, whether
 // it goes too.
 func (w *installWizard) keepOrDelete(a *App) {
-	d := message("The new server, "+w.serverName+" ("+w.server.IPv4+"), is still", "running at "+w.prov.Name()+", and billed until it's deleted.")
+	d := message("The new server, "+w.serverName+" ("+cmp.Or(w.server.IPv4, "no address yet")+"), is still",
+		"running at "+w.prov.Name()+", and billed until it's deleted.")
 	d.Title = "Stop"
 	d.Buttons, d.Cancel = []string{"Delete Server", "Keep It", "Back"}, 2
 	d.OnClose = func(a *App, button int) tea.Cmd {

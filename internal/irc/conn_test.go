@@ -102,16 +102,18 @@ func TestParseBouncerNetwork(t *testing.T) {
 func TestLiveness(t *testing.T) {
 	for _, c := range []struct {
 		name    string
-		answers bool // PONGs
-		chatty  bool // sends other lines all along
-		send    bool // we send something first
+		answers bool          // PONGs
+		backlog time.Duration // sends lines this long (one every 30ms) before PONGing or freezing
+		send    bool          // we send something first
 		want    error
 	}{
-		{"silent", false, false, false, ErrNoReply},
-		{"silent after a send", false, false, true, ErrNoReply},
+		{"silent", false, 0, false, ErrNoReply},
+		{"silent after a send", false, 0, true, ErrNoReply},
 		// Lines a server sent before it froze aren't proof it's there.
-		{"talks but never answers", false, true, true, ErrNoReply},
-		{"answers pings", true, false, false, nil},
+		{"talks, then freezes", false, 400 * time.Millisecond, true, ErrNoReply},
+		// A backlog over a slow link, longer than AfterSend, before the PONG.
+		{"slow backlog, then answers", true, 400 * time.Millisecond, true, nil},
+		{"answers pings", true, 0, false, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -125,15 +127,6 @@ func TestLiveness(t *testing.T) {
 					return
 				}
 				defer nc.Close()
-				if c.chatty {
-					go func() {
-						for range time.Tick(30 * time.Millisecond) {
-							if _, err := nc.Write([]byte(":soju NOTICE trout :still here, sort of\r\n")); err != nil {
-								return
-							}
-						}
-					}()
-				}
 				r := bufio.NewReader(nc)
 				for {
 					line, err := r.ReadString('\n')
@@ -145,8 +138,13 @@ func TestLiveness(t *testing.T) {
 						nc.Write([]byte(":soju CAP * LS :\r\n"))
 					case line == "CAP END":
 						nc.Write([]byte(":soju 001 trout :Welcome\r\n"))
-					case strings.HasPrefix(line, "PING ") && c.answers:
-						nc.Write([]byte(":soju PONG soju " + strings.TrimPrefix(line, "PING ") + "\r\n"))
+					case strings.HasPrefix(line, "PING "):
+						for end := time.Now().Add(c.backlog); time.Now().Before(end); time.Sleep(30 * time.Millisecond) {
+							nc.Write([]byte(":soju NOTICE trout :backlog\r\n"))
+						}
+						if c.answers {
+							nc.Write([]byte(":soju PONG soju " + strings.TrimPrefix(line, "PING ") + "\r\n"))
+						}
 					}
 				}
 			}()
@@ -155,7 +153,7 @@ func TestLiveness(t *testing.T) {
 				idle = time.Hour // only the send should make it check
 			}
 			conn, err := Dial(t.Context(), Config{Addr: ln.Addr().String(), Nick: "trout", User: "trout",
-				Idle: idle, AfterSend: 100 * time.Millisecond, PingWait: 200 * time.Millisecond})
+				Idle: idle, AfterSend: 150 * time.Millisecond, PingWait: 200 * time.Millisecond})
 			if err != nil {
 				t.Fatal(err)
 			}

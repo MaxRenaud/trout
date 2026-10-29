@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"runtime"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -45,6 +46,10 @@ func openClip() error {
 }
 
 func systemCopy(text string) error {
+	// The clipboard is opened and closed by a thread: the goroutine mustn't
+	// move to another one in between, or it stays open.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	u, err := syscall.UTF16FromString(text) // with its NUL
 	if err != nil {
 		return err
@@ -74,6 +79,8 @@ func systemCopy(text string) error {
 }
 
 func systemPaste() (string, error) {
+	runtime.LockOSThread() // see systemCopy
+	defer runtime.UnlockOSThread()
 	if err := openClip(); err != nil {
 		return "", err
 	}

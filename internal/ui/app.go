@@ -157,39 +157,40 @@ type App struct {
 	popped         bool // the Favorites already popped up this session
 
 	// Options > Other, Display and Messages (see config.Settings).
-	confirmExit  bool
-	cmdPrefix    string
-	tabSuffix    string
-	sortSwitch   bool
-	fillSwitch   bool
-	hiActive     bool
-	privateTo    int // an index into privateModes
-	showAddress  bool
-	nicksOnJoin  bool
-	notifyActive bool
-	memBook      config.Config          // the Address Book without a config.toml (tests)
-	nickLeftX    int                    // a left nicklist's x, for dragging its edge; -1 on the right
-	selfCTCP     string                 // the msgid of the last CTCP to ourselves, which comes twice
-	editDrag     int                    // the editbox (1 or 2) a drag is selecting in
-	namesOnJoin  map[*state.Window]bool // channels just joined, to list their nicks (Options > Messages)
-	lastFrom     string                 // who last messaged you, for Tab, when private messages
-	lastFromNet  *state.Network         // don't get query windows
-	downloadDir  string
-	messaged     map[string]time.Time // whom you last messaged, by network ID + " " + nick
-	transfers    []*transfer
-	chats        []*dccChat
-	waiting      []func(a *App) tea.Cmd       // dialogs to open once nothing is (whenFree)
-	installing   *installWizard               // the setup running, whose messages count
-	hooks        *installHooks                // tests: no ssh, binaries or login for real
-	moving       []movedNet                   // networks to make on a new bouncer once it's connected
-	movingTo     string                       // that bouncer's name
-	netsBatch    string                       // the batch of the bouncer's network list, while it comes
-	highHalf     rune                         // Windows: an emoji's first UTF-16 half, waiting for its second
-	unechoed     map[*state.Network][]sentMsg // sent, not yet echoed back by the bouncer
-	liveness     [3]time.Duration             // tests: irc.Config's Idle, AfterSend, PingWait
-	local        *local.Soju                  // trout's own soju, for the This Computer bouncer
-	cloudTokens  map[string]string            // without a config (tests): cloud API tokens
-	dccSeq       int
+	confirmExit   bool
+	cmdPrefix     string
+	tabSuffix     string
+	sortSwitch    bool
+	fillSwitch    bool
+	hiActive      bool
+	privateTo     int // an index into privateModes
+	showAddress   bool
+	nicksOnJoin   bool
+	notifyActive  bool
+	memBook       config.Config          // the Address Book without a config.toml (tests)
+	nickLeftX     int                    // a left nicklist's x, for dragging its edge; -1 on the right
+	selfCTCP      string                 // the msgid of the last CTCP to ourselves, which comes twice
+	editDrag      int                    // the editbox (1 or 2) a drag is selecting in
+	namesOnJoin   map[*state.Window]bool // channels just joined, to list their nicks (Options > Messages)
+	lastFrom      string                 // who last messaged you, for Tab, when private messages
+	lastFromNet   *state.Network         // don't get query windows
+	downloadDir   string
+	messaged      map[string]time.Time // whom you last messaged, by network ID + " " + nick
+	transfers     []*transfer
+	chats         []*dccChat
+	waiting       []func(a *App) tea.Cmd       // dialogs to open once nothing is (whenFree)
+	installing    *installWizard               // the setup running, whose messages count
+	hooks         *installHooks                // tests: no ssh, binaries or login for real
+	moving        []movedNet                   // networks to make on a new bouncer once it's connected
+	movingTo      string                       // that bouncer's name
+	netsBatch     string                       // the batch of the bouncer's network list, while it comes
+	highHalf      rune                         // Windows: an emoji's first UTF-16 half, waiting for its second
+	unechoed      map[*state.Network][]sentMsg // sent, not yet echoed back by the bouncer
+	liveness      [3]time.Duration             // tests: irc.Config's Idle, AfterSend, PingWait
+	local         *local.Soju                  // trout's own soju, for the This Computer bouncer
+	localStarting bool                         // one is starting
+	cloudTokens   map[string]string            // without a config (tests): cloud API tokens
+	dccSeq        int
 
 	urls         []seenURL                    // URLs List
 	ctcpSent     []time.Time                  // when trout answered CTCPs lately, for flood protection
