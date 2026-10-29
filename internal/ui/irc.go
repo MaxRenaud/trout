@@ -650,8 +650,16 @@ func (a *App) batch(n *state.Network, m ircmsg.Message) {
 	}
 	if n == a.home && a.netsBatch != "" && strings.TrimPrefix(m.Params[0], "-") == a.netsBatch {
 		a.netsBatch = "" // the bouncer's networks are all known now
-		if len(a.moving) > 0 && a.movingTo == a.bnc.Name {
+		switch {
+		case len(a.moving) > 0 && a.movingTo == a.bnc.Name:
 			a.moveNetworks()
+		case len(a.nets) == 1 && !a.toldNoNetworks:
+			// A new bouncer has none: like mIRC's first run showing its
+			// server list, say how to add one and open File > Select Server.
+			a.toldNoNetworks = true
+			a.addLine(a.home.Status(), state.RoleInfo, "* The bouncer isn't on any IRC network yet. Add one in "+
+				"File > Select Server (Add...), or type /server irc.libera.chat")
+			a.whenFree(func(a *App) tea.Cmd { a.openServers(); return nil })
 		}
 		return
 	}

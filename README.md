@@ -32,6 +32,10 @@ unpack it: the soju it installs and runs comes in the same archive, next to it. 
 source, `go install github.com/MaxRenaud/trout/cmd/trout@latest` works too, and
 `dev/build-soju` builds that soju.
 
+trout isn't signed yet. Homebrew takes care of that on macOS; from a downloaded archive,
+macOS says it can't check trout: run `xattr -dr com.apple.quarantine` on the unpacked
+folder once. On Windows, SmartScreen may warn the first time: More info, then Run anyway.
+
 The first run asks for the bouncer's address (`ircs://host[:port]`), user and password,
 or offers to set one up (Set One Up) or to run one here (This Computer).
 The password goes in a `credentials` file (mode 0600) next to `config.toml`, in your

@@ -117,3 +117,24 @@ func TestNotSent(t *testing.T) {
 		t.Fatal("still waiting on the dead connection's messages")
 	}
 }
+
+// TestNoNetworksYet: a bouncer with no networks (a new one, This Computer
+// the first time) says how to add one and opens Select Server, once.
+func TestNoNetworksYet(t *testing.T) {
+	a, _ := fakeSoju(t)
+	feed := func(lines ...string) {
+		for _, l := range lines {
+			m, _ := ircmsg.ParseLine(l)
+			a.Update(ircLineMsg{a.home, m})
+		}
+	}
+	feed("BATCH +n soju.im/bouncer-networks", "BATCH -n")
+	if _, ok := a.dlg.(*serversBox); !ok || !strings.Contains(lastLine(a.home.Status()), "/server irc.libera.chat") {
+		t.Fatalf("no networks: %T, %q", a.dlg, lastLine(a.home.Status()))
+	}
+	a.dlg = nil
+	feed("BATCH +m soju.im/bouncer-networks", "BATCH -m") // a reconnect
+	if a.dlg != nil {
+		t.Fatal("asked again")
+	}
+}
