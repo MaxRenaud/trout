@@ -1,0 +1,58 @@
+#!/bin/sh
+# Runs a mIRC script in real mIRC on the Windows test VM and prints what it
+# wrote to out.txt, to check internal/script against the real thing.
+# Usage: dev/windows/mirc-run script.mrc [ip]
+#
+# The script runs in a throwaway copy of mIRC (%USERPROFILE%\trout-oracle,
+# its own settings, not connected to anything). It must do its work in
+# on *:START, /write its results to out.txt and end with /exit -n.
+#
+# mIRC must be installed and registered on the VM: an evaluation copy
+# stops at its About box, which can't be clicked automatically. Register
+# it once (Help > Register, then OK on the validation box); the
+# registration is kept in HKCU\Software\mIRC.
+set -e
+cd "$(dirname "$0")/../.."
+script=${1:?usage: dev/windows/mirc-run script.mrc [ip]}
+ip=${2:-$(python3 -I dev/proxmox/pve_windows.py ip)}
+opts="-i tmp/pve_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes"
+ssh="ssh $opts trout@$ip"
+
+# The copy, with the user's mIRC settings but none of their scripts (its
+# mirc.ini is made again each time, from theirs), and the scheduled task
+# that starts it on the desktop.
+$ssh '$d = "$env:USERPROFILE\trout-oracle"
+if (-not (Test-Path "$d\mirc.exe")) {
+	New-Item -ItemType Directory -Force $d | Out-Null
+	Copy-Item "C:\Program Files (x86)\mIRC\mirc.exe" $d
+}
+$ini = Get-Content "$env:APPDATA\mIRC\mirc.ini" -Raw
+$end = "(?=\r?\n\[|\z)"
+$ini = [regex]::Replace($ini, "(?s)\[rfiles\].*?$end", "[rfiles]`r`nn0=users.ini`r`nn1=vars.ini`r`nn2=oracle.mrc")
+$ini = [regex]::Replace($ini, "(?s)\[afiles\].*?$end", "[afiles]")
+$ini = [regex]::Replace($ini, "(?s)\[pfiles\].*?$end", "[pfiles]")
+if ($ini -notmatch "\[rfiles\]") { $ini += "`r`n[rfiles]`r`nn0=users.ini`r`nn1=vars.ini`r`nn2=oracle.mrc`r`n" }
+Set-Content "$d\mirc.ini" $ini
+schtasks /query /tn trout-mirc 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+	schtasks /create /f /tn trout-mirc /sc once /st 23:59 /it /tr "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $d\mirc-run.ps1" | Out-Null
+}
+Remove-Item "$d\out.txt", "$d\status.txt", "$d\vars.ini" -ErrorAction SilentlyContinue
+exit 0'
+scp -q $opts dev/windows/mirc-run.ps1 "trout@$ip:trout-oracle/mirc-run.ps1"
+scp -q $opts "$script" "trout@$ip:trout-oracle/oracle.mrc"
+status=$($ssh '$d = "$env:USERPROFILE\trout-oracle"
+schtasks /run /tn trout-mirc | Out-Null
+for ($i = 0; $i -lt 75 -and -not (Test-Path "$d\status.txt"); $i++) { Start-Sleep 1 }
+Get-Content "$d\status.txt" -ErrorAction SilentlyContinue' | tr -d '\r')
+case $status in
+exited) ;;
+*)
+	echo "mirc-run: mIRC didn't finish (${status:-no status}); is it registered, and does the script /exit -n?" >&2
+	exit 1
+	;;
+esac
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+scp -q $opts "trout@$ip:trout-oracle/out.txt" "$out" 2>/dev/null || true
+cat "$out"

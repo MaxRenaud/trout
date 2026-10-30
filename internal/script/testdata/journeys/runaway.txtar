@@ -1,0 +1,19 @@
+A loop that never ends is stopped, and the scripts keep working after it.
+
+-- loop.mrc --
+alias spin {
+  var %i = 0
+  while (1) inc %i
+}
+on *:TEXT:!spin:#:spin
+on *:TEXT:!ping:#:msg # pong
+-- transcript --
+me trout
+chan #trout trout bob
+active #trout
+/spin
+= status: * script stopped: it ran more than 100000 steps (line 3, loop.mrc)
+< :bob!b@h PRIVMSG #trout :!spin
+= status: * script stopped: it ran more than 100000 steps (line 3, loop.mrc)
+< :bob!b@h PRIVMSG #trout :!ping
+> /msg #trout pong

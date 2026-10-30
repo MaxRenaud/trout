@@ -21,6 +21,8 @@ go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on rea
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
 dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
+dev/windows/mirc-run script.mrc                    # run a script in real mIRC on that VM, print its out.txt
+go test -tags mirc ./internal/script -run TestMIRC -v   # check internal/script against real mIRC
 dev/vhs/record                                     # the README's GIFs (docs/gifs) from dev/vhs/*.tape
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
@@ -63,6 +65,12 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/termkeys`: which terminal this is, whether its Option key sends Alt, and the
   fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `optionkey.go`
   asks at startup.
+- `internal/script`: a subset of mIRC scripting (aliases, events, variables, identifiers,
+  hash tables, timers, regex, popups), pure: events in, actions out. Not hooked into the
+  client yet; see `tmp/scripting.md`. Its tests are user-journey transcripts in
+  `testdata/journeys/`, `spec_test.go` (from the help file) and `mirc_test.go` (against
+  real mIRC, `-tags mirc`). When mIRC's behavior is unclear, check it with mirc-run
+  rather than guessing, and say "checked" in the comment.
 - `internal/demo`: the fake world for `--demo`; the dev bot reuses its chatter.
 - `dev/`: Docker setup (two ergo networks, soju, a chatter bot); `build-soju`; `proxmox/`,
   throwaway test VMs for bouncer setup (credentials and their SSH key in `tmp/`);

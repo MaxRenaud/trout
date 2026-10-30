@@ -1,0 +1,75 @@
+Popup menus from scripts: submenus, separators, labels evaluated each
+time (an empty one hides the item), $style, a { } block, and $submenu.
+
+-- popups.mrc --
+menu nicklist {
+  Slap
+  .Haddock:me prods $1 with a haddock
+  .Trout:me slaps $1 around a bit with a large trout
+  -
+  $iif($1 isop #,Deop,Op):mode # $iif($1 isop #,-o,+o) $1
+  Cookie {
+    if ($1 == $me) echo I give myself a cookie!
+    else echo I give $1 a cookie!
+  }
+  Whois:{
+    whois $1
+  }
+}
+menu status,channel {
+  $iif(%away,$style(1)) Away:{ if (%away) unset %away | else set %away 1 }
+  $style(2) Not now:echo never
+  Greetings
+  .$submenu($greet($1))
+}
+alias greet {
+  if ($1 == begin) return -
+  if ($1 == 1) return Hi:say hi
+  if ($1 == 2) return Hello:say hello
+}
+-- transcript --
+me trout
+chan #trout @trout @alice bob
+active #trout
+menu nicklist bob
+| Slap
+|   Haddock
+|   Trout
+| -
+| Op
+| Cookie
+| Whois
+menu nicklist alice
+| Slap
+|   Haddock
+|   Trout
+| -
+| Deop
+| Cookie
+| Whois
+pick nicklist Slap/Trout bob
+> /me slaps bob around a bit with a large trout
+pick nicklist Op bob
+> /mode #trout +o bob
+pick nicklist Cookie trout
+= #trout: I give myself a cookie!
+pick nicklist Whois bob
+> /whois bob
+menu channel
+| Away
+| Not now (disabled)
+| Greetings
+|   -
+|   Hi
+|   Hello
+pick channel Away
+menu channel
+| Away [x]
+| Not now (disabled)
+| Greetings
+|   -
+|   Hi
+|   Hello
+pick channel Greetings/Hello
+> /say hello
+menu query

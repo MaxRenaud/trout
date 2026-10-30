@@ -1,0 +1,38 @@
+An auto-op list kept in a variable. The @ prefix: the event only triggers
+while we're an op.
+
+-- autoop.mrc --
+on @*:JOIN:#trout:{
+  if ($istok(%autoop,$nick,32)) mode $chan +o $nick
+}
+alias addop {
+  set %autoop $addtok(%autoop,$1,32)
+  echo -a Added $1 to the auto-op list: %autoop
+}
+alias delop {
+  set %autoop $remtok(%autoop,$1,1,32)
+  echo -a Removed $1. The list is now: $iif(%autoop,%autoop,empty)
+}
+-- transcript --
+me trout
+chan #trout trout alice
+active #trout
+/addop bob
+= #trout: Added bob to the auto-op list: bob
+/addop carol
+= #trout: Added carol to the auto-op list: bob carol
+/addop BOB
+= #trout: Added BOB to the auto-op list: bob carol
+? %autoop bob carol
+# Not an op yet: nothing.
+< :bob!b@host JOIN #trout
+< :alice!a@host MODE #trout +o trout
+< :carol!c@host JOIN #trout
+> /mode #trout +o carol
+< :dave!d@host JOIN #trout
+/delop bob
+= #trout: Removed bob. The list is now: carol
+/delop carol
+= #trout: Removed carol. The list is now: empty
+< :carol!c@host PART #trout
+< :carol!c@host JOIN #trout

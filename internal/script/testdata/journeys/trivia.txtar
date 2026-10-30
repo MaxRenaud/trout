@@ -1,0 +1,74 @@
+Trivia: questions from a file, a timer for each one, and scores in a hash
+table. Timers run their command later, outside the event that started
+them, so they call global aliases (an alias -l isn't visible there, like
+in mIRC).
+
+-- trivia.mrc --
+on *:TEXT:!trivia:#:{
+  if (%trivia.chan) return
+  set %trivia.chan $chan
+  set %trivia.n 0
+  trivia.ask
+}
+on *:TEXT:*:#:{
+  if ($chan != %trivia.chan) return
+  if ($1- == %trivia.a) {
+    hinc -m trivia $nick
+    msg $chan $nick got it! The answer was %trivia.a $+ . $nick has $hget(trivia,$nick) $iif($hget(trivia,$nick) == 1,point,points) $+ .
+    .timertrivia off
+    trivia.ask
+  }
+}
+alias trivia.ask {
+  inc %trivia.n
+  if (%trivia.n > $lines(trivia.txt)) {
+    trivia.stop
+    return
+  }
+  var %line = $read(trivia.txt,n,%trivia.n)
+  set %trivia.q $gettok(%line,1,42)
+  set %trivia.a $gettok(%line,2,42)
+  msg %trivia.chan Question %trivia.n $+ : %trivia.q
+  .timertrivia 1 30 trivia.timeout
+}
+alias trivia.timeout {
+  msg %trivia.chan Time's up! The answer was %trivia.a $+ .
+  trivia.ask
+}
+alias trivia.stop {
+  var %i = 1, %scores
+  while (%i <= $hget(trivia,0).item) {
+    var %scores = %scores $hget(trivia,%i).item $+ : $+ $hget(trivia,%i).data
+    inc %i
+  }
+  msg %trivia.chan That's the end! Scores: $iif(%scores,%scores,nobody)
+  unset %trivia.*
+  if ($hget(trivia)) hfree trivia
+}
+-- trivia.txt --
+What gets slapped around a bit on IRC?*trout
+What does the second I in mIRC stand for?*Relay
+How many letters are in IRC?*3
+-- transcript --
+me trout
+chan #trout @trout alice bob
+active #trout
+< :alice!a@h PRIVMSG #trout :!trivia
+> /msg #trout Question 1: What gets slapped around a bit on IRC?
+< :bob!b@h PRIVMSG #trout :a whale
+< :alice!a@h PRIVMSG #trout :a large TROUT
+< :alice!a@h PRIVMSG #trout :TROUT
+> /msg #trout alice got it! The answer was trout. alice has 1 point.
+> /msg #trout Question 2: What does the second I in mIRC stand for?
+# Nobody answers: the timer runs out.
+@ +29s
+@ +1s
+> /msg #trout Time's up! The answer was Relay.
+> /msg #trout Question 3: How many letters are in IRC?
+< :alice!a@h PRIVMSG #trout :!trivia
+< :bob!b@h PRIVMSG #trout :3
+> /msg #trout bob got it! The answer was 3. bob has 1 point.
+> /msg #trout That's the end! Scores: alice:1 bob:1
+? %trivia.chan 
+@ +1m
+< :alice!a@h PRIVMSG #trout :3

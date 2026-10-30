@@ -1,0 +1,66 @@
+Aliases typed in the editbox: parameters, # for the active channel, $$1,
+custom identifiers with /return, and an alias that calls the built-in
+command it's named after.
+
+-- aliases.mrc --
+; The examples from mIRC's Aliases help section.
+alias j join #$1
+alias op mode # +o $$1
+alias slap me slaps $1 around a bit with $2-
+alias yell me $2 $1
+alias laugh me laughs at $1's joke
+alias silly say Hel $+ lo th $+ ere $+ !
+alias add {
+  var %x = $1 + $2
+  if ($prop == negative) return $calc(-1 * %x)
+  return %x
+}
+alias sum echo -a $1 + $2 = $add($1,$2) and $add($1,$2).negative
+alias number {
+  if ($1 == 1) echo -a One
+  elseif ($1 == 2) echo -a Two
+  else echo -a Unknown number!
+}
+; An alias can't call itself, so msg here is the built-in /msg.
+alias msg {
+  echo -a sending to $1
+  msg $1-
+}
+alias -l helper return private
+alias pub echo -a $helper
+-- transcript --
+me trout
+chan #trout @trout bob
+active #trout
+/j trout
+> /join #trout
+/j #help
+> /join #help
+/op bob
+> /mode #trout +o bob
+# $$1 is empty: the command doesn't run.
+/op
+/slap bob a large trout
+> /me slaps bob around a bit with a large trout
+/yell There! Hello
+> /me Hello There!
+/laugh goat
+> /me laughs at goat's joke
+/silly
+> /say Hello there!
+/sum 2 3
+= #trout: 2 + 3 = 5 and -5
+/number 2
+= #trout: Two
+/number 7
+= #trout: Unknown number!
+/msg bob hi there
+= #trout: sending to bob
+> /msg bob hi there
+/!msg bob skipping the alias
+> /msg bob skipping the alias
+# -l aliases aren't visible from the editbox, but their script can use them.
+/helper
+> /helper
+/pub
+= #trout: private

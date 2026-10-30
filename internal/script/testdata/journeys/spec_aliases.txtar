@@ -1,0 +1,51 @@
+The alias examples from the Aliases page of mIRC's help, typed in the
+editbox.
+
+-- aliases.mrc --
+alias gb /join #gb
+alias j /join $1
+alias yell /me $2 $1
+alias give /me gives $$1 a $$2
+alias slap /me slaps $1 around with $2-
+alias laugh /me laughs at $1's joke
+alias silly /say Hel $+ lo th $+ ere $+ !
+alias p /part #
+alias op /mode # +o $1
+alias dop /mode # -ooo $1 $2 $3
+alias dkb /kick # $1 | /mode # +b $1
+alias poem {
+ /msg $1 The Wendigo, the Wendigo,
+ /msg $1 Its eyes are ice and indigo...
+}
+-- transcript --
+me trout
+chan #blah @trout goat dog cat
+active #blah
+/gb
+> /join #gb
+/j #gb
+> /join #gb
+/yell There! Hello
+> /me Hello There!
+# $$1 and $$2 must both be given.
+/give goat
+/give goat cookie
+> /me gives goat a cookie
+/slap sheepy a large trout
+> /me slaps sheepy around with a large trout
+/laugh goat
+> /me laughs at goat's joke
+/silly
+> /say Hello there!
+/p
+> /part #blah
+/op goat
+> /mode #blah +o goat
+/dop goat dog cat
+> /mode #blah -ooo goat dog cat
+/dkb goat
+> /kick #blah goat
+> /mode #blah +b goat
+/poem bob
+> /msg bob The Wendigo, the Wendigo,
+> /msg bob Its eyes are ice and indigo...
