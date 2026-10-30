@@ -475,7 +475,7 @@ func shortcutsBox() *msgBox {
 		"F2                   Classic / Dark      /exit   Quit",
 		"",
 		"Nick popup: right-click, Ctrl+click or press and hold a nick.",
-		"Double-click a nick to query it, or a URL to open it.",
+		"Double-click a nick to query it, a URL to open it, a channel for its modes.",
 		"",
 		"On a Mac, Option is Alt once the terminal sends it as Alt: Terminal's Use",
 		"Option as Meta key, iTerm2's Esc+, Ghostty's macos-option-as-alt.",

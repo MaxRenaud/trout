@@ -245,6 +245,9 @@ type App struct {
 	pressedTool int
 	lastHit     Region
 	lastClick   time.Time
+	lastX       int           // where the last left press was, and in which
+	lastY       int           // window, so a double-click in a window's text
+	lastWin     *state.Window // is on the same spot of the same window
 	title       string
 }
 
@@ -819,8 +822,16 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 
 	// macOS terminals report Ctrl+click as a left click with Ctrl held.
 	right := m.Button == tea.MouseButtonRight || m.Ctrl
-	double := !right && r == a.lastHit && time.Since(a.lastClick) < 400*time.Millisecond
-	a.lastHit, a.lastClick = r, time.Now()
+	// The message pane is one region, so a double-click there must also be
+	// on the same cell; and query and status panes are the same region, so
+	// it must be in the same window.
+	double := !right && r == a.lastHit && time.Since(a.lastClick) < 400*time.Millisecond &&
+		w == a.lastWin && (r.Kind != HitMsg || m.X == a.lastX && m.Y == a.lastY)
+	a.lastHit, a.lastClick, a.lastX, a.lastY, a.lastWin = r, time.Now(), m.X, m.Y, w
+	if double {
+		// A third click starts over, instead of being another double-click.
+		a.lastHit = Region{}
+	}
 	switch r.Kind {
 	case HitCaption:
 		return a.quit()
@@ -862,6 +873,16 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			a.join(w.Net, r.S) // a channel hotlink
 		case double && r.Kind == HitURL:
 			return openURL(r.S)
+		// mIRC's default double-click commands (Options > Mouse): /channel
+		// in a channel, /whois $$1 in a query, /lusers in status. The demo
+		// has no server to ask, and the bouncer's own status window isn't
+		// an IRC server, so those two do nothing there.
+		case double && w.Kind == state.KChannel:
+			a.openChannelModes(w)
+		case double && w.Kind == state.KQuery && !a.opts.Demo:
+			return a.command(w, "whois "+w.Name)
+		case double && w.Kind == state.KStatus && !a.opts.Demo && w.Net != a.home:
+			return a.command(w, "lusers")
 		default:
 			a.startSelection(w, m.X, m.Y)
 			a.sel.breaks = m.Shift // copy with the line breaks shown, like mIRC

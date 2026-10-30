@@ -553,3 +553,110 @@ func TestSlap(t *testing.T) {
 		t.Fatalf("/slap alone: %q", lastLine(a.active))
 	}
 }
+
+// clickText presses the left button n times on the active window's text,
+// at (dx, dy) from the pane's bottom right corner, where no text reaches,
+// so no hotlink is there.
+func clickText(a *App, n, dx, dy int) {
+	a.View()
+	var msg Region
+	for _, r := range a.regions {
+		if r.Kind == HitMsg {
+			msg = r
+		}
+	}
+	x, y := msg.X+msg.W-1-dx, msg.Y+msg.H-1-dy
+	for range n {
+		a.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+		a.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	}
+}
+
+// TestDoubleClick: double-clicking a window's text, away from a hotlink,
+// runs mIRC's default double-click command for that kind of window
+// (Options > Mouse): /channel opens Channel Central, a query whoises its
+// nick and status runs /lusers. Only a real double-click does: two clicks
+// on different spots or in different windows don't, a triple-click runs it
+// once, and the bouncer's own status window has nothing to /lusers.
+func TestDoubleClick(t *testing.T) {
+	a, sent := fakeSoju(t)
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	m, _ := ircmsg.ParseLine("BOUNCER NETWORK 7 name=Libera;state=connected")
+	a.Update(ircLineMsg{a.home, m})
+	n := a.nets[1]
+	n.Nick = "max"
+	a.conns[n] = a.control
+	// expect checks that exactly these lines were sent.
+	expect := func(what string, want ...string) {
+		t.Helper()
+		for _, w := range want {
+			select {
+			case got := <-sent:
+				if got != w {
+					t.Errorf("%s: sent %q, want %q", what, got, w)
+				}
+			case <-time.After(3 * time.Second):
+				t.Errorf("%s: never sent %q", what, w)
+			}
+		}
+		select {
+		case got := <-sent:
+			t.Errorf("%s: also sent %q", what, got)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	ch := n.AddChannel(&state.Window{Kind: state.KChannel, Name: "#go", Joined: true})
+	a.activate(ch)
+	clickText(a, 2, 0, 0)
+	if f, ok := a.dlg.(*formBox); !ok || f.Title != "Channel Central - #go" {
+		t.Fatalf("dialog = %#v, want Channel Central", a.dlg)
+	}
+	a.dlg = nil
+	a.lastHit = Region{}
+
+	q := n.Add(&state.Window{Kind: state.KQuery, Name: "bob"})
+	a.activate(q)
+	clickText(a, 2, 0, 0)
+	expect("double-click in a query", "WHOIS bob")
+	a.lastHit = Region{}
+	clickText(a, 3, 0, 0)
+	expect("triple-click in a query", "WHOIS bob")
+	a.lastHit = Region{}
+	clickText(a, 1, 0, 0)
+	clickText(a, 1, 5, 3)
+	expect("two clicks on different spots")
+
+	a.lastHit = Region{}
+	clickText(a, 1, 0, 0)
+	a.activate(n.Status())
+	clickText(a, 1, 0, 0)
+	expect("a click in a query, then in status")
+	a.lastHit = Region{}
+	clickText(a, 2, 0, 0)
+	expect("double-click in a network's status", "LUSERS")
+
+	a.lastHit = Region{}
+	a.activate(a.home.Status())
+	clickText(a, 2, 0, 0)
+	expect("double-click in the bouncer's status")
+}
+
+// TestDoubleClickDemo: the demo has no server to whois or /lusers, so
+// double-clicking a query or status window adds nothing to it.
+func TestDoubleClickDemo(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	for _, w := range a.nets[0].Wins {
+		if w.Kind != state.KQuery && w.Kind != state.KStatus {
+			continue
+		}
+		a.activate(w)
+		before := len(w.Lines)
+		a.lastHit = Region{}
+		clickText(a, 2, 0, 0)
+		if len(w.Lines) != before {
+			t.Errorf("%s: double-click added %d lines", w.Name, len(w.Lines)-before)
+		}
+	}
+}
