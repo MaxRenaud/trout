@@ -24,6 +24,9 @@ import (
 //	chan #c @trout bob        we're on #c, with this nicklist
 //	active #c                 the active window
 //	clock 2026-10-29T15:04:05Z
+//	info server=irc.test connected PREFIX=(ov)@+   the connection, for $server, $prefix...
+//	query bob                 an open query window
+//	event OPEN bob bob :hi    an event only the client makes: kind, nick, target, text
 //	< :bob!b@h PRIVMSG #c :hi a raw IRC line (\x01 for CTCP); our nicklists follow it
 //	/j #help                  typed in the editbox
 //	@ +3h                     time passes
@@ -77,8 +80,11 @@ type journey struct {
 	e       *Engine
 	scripts []txtarFile
 	saved   map[string]string
-	out     []string // actions not yet matched by the transcript
-	waiting bool     // in wait, running timers
+	// The saved Users list and default level, for reload.
+	savedUsers  []string
+	savedDLevel int
+	out         []string // actions not yet matched by the transcript
+	waiting     bool     // in wait, running timers
 }
 
 func runJourney(t *testing.T, files []txtarFile) {
@@ -126,6 +132,9 @@ func runJourney(t *testing.T, files []txtarFile) {
 func (j *journey) load(first bool) []string {
 	j.e = New(Options{Rand: rand.New(rand.NewPCG(1, 2))})
 	j.e.Restore(j.saved)
+	if j.savedDLevel > 0 || j.savedUsers != nil {
+		j.e.RestoreUsers(j.savedUsers, j.savedDLevel)
+	}
 	var problems []string
 	for _, f := range j.scripts {
 		for _, p := range j.e.Load(f.name, f.data) {
@@ -158,6 +167,30 @@ func (j *journey) setup(l string) bool {
 		h.chans[strings.ToLower(w[0])] = nicks
 	case "active":
 		h.active = rest
+	case "query":
+		h.queries = append(h.queries, rest)
+	case "info":
+		// info server=irc.test port=6697 ssl connected PREFIX=(qohv)~@%+ usermodes=+iw away=msg
+		h.info = NetInfo{ISupport: map[string]string{}}
+		for kv := range strings.FieldsSeq(rest) {
+			k, v, _ := strings.Cut(kv, "=")
+			switch k {
+			case "server":
+				h.info.Server = v
+			case "port":
+				h.info.Port = atoi(v)
+			case "ssl":
+				h.info.SSL = true
+			case "connected":
+				h.info.Connected = true
+			case "usermodes":
+				h.info.UserModes = v
+			case "away":
+				h.info.Away, h.info.AwayMsg = true, v
+			default:
+				h.info.ISupport[k] = v
+			}
+		}
 	case "clock":
 		now, err := time.Parse(time.RFC3339, rest)
 		if err != nil {
@@ -225,6 +258,13 @@ func (j *journey) step(l string) {
 			t.Fatal(err)
 		}
 		j.wait(j.host.now.Add(d))
+	case strings.HasPrefix(l, "event "):
+		// event KIND nick target :text, for events only the client makes.
+		head, text, _ := strings.Cut(l[6:], " :")
+		w := append(strings.Fields(head), "", "", "")
+		ev := Event{Kind: w[0], Network: j.host.net, Nick: w[1], Target: w[2], Text: text}
+		actions, halted := j.e.Dispatch(ev, j.host)
+		j.record(actions, halted)
 	case l == "reload":
 		j.load(false)
 	case strings.HasPrefix(l, "menu "):
@@ -283,7 +323,13 @@ func (j *journey) record(actions []Action, halted bool) {
 	for _, a := range actions {
 		switch {
 		case a.Save != nil:
-			j.saved = maps.Clone(a.Save.Vars)
+			if a.Save.Vars != nil {
+				j.saved = maps.Clone(a.Save.Vars)
+			}
+			if a.Save.Users != nil {
+				j.savedUsers = a.Save.Users
+			}
+			j.savedDLevel = a.Save.DLevel
 		case a.File != nil:
 			j.host.writeFile(a.File)
 		case a.Echo != nil:
@@ -312,6 +358,8 @@ type fakeHost struct {
 	chans           map[string][]Nick
 	addrs           map[string]string // nick -> user@host, from the lines seen
 	files           map[string]string // the scripts folder
+	queries         []string
+	info            NetInfo
 	now             time.Time
 }
 
@@ -321,8 +369,18 @@ func (h *fakeHost) Nicks(_, ch string) []Nick  { return h.chans[strings.ToLower(
 func (h *fakeHost) HasWindow(_, w string) bool { _, ok := h.chans[strings.ToLower(w)]; return ok }
 func (h *fakeHost) Now() time.Time             { return h.now }
 
-func (h *fakeHost) Address(_, nick string) string { return h.addrs[strings.ToLower(nick)] }
-func (h *fakeHost) Chans(string) []string         { return slices.Sorted(maps.Keys(h.chans)) }
+func (h *fakeHost) Chans(string) []string   { return slices.Sorted(maps.Keys(h.chans)) }
+func (h *fakeHost) Queries(string) []string { return h.queries }
+func (h *fakeHost) Networks() []string      { return []string{h.net} }
+func (h *fakeHost) Info(string) NetInfo     { return h.info }
+
+func (h *fakeHost) IAL(string) []string {
+	var ial []string
+	for _, nick := range slices.Sorted(maps.Keys(h.addrs)) {
+		ial = append(ial, h.addrs[nick])
+	}
+	return ial
+}
 
 func (h *fakeHost) ReadFile(name string) (string, bool) {
 	data, ok := h.files[strings.ToLower(name)]
@@ -348,7 +406,7 @@ func (h *fakeHost) apply(m ircmsg.Message) {
 		if h.addrs == nil {
 			h.addrs = map[string]string{}
 		}
-		h.addrs[strings.ToLower(nick)] = addr
+		h.addrs[strings.ToLower(nick)] = nick + "!" + addr
 	}
 	own := strings.EqualFold(nick, h.me)
 	key := func(i int) string { return strings.ToLower(m.Params[i]) }

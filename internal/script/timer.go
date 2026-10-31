@@ -23,21 +23,53 @@ type timer struct {
 	paused   bool
 }
 
-// NextTimer is when the next timer is due, if there's one running.
+// NextTimer is when the next timer is due, or the next -uN variable or
+// hash item is to be unset, if there's one.
 func (e *Engine) NextTimer() (time.Time, bool) {
 	var next time.Time
+	soonest := func(t time.Time) {
+		if !t.IsZero() && (next.IsZero() || t.Before(next)) {
+			next = t
+		}
+	}
 	for _, t := range e.timers {
-		if !t.paused && (next.IsZero() || t.next.Before(next)) {
-			next = t.next
+		if !t.paused {
+			soonest(t.next)
+		}
+	}
+	for _, v := range e.vars {
+		soonest(v.expires)
+	}
+	for _, t := range e.tables {
+		for _, at := range t.expires {
+			soonest(at)
 		}
 	}
 	return next, !next.IsZero()
+}
+
+// expire unsets the -uN variables and hash items that are due.
+func (e *Engine) expire(now time.Time) {
+	for key, v := range e.vars {
+		if !v.expires.IsZero() && !v.expires.After(now) {
+			delete(e.vars, key)
+			e.dirty = true
+		}
+	}
+	for _, t := range e.tables {
+		for key, at := range t.expires {
+			if !at.After(now) {
+				t.del(t.names[key])
+			}
+		}
+	}
 }
 
 // Tick runs the timers that are due by h.Now(), each once.
 func (e *Engine) Tick(h Host) []Action {
 	r := e.newRun(h)
 	now := h.Now()
+	e.expire(now)
 	for _, t := range slices.Clone(e.timers) {
 		if t.paused || t.next.After(now) || !slices.Contains(e.timers, t) {
 			continue

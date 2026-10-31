@@ -32,9 +32,16 @@ type Host interface {
 	HasWindow(network, name string) bool
 	// Chans is the channels we're on, in order: $chan(N), $comchan.
 	Chans(network string) []string
-	// Address is nick's user@host, if the client knows it (mIRC's
-	// Internal Address List): $address(nick,type).
-	Address(network, nick string) string
+	// Queries is the open query windows: $query(N).
+	Queries(network string) []string
+	// IAL is the nick!user@host of everyone the client knows the address
+	// of (mIRC's Internal Address List): $ial, $address(nick,type).
+	IAL(network string) []string
+	// Networks is the networks, in order: a network's connection id
+	// ($cid, /scid) is its place in it, from 1.
+	Networks() []string
+	// Info is a network's connection: $server, $status, ISUPPORT...
+	Info(network string) NetInfo
 	// ReadFile reads a file from the scripts folder: /hload, $read. The
 	// name is as the script gave it; the client keeps it in that folder.
 	ReadFile(name string) (string, bool)
@@ -60,11 +67,12 @@ type Action struct {
 }
 
 // File is a file for the client to write in the scripts folder, from
-// /hsave or /write.
+// /hsave, /write, /writeini, /fwrite or /copy, or to delete (/remove).
 type File struct {
 	Name   string // as the script gave it
 	Data   string
 	Append bool // add Data to the end, instead of replacing the file
+	Delete bool // delete the file instead
 }
 
 // Echo is a line a script prints with /echo, or an error message.
@@ -75,9 +83,12 @@ type Echo struct {
 	Text    string
 }
 
-// Save is the global variables to keep, sent after a script changed them.
+// Save is what to keep after a script changed it: the global variables,
+// or the Users list and default level. A nil field didn't change.
 type Save struct {
-	Vars map[string]string // without the %, lower-case names
+	Vars   map[string]string // without the %
+	Users  []string          // levels:address info lines; non-nil when the list changed
+	DLevel int
 }
 
 // Problem is something wrong or unsupported in a script, found when it's
@@ -109,23 +120,30 @@ type Options struct {
 // Engine is a set of loaded scripts and their variables. It isn't safe
 // for concurrent use: the client calls it from its Update loop.
 type Engine struct {
-	opts    Options
-	scripts []*file
-	vars    map[string]*variable // global variables, by lower-case name
-	dirty   bool                 // vars changed since the last Save
-	groups  map[string]bool      // #group name -> enabled, across scripts
-	tables  map[string]*table    // hash tables, by lower-case name
-	timers  []*timer
-	regml   regexMatches // the last matches, for $regml
-	regexes map[string]*compiledRegex
-	ctimer  string // the timer running now
-	ltimer  string // the last timer started
+	opts       Options
+	scripts    []*file
+	vars       map[string]*variable // global variables, by lower-case name
+	dirty      bool                 // vars changed since the last Save
+	groups     map[string]bool      // #group name -> enabled, across scripts
+	tables     map[string]*table    // hash tables, by lower-case name
+	timers     []*timer
+	regml      regexMatches // the last matches, for $regml
+	regexes    map[string]*compiledRegex
+	handles    map[string]*handle // /fopen's files, by lower-case name
+	ferr       bool               // $ferr: the last file access failed
+	feof       bool               // $feof: the last read reached the end
+	users      []*user            // the Users list
+	dlevel     int                // the default level, for users who aren't listed
+	usersDirty bool               // the Users list changed since the last Save
+	ctimer     string             // the timer running now
+	ltimer     string             // the last timer started
 }
 
 type variable struct {
-	name  string // as first set, without %
-	value string
-	temp  bool // set -e: not saved
+	name    string // as first set, without %
+	value   string
+	temp    bool      // set -e or -uN: not saved
+	expires time.Time // set -uN: when it's unset
 }
 
 func New(opts Options) *Engine {
@@ -135,8 +153,8 @@ func New(opts Options) *Engine {
 	if opts.Rand == nil {
 		opts.Rand = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
 	}
-	return &Engine{opts: opts, vars: map[string]*variable{}, groups: map[string]bool{},
-		tables: map[string]*table{}, regexes: map[string]*compiledRegex{}}
+	return &Engine{opts: opts, dlevel: 1, vars: map[string]*variable{}, groups: map[string]bool{},
+		tables: map[string]*table{}, regexes: map[string]*compiledRegex{}, handles: map[string]*handle{}}
 }
 
 // Load parses a script and loads it, replacing a script of the same name.
@@ -160,11 +178,17 @@ func (e *Engine) Load(name, src string) []Problem {
 	return problems
 }
 
-// Unload removes a script.
-func (e *Engine) Unload(name string) {
-	if i := e.find(name); i >= 0 {
-		e.scripts = slices.Delete(e.scripts, i, i+1)
+// Unload runs a script's on UNLOAD, then removes it.
+func (e *Engine) Unload(name string, h Host) []Action {
+	i := e.find(name)
+	if i < 0 {
+		return nil
 	}
+	r := e.newRun(h)
+	net, _ := h.Active()
+	r.dispatchFile(e.scripts[i], &Event{Kind: "UNLOAD", Network: net})
+	e.scripts = slices.Delete(e.scripts, i, i+1)
+	return r.finish()
 }
 
 // Scripts is the loaded scripts' names, in load order.
@@ -213,29 +237,63 @@ func (e *Engine) Init(name string, first bool, h Host) []Action {
 // its own reply.
 func (e *Engine) Dispatch(ev Event, h Host) (actions []Action, halted bool) {
 	r := e.newRun(h)
-	for _, f := range e.scripts {
-		if r.dispatchFile(f, &ev) {
-			halted = true
+	events := []Event{ev}
+	if ev.Kind == "RAWMODE" {
+		// A channel MODE line is on RAWMODE, then an event for each change.
+		events[0].modes = r.splitModes(ev.Network, ev.Params[min(1, len(ev.Params)):])
+		events = append(events, r.modeEvents(&events[0])...)
+	}
+	for i := range events {
+		for _, f := range e.scripts {
+			if r.dispatchFile(f, &events[i]) {
+				halted = true
+			}
 		}
 	}
 	return r.finish(), halted
 }
 
-// Alias runs a command typed in the editbox (without its slash) if it's an
-// alias, like mIRC: aliases come before built-in commands. args aren't
-// evaluated, the way a single / leaves them. ok is false if name isn't an
-// alias, and the client should run the command itself.
+// Alias runs a command typed in the editbox, name and args, with a single
+// / (so args aren't evaluated). See Command.
 func (e *Engine) Alias(network, window, name, args string, h Host) (actions []Action, ok bool) {
-	a := e.alias(nil, name)
-	if a == nil {
-		return nil, false
-	}
+	return e.Command(network, window, strings.TrimSpace(name+" "+args), false, h)
+}
+
+// Command runs a line typed in the editbox, without its slashes, if the
+// engine does it: an alias (aliases come before built-in commands, like
+// mIRC's; a ! in front skips them), or one of the engine's own commands
+// (/set, /hadd, /timer, /auser...). With eval (typed with //), the line's
+// identifiers and variables are evaluated first, like mIRC's, and any
+// command works: one that's the client's comes back as an Action. Without
+// it, nothing is evaluated. ok is false if the client should run the line
+// itself.
+func (e *Engine) Command(network, window, line string, eval bool, h Host) (actions []Action, ok bool) {
+	word, args, _ := strings.Cut(strings.TrimSpace(line), " ")
+	name := strings.TrimLeft(word, ".!")
 	r := e.newRun(h)
 	fr := &frame{network: network, window: window, params: fields(args), typed: true}
 	if isChannel(window) {
 		fr.channel = window
 	}
-	r.runAlias(fr, a)
+	if a := e.alias(nil, name); a != nil && !strings.Contains(word, "!") {
+		if eval {
+			v, err := r.eval(fr, args)
+			if err != nil {
+				r.report(fr, err)
+				return r.finish(), true
+			}
+			fr.params = fields(v)
+		}
+		r.runAlias(fr, a)
+		return r.finish(), true
+	}
+	if !eval && !engineCommand(name) {
+		return nil, false
+	}
+	if !eval {
+		r.literal++
+	}
+	r.report(fr, r.command(fr, line))
 	return r.finish(), true
 }
 
@@ -279,6 +337,9 @@ func (e *Engine) alias(from *file, name string) *alias {
 func (r *run) readFile(name string) (string, bool) {
 	key := strings.ToLower(name)
 	if w, ok := r.files[key]; ok {
+		if w.deleted {
+			return "", false
+		}
 		if !w.appended {
 			return w.data.String(), true
 		}
@@ -286,6 +347,15 @@ func (r *run) readFile(name string) (string, bool) {
 		return old + w.data.String(), true
 	}
 	return r.h.ReadFile(name)
+}
+
+// deleteFile deletes a script's file, through the client.
+func (r *run) deleteFile(name string) {
+	if r.files == nil {
+		r.files = map[string]*pendingFile{}
+	}
+	r.files[strings.ToLower(name)] = &pendingFile{deleted: true}
+	r.actions = append(r.actions, Action{File: &File{Name: name, Delete: true}})
 }
 
 // writeFile writes a script's file, through the client. It's kept for the
@@ -297,11 +367,19 @@ func (r *run) writeFile(name, data string, appendTo bool) {
 		r.files = map[string]*pendingFile{}
 	}
 	w := r.files[key]
-	if w == nil || !appendTo {
-		w = &pendingFile{appended: appendTo}
+	if w == nil || !appendTo || w.deleted {
+		// After a /remove, even an append starts the file afresh.
+		w = &pendingFile{appended: appendTo && w == nil}
 		r.files[key] = w
 	}
 	w.data.WriteString(data)
+	if !appendTo {
+		// The whole file again (/fwrite, /writeini...): this run's earlier
+		// writes of it are out of date, so the client gets only this one.
+		r.actions = slices.DeleteFunc(r.actions, func(a Action) bool {
+			return a.File != nil && !a.File.Delete && strings.EqualFold(a.File.Name, name)
+		})
+	}
 	r.actions = append(r.actions, Action{File: &File{Name: name, Data: data, Append: appendTo}})
 }
 
@@ -310,4 +388,5 @@ func (r *run) writeFile(name, data string, appendTo bool) {
 type pendingFile struct {
 	data     strings.Builder
 	appended bool
+	deleted  bool
 }

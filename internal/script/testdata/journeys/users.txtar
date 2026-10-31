@@ -1,0 +1,71 @@
+The Users list: access levels for addresses and nicks, which decide who
+can trigger which events, from mIRC's Access Levels section.
+
+-- users.mrc --
+on *:START:{
+  if ($ulist(*,0) == 0) {
+    auser 10 boss!*@boss.example the owner
+    auser friend,5 *!*@friends.example
+    auser =3 carol
+  }
+}
+on @friend:JOIN:#:mode $chan +o $nick
+on 1:TEXT:!level:#:msg $chan $nick $+ : general $ulevel (event $clevel $+ )
+on 5:TEXT:!level:#:msg $chan $nick $+ : five or more ( $+ $ulevel $+ , event $clevel $+ )
+on +3:TEXT:!three:#:msg $chan $nick has exactly 3
+on 10:TEXT:!quit:?:msg $nick ok boss
+on >=1:KICK:#:msg $chan fair kick by $nick
+on 1:KICK:#:msg $chan $nick ( $+ $level($address($nick,5)) $+ ) can't kick $knick
+alias who echo -a $level(carol) / $ulist(*,0) / $ulist(*,friend,1) / $ulist(boss,10,1).info / $dlevel
+alias who2 echo -a $level(zed!*@other.example) / $level(*!*@other.example)
+-- transcript --
+me trout
+chan #trout @trout
+active #trout
+/who
+= #trout: =3 / 3 / *!*@friends.example / the owner / 1
+< :ann!a@friends.example JOIN #trout
+> /mode #trout +o ann
+< :zed!z@other.example JOIN #trout
+< :ann!a@friends.example PRIVMSG #trout :!level
+> /msg #trout ann: five or more (5, event 5)
+< :zed!z@other.example PRIVMSG #trout :!level
+> /msg #trout zed: general 1 (event 1)
+# carol has exactly level 3 (=3), so the level 1 event isn't hers.
+< :carol!c@carol.example PRIVMSG #trout :!level
+< :carol!c@carol.example PRIVMSG #trout :!three
+> /msg #trout carol has exactly 3
+< :boss!b@boss.example PRIVMSG trout :!quit
+> /msg boss ok boss
+< :zed!z@other.example PRIVMSG trout :!quit
+# The boss (10) can kick ann (5); zed (1) can't kick ann.
+< :boss!b@boss.example JOIN #trout
+< :boss!b@boss.example KICK #trout ann :bye
+> /msg #trout fair kick by boss
+< :ann!a@friends.example JOIN #trout
+> /mode #trout +o ann
+< :zed!z@other.example KICK #trout ann :ha
+> /msg #trout zed () can't kick ann
+# Restarting keeps the list.
+/ruser carol
+/auser -a 7 zed!*@other.example
+/dlevel 2
+reload
+/who
+= #trout: / 3 / *!*@friends.example / the owner / 2
+< :zed!z@other.example PRIVMSG #trout :!level
+> /msg #trout zed: five or more (7, event 5)
+/rlevel 10
+/who
+= #trout: / 2 / *!*@friends.example / / 2
+# /guser takes the address from the client's address list, as a mask.
+/guser 4 zed 2
+/who2
+= #trout: 7 / 4
+/auser 3 gone
+/auser 3 boss
+/flush 3
+/ulist 3
+= #trout: 3:boss
+/guser 4 nobody
+= status: * /guser: nobody's address isn't known

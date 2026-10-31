@@ -315,7 +315,7 @@ func (r *run) evalArgs(fr *frame, c *call) error {
 
 // arg is the evaluated argument i, or "".
 func (c *call) arg(i int) string {
-	if i < len(c.vals) {
+	if i >= 0 && i < len(c.vals) {
 		return c.vals[i]
 	}
 	return ""

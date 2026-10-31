@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ergochat/irc-go/ircmsg"
 )
 
 // These are the ways a script, or someone else's text, could crash or
@@ -220,4 +222,123 @@ func TestRegexCache(t *testing.T) {
 	if got := dispatchText(e, evalHost(), "!HI you"); !slices.Equal(got, []string{"/msg #trout hi you"}) {
 		t.Errorf("got %q", got)
 	}
+}
+
+// TestReviewThree covers the third review's findings.
+func TestReviewThree(t *testing.T) {
+	t.Run("scid -1 is the active connection", func(t *testing.T) {
+		got := runAlias(t, `alias t scid -1 echo -a on $!network`, "")
+		if want := []string{"#trout: on TestNet"}; !slices.Equal(got, want) {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("a write after a remove starts afresh", func(t *testing.T) {
+		e := New(Options{})
+		load(t, e, "f.mrc", `alias t remove log.txt | write log.txt NEW | echo -a $read(log.txt,n,1) $lines(log.txt)`)
+		h := evalHost()
+		h.files = map[string]string{"log.txt": "OLD\r\n"}
+		actions, _ := e.Alias("TestNet", "#trout", "t", "", h)
+		if got := echoes(actions); !slices.Equal(got, []string{"NEW 1"}) {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("q is a quiet where it isn't a prefix", func(t *testing.T) {
+		e := New(Options{})
+		load(t, e, "m.mrc", `on *:OWNER:#:echo -a owner $opnick
+on *:MODE:#:echo -a mode $1-`)
+		h := evalHost()
+		h.info = NetInfo{ISupport: map[string]string{"PREFIX": "(ov)@+", "CHANMODES": "bq,k,l,imnpst"}}
+		ev := Event{Kind: "RAWMODE", Network: "TestNet", Nick: "alice", Address: "a@h", Chan: "#trout",
+			Text: "+q *!*@spam", Params: []string{"#trout", "+q", "*!*@spam"}}
+		actions, _ := e.Dispatch(ev, h)
+		if got := echoes(actions); !slices.Equal(got, []string{"mode +q *!*@spam"}) {
+			t.Errorf("Libera: got %q", got)
+		}
+		h.info.ISupport["PREFIX"] = "(qov)~@+"
+		actions, _ = e.Dispatch(ev, h)
+		if got := echoes(actions); !slices.Equal(got, []string{"owner *!*@spam"}) {
+			t.Errorf("with owners: got %q", got)
+		}
+	})
+	t.Run("a missing default level is 1, and START isn't gated", func(t *testing.T) {
+		e := New(Options{})
+		load(t, e, "l.mrc", `on 1:TEXT:*:#:msg # heard
+on 1:START:echo -a started`)
+		e.RestoreUsers(nil, 0)
+		if got := dispatchText(e, evalHost(), "hi"); !slices.Equal(got, []string{"/msg #trout heard"}) {
+			t.Errorf("got %q", got)
+		}
+		e.RestoreUsers(nil, 5)
+		if got := echoes(e.Init("l.mrc", true, evalHost())); !slices.Equal(got, []string{"started"}) {
+			t.Errorf("START: got %q", got)
+		}
+	})
+	t.Run("renaming to another case keeps the file", func(t *testing.T) {
+		e := New(Options{})
+		load(t, e, "r.mrc", `alias t rename -o a.txt A.txt | echo -a $isfile(A.txt) $read(A.txt,n,1)`)
+		h := evalHost()
+		h.files = map[string]string{"a.txt": "data\r\n"}
+		actions, _ := e.Alias("TestNet", "#trout", "t", "", h)
+		if got := echoes(actions); !slices.Equal(got, []string{"$true data"}) {
+			t.Errorf("got %q", got)
+		}
+	})
+	t.Run("ruser levels nick", func(t *testing.T) {
+		got := runAlias(t, `alias t auser friend,5 bob | auser 5 friend | ruser friend bob | echo -a $level(bob) $level(friend)`, "")
+		if want := []string{"#trout: =5 5"}; !slices.Equal(got, want) {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("server notices", func(t *testing.T) {
+		for _, c := range []struct {
+			line string
+			own  bool
+			want string
+		}{
+			{":irc.example NOTICE * :hi", false, "SNOTICE"},
+			{"NOTICE AUTH :*** Looking up your hostname", false, "SNOTICE"},
+			{"NOTICE bob :mine", true, "NOTICE"},
+			{":bob NOTICE trout :no address", false, "NOTICE"},
+		} {
+			m, _ := ircmsg.ParseLine(c.line)
+			if got := EventFromMessage("TestNet", m, c.own).Kind; got != c.want {
+				t.Errorf("%s: %s, want %s", c.line, got, c.want)
+			}
+		}
+	})
+	t.Run("channel windows aren't queries", func(t *testing.T) {
+		if windowLoc("?", "#trout") || !windowLoc("?", "bob") || !windowLoc("*", "#trout") || !windowLoc("=", "=bob") {
+			t.Error("wrong location")
+		}
+	})
+	t.Run("rewrites of a file are one action", func(t *testing.T) {
+		e := New(Options{})
+		load(t, e, "w.mrc", `alias t {
+  fopen -o h out.txt
+  var %i = 1
+  while (%i <= 50) { fwrite -n h line %i | inc %i }
+  fclose h
+}`)
+		actions, _ := e.Alias("TestNet", "#trout", "t", "", evalHost())
+		var writes []*File
+		for _, a := range actions {
+			if a.File != nil {
+				writes = append(writes, a.File)
+			}
+		}
+		if len(writes) != 1 || strings.Count(writes[0].Data, "\n") != 50 {
+			t.Errorf("%d writes", len(writes))
+		}
+	})
+}
+
+// echoes is the text of the Echo actions.
+func echoes(actions []Action) []string {
+	var out []string
+	for _, a := range actions {
+		if a.Echo != nil {
+			out = append(out, a.Echo.Text)
+		}
+	}
+	return out
 }

@@ -146,6 +146,33 @@ var mircProbes = []string{
 	"$iif(2 & 1,y,n)", "$iif(0 // 5,y,n)", "$iif(a iswm A,y,n)", "$iif(* iswm $null,y,n)",
 	"$iif(%n == 5.0,y,n)", "$iif(05 === 5,y,n)", "$iif(a != A,y,n)", "$iif(!0,y,n)", "$iif(!$null,y,n)",
 	"$iif($true,y,n)", "$iif(0.0,y,n)", "$iif(00,y,n)", "$iif(-0,y,n)", "$iif( ,y,n)",
+	// Group 1 identifiers.
+	"$qt(a b) $qt(\"a\") $noqt(\"a b\") $noqt(a)",
+	"$ord(1) $ord(2) $ord(3) $ord(4) $ord(11) $ord(12) $ord(13) $ord(21) $ord(101) $ord(111) $ord(0)",
+	"$replacex(abc,a,b,b,c) $replacex(aaa,a,aa) $replacexcs(aAa,a,b)",
+	"$bytes(1234567) $bytes(1234567,k) $bytes(1234567,m) $bytes(1234567,3) $bytes(999,3)",
+	"$bytes(1234567,3).suf $bytes(1023,k).suf $bytes(1234.5,d) $bytes(5,b).suf $bytes(1536,k)",
+	"$base(15,10,16) $base(1.5,10,16) $base(2,10,16,3) $base(ff,16,2) $base(255,10,36) $base(-10,10,16)",
+	"$base(0.1,10,2) $base(10,10,10,5)",
+	"$encode(hello,m) $decode(aGVsbG8=,m) $encode(hello,a)",
+	"$encode(hello) $decode($encode(hello))",
+	"$encode(hello world how are you,u)",
+	"$encode(a b/c?é,x) $decode(a%20b,x)",
+	"$md5(abc) $sha1(abc)",
+	"$sha256(abc)",
+	"$crc(abc,0)",
+	"$nopath(c:\\a\\b.txt) $nofile(c:\\a\\b.txt) $nopath(b.txt) $nofile(b.txt) .",
+	"$and(12,10) $or(12,10) $xor(12,10) $not(0) $biton(0,3) $bitoff(15,1) $isbit(4,3) $isbit(4,2)",
+	"$sin(0) $cos(0) $sin(90).deg $atan(1).deg $log(1) $log10(1000) $log2(8) $cbrt(27) $hypot(3,4)",
+	"$sin(1) $cos(1) $tan(1) $log(10) $asin(1)",
+	"$gcd(12,18) $lcm(4,6) $pi",
+	"$var(%n,1) $var(%n,1).value $var(%a.*,0) $var(%nope,1) $var(%n,1).local .",
+	"$show",
+	"$mask(nick!~user@a.b.c,0) $mask(nick!~user@a.b.c,1) $mask(nick!~user@a.b.c,2) $mask(nick!~user@a.b.c,3) $mask(nick!~user@a.b.c,4)",
+	"$mask(nick!~user@a.b.c,5) $mask(nick!~user@a.b.c,6) $mask(nick!~user@a.b.c,7) $mask(nick!~user@a.b.c,8) $mask(nick!~user@a.b.c,9)",
+	"$mask(n!u@1.2.3.4,3) $mask(n!u@host,4) $mask(n!u@a.b,4)",
+	// Not connected: mIRC's defaults.
+	"$prefix $nickmode $chantypes $chanmodes $status $cid $scon(0) $scid(1) $away $query(0) $ial(*,0) . $usermode $server $port .",
 	"$iif(*& bob iswm hi bob,y,n)", "$iif(*a*b iswm xaxxbx,y,n)", "$iif(& iswm $null,y,n)", "$iif(?é iswm aé,y,n)",
 	// Where an identifier's name ends, and identifiers that don't exist.
 	"$version!", "$version's", "$false!", "$false's", "$false,", "$false.", "$false.x", "$true.foo",
@@ -229,6 +256,41 @@ var mircScripts = []string{
 	"w $iif($isid,id,cmd) | s",
 	"w a | return | w b",
 	".w dot",
+	// :error, $error and /reseterror (e2, e3 and e4 are below).
+	"if (1 == 2) || (2 == 2) w or | if (1 == 1) && (2 == 3) w and | w done",
+	"if (1 == 2) || (2 == 3) || (3 == 3) { w three } | else w none",
+	"w $iif($error,set,unset)",
+	"w a | e2 | w b",
+	"w a | e3 | w b",
+	"w a | e4 | w b",
+	// /signal -n runs on SIGNAL now; $show; -u0.
+	"signal -n test a b | w after",
+	"q | .q",
+	"set -u0 %t 1 | w %t $var(%t,1).secs",
+	// INI files, /remove, /copy, /rename, file handles, $file.
+	"remove i1.ini | writeini i1.ini s1 a 1 | writeini i1.ini s1 b two words | writeini i1.ini s2 c 3 | w $readini(i1.ini,s1,a) $readini(i1.ini,s1,b) $readini(i1.ini,S2,C) $readini(i1.ini,s9,a) .",
+	"remove i2.ini | writeini i2.ini s a $!me | w $readini(i2.ini,n,s,a) $ini(i2.ini,0) $ini(i2.ini,1) $ini(i2.ini,s) $ini(i2.ini,s,0) $ini(i2.ini,s,1) $ini(i2.ini,s,a) $ini(i2.ini,zz) .",
+	"remove i3.ini | writeini i3.ini s a 1 | writeini i3.ini s b 2 | remini i3.ini s a | w $ini(i3.ini,s,0) $readini(i3.ini,s,b) | remini i3.ini s | w $ini(i3.ini,0)",
+	"remove i4.ini | writeini i4.ini s a 1 | writeini i4.ini s a 2 | w $readini(i4.ini,s,a) $read(i4.ini,1) $read(i4.ini,2) $lines(i4.ini)",
+	"remove c1.txt | remove c2.txt | write c1.txt x | copy c1.txt c2.txt | w $read(c2.txt,1) | copy c1.txt c2.txt | w after",
+	"remove c3.txt | remove c4.txt | write c3.txt y | write c4.txt z | copy -a c3.txt c4.txt | w $read(c4.txt,1) $read(c4.txt,2) | copy -o c3.txt c4.txt | w $lines(c4.txt)",
+	"remove m1.txt | remove m2.txt | write m1.txt z | rename m1.txt m2.txt | w $exists(m1.txt) $read(m2.txt,1)",
+	"remove h1.txt | write h1.txt l1 | write h1.txt l2 | fopen h h1.txt | w $fread(h) $fread(h) $feof $fread(h) . $feof $nopath($fopen(h).fname) $fopen(h) $fopen(0) | fclose h | w $fopen(0)",
+	"remove h2.txt | fopen -n h h2.txt | fwrite -n h hello | fwrite h world | fclose h | w $read(h2.txt,1) $read(h2.txt,2) $lines(h2.txt)",
+	"fopen h nosuch.txt | w $ferr $fopen(h) $fopen(h).err . | fclose h",
+	"remove h3.txt | write h3.txt a | write h3.txt bb | write h3.txt c | fopen h h3.txt | fseek -l h 2 | w $fread(h) $fopen(h).pos | fseek -w h c* | w $fread(h) | fseek h 0 | w $fread(h) | fclose h",
+	"remove f9.txt | write f9.txt abc | w $file(f9.txt).size $file(f9.txt).name $file(f9.txt).ext $file(nosuch.txt) .",
+	"remove x1.txt | w $exists(x1.txt) | remove x1.txt | w ok",
+	// The Users list.
+	"auser 10 boss!*@b.example the boss | auser -a friend boss!*@b.example | w $level(boss!*@b.example) $ulist(*,0) $ulist(*,1) $ulist(*,1).info",
+	"auser =3 carol | auser 5,7 dave | w $level(carol) $level(dave) $ulist(*,5,0) $ulist(*,7,1) $ulist(car*,1) $ulist(*,9,0)",
+	"auser 5 x!*@y | ruser 5 x!*@y | w $ulist(*,0) | auser 5,6 z | ruser 5 z | w $level(z)",
+	"auser 5 a | auser 6 b | rlevel 5 | w $ulist(*,0) $ulist(*,1)",
+	"auser 5,7 a | auser 7 b | rlevel -r 7 | w $ulist(*,0) $level(a)",
+	"dlevel 3 | w $dlevel | dlevel 1 | w $dlevel",
+	"auser 4 n | auser -a =1,2 n | w $level(n) | auser -a 9 n | w $level(n)",
+	"auser 4 n | auser 6 n | w $level(n) $ulist(*,0)",
+	"auser 4 n info one | iuser n info two | w $ulist(n,1).info",
 	// Hash tables (item order is mIRC's hash order, so these don't depend on it).
 	"hmake t 10 | hadd t a 1 | hadd t B two words | w $hget(t,a) $hget(t,b) $hget(t,0).item $hget(t) $hget(t).size $hget(0)",
 	"hmake t | hadd t a 1 | w $hfind(t,A,1)",
@@ -267,7 +329,11 @@ var mircScripts = []string{
 	"hmake abc | hmake 2 | hadd 2 k v | hadd abc k other | w $hget(2,k) $hget(abc,k) $hget(0)",
 }
 
-// Known differences, not checked: mIRC's PCRE has lookarounds and
+// Known differences, not checked: $fopen(h).fname is the full path in
+// mIRC, and the name the script gave in trout (its files are in a folder
+// of their own, with no path to show); when an error comes up from a called
+// alias to an :error, mIRC raises it again if that :error calls another
+// alias before /reseterror (trout doesn't); mIRC's PCRE has lookarounds and
 // backreferences, which trout's RE2 doesn't ($regex(ab,/(?<=a)b/) is an
 // error in trout); and mIRC's hash table order, which scripts aren't to
 // depend on, is its hash's, where trout's is the order items were added.
@@ -276,17 +342,37 @@ var mircScripts = []string{
 const mircScriptHelpers = `alias -l w write out.txt %case $chr(9) $1-
 alias -l r return $calc($1 * 2)
 alias -l s w $iif($isid,id,cmd)
+alias -l q w show $show
+alias -l e2 {
+  noop $calc(1,2)
+  w e2 not here
+}
+alias -l e3 {
+  noop $calc(1,2)
+  w e3 not here
+  :error
+  w e3 caught
+}
+alias -l e4 {
+  noop $calc(1,2)
+  w e4 not here
+  :error
+  w e4 caught $iif($error,yes,no)
+  reseterror
+  w e4 after $iif($error,still,reset)
+}
+on *:SIGNAL:t*:w sig $signal $1-
 `
 
 func TestMIRCScripts(t *testing.T) {
 	var src strings.Builder
 	src.WriteString("on *:START:{\n  unsetall\n  write -c out.txt\n")
 	for i := range mircScripts {
-		fmt.Fprintf(&src, "  unsetall\n  hfree -w *\n  set %%case s%d\n  s%d\n", i, i)
+		fmt.Fprintf(&src, "  unsetall\n  hfree -w *\n  while ($ulist(*,1)) ruser $v1\n  dlevel 1\n  set %%case s%d\n  s%d\n", i, i)
 	}
 	src.WriteString("  exit -n\n}\n" + mircScriptHelpers)
 	for i, body := range mircScripts {
-		fmt.Fprintf(&src, "alias -l s%d {\n  %s\n  return\n  :error\n  w !error\n  reseterror\n}\n", i, strings.ReplaceAll(body, "\n", "\n  "))
+		fmt.Fprintf(&src, "alias -l s%d {\n  %s\n  return\n  :error\n  reseterror\n  w !error\n}\n", i, strings.ReplaceAll(body, "\n", "\n  "))
 	}
 	script := filepath.Join(t.TempDir(), "scripts.mrc")
 	if err := os.WriteFile(script, []byte(src.String()), 0o644); err != nil {
@@ -311,7 +397,7 @@ func TestMIRCScripts(t *testing.T) {
 		id := fmt.Sprintf("s%d", i)
 		e := New(Options{})
 		src := "alias t {\n  set %case " + id + "\n  " + id + "\n}\n" + mircScriptHelpers +
-			fmt.Sprintf("alias -l %s {\n  %s\n  return\n  :error\n  w !error\n  reseterror\n}\n", id, strings.ReplaceAll(body, "\n", "\n  "))
+			fmt.Sprintf("alias -l %s {\n  %s\n  return\n  :error\n  reseterror\n  w !error\n}\n", id, strings.ReplaceAll(body, "\n", "\n  "))
 		for _, p := range e.Load("s.mrc", src) {
 			if p.Fatal {
 				t.Fatalf("%s: %v", body, p)
@@ -346,8 +432,14 @@ const mircTimers = `on *:START:{
   .timerC -m 1 2500 tc
   .timer 1 3 write out.txt auto $!ctimer
   .timerZ 1 4 exit -n
+  set -u2 %tmp 1
+  hadd -mu2 ut a 1
+  .timerQ 1 1 write out.txt Q %tmp $hget(ut,a) $var(%tmp,1).secs
+  .timerR -m 1 3500 write out.txt R %tmp $hget(ut,a) .
+  signal later x y
   write out.txt start $timer(0) $ltimer $timer(1) $timer(B).delay $timer(C).delay
 }
+on *:SIGNAL:later:write out.txt sig $signal $1-
 alias tc {
   write out.txt C $ctimer $timer(B).reps
   .timerB off

@@ -166,12 +166,27 @@ func (sp *stmtParser) condBody(n int, rest string) (string, []stmt) {
 	rest = strings.TrimSpace(rest)
 	var cond string
 	if strings.HasPrefix(rest, "(") {
-		end := matchParen(rest, 0)
-		if end < 0 {
-			sp.p.problem(n, false, "this ( has no matching )")
-			end = len(rest) - 1
+		// (a) || (b) is one condition too, like mIRC reads it.
+		end := -1
+		for {
+			e := matchParen(rest, end+1)
+			if e < 0 {
+				sp.p.problem(n, false, "this ( has no matching )")
+				end = len(rest) - 1
+				break
+			}
+			end = e
+			after := strings.TrimLeft(rest[end+1:], " ")
+			if !strings.HasPrefix(after, "&&") && !strings.HasPrefix(after, "||") {
+				break
+			}
+			next := strings.TrimLeft(after[2:], " ")
+			if !strings.HasPrefix(next, "(") {
+				break
+			}
+			end = len(rest) - len(next) - 1
 		}
-		cond, rest = rest[:end+1], strings.TrimSpace(rest[end+1:])
+		cond, rest = "("+rest[:end+1]+")", strings.TrimSpace(rest[end+1:])
 	} else {
 		w := strings.Fields(rest)
 		k := min(1, len(w))

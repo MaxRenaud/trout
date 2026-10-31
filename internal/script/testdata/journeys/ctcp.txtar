@@ -10,7 +10,6 @@ ctcp *:SLAP:?:{
   halt
 }
 -- transcript --
-! ctcp.mrc: line 3: level 5 needs the Users list, which trout doesn't have; this event never triggers
 me trout
 clock 2026-10-29T15:04:05Z
 < :bob!b@host PRIVMSG trout :\x01PING 12345\x01
@@ -20,6 +19,7 @@ clock 2026-10-29T15:04:05Z
 < :bob!b@host PRIVMSG #trout :\x01PING 12345\x01
 < :bob!b@host PRIVMSG #trout :\x01TIME\x01
 > /notice bob The time here is around 15:04:05
+# Level 5: bob isn't in the Users list, so he has the default level, 1.
 < :bob!b@host PRIVMSG trout :\x01OPME #trout\x01
 < :bob!b@host PRIVMSG trout :\x01SLAP alice\x01
 > /describe bob slaps alice back

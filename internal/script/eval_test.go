@@ -409,7 +409,7 @@ alias t {
 		// runs to the end of the word.
 		{"unknown identifier", `alias t echo -a x $nosuch y`, "", []string{"#trout: x y"}},
 		{"text after a name", `alias t echo -a $1! $1's $me! $me's $len(ab)x`, "a b", []string{"#trout: a! a's 2"}},
-		{"mIRC's but not trout's", `alias t echo -a $readini(x.ini,a,b)`, "", []string{": * $readini isn't supported yet (line 1, t.mrc)"}},
+		{"mIRC's but not trout's", `alias t echo -a $window(@x)`, "", []string{": * $window isn't supported yet (line 1, t.mrc)"}},
 		{"nothing to echo", `alias t echo -a $null`, "", []string{": * /echo: insufficient parameters (line 1, t.mrc)"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -470,8 +470,8 @@ func TestParseProblems(t *testing.T) {
 		{"alias t {\n echo hi\n", "line 1: this { has no matching }"},
 		{"on *:JOIN:#:{ echo hi } }", ""},
 		{"on *:FOO:#:echo", "line 1: on FOO isn't supported"},
-		{"on friend:TEXT:*:#:echo", "line 1: the named level friend needs the Users list, which trout doesn't have; this event never triggers"},
-		{"on >=2:KICK:#:echo", "line 1: comparing levels needs the Users list, which trout doesn't have"},
+		{"on friend:TEXT:*:#:echo", ""},
+		{"on >=2:KICK:#:echo", ""},
 		{"on $*:TEXT:/^hi/:#:echo", ""},
 		{"raw 001:*:echo", ""},
 		{"raw 001:echo", "line 1: a raw event needs numeric:matchtext:commands"},

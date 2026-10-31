@@ -11,7 +11,7 @@ alias opts dialog -m settings settings
 on *:TEXT:!sys:#:msg # $dll(sysinfo.dll,cpu,_)
 -- good.mrc --
 on ^*:JOIN:#:echo $chan Joins: $nick | halt
-on *:TEXT:hi:#:msg # $readini(greet.ini,greet,$nick)
+on *:TEXT:hi:#:msg # $window(@greet)
 on *:SOCKREAD:sock:noop
 menu nicklist {
   Whois:whois $$1
@@ -23,7 +23,7 @@ on *:TEXT:!ok:#:msg # still here
 ! bad.mrc: line 5: /dialog: dialogs aren't supported [fatal]
 ! bad.mrc: line 6: $dll: DLLs aren't supported [fatal]
 ! good.mrc: line 1: ^ events (replacing the default text) aren't supported
-! good.mrc: line 2: $readini isn't supported yet
+! good.mrc: line 2: $window isn't supported yet
 ! good.mrc: line 3: on SOCKREAD isn't supported
 ! good.mrc: line 7: $? asks for input, which isn't supported
 me trout
@@ -33,7 +33,7 @@ active #trout
 > /opts
 < :carol!c@h JOIN #trout
 < :bob!b@h PRIVMSG #trout :hi
-= status: * $readini isn't supported yet (line 2, good.mrc)
+= status: * $window isn't supported yet (line 2, good.mrc)
 < :bob!b@h PRIVMSG #trout :!q
 = status: * $?: input prompts aren't supported (line 7, good.mrc)
 < :bob!b@h PRIVMSG #trout :!ok

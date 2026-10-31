@@ -25,13 +25,16 @@ type alias struct {
 type event struct {
 	kind  string // TEXT, JOIN... or CTCP for a ctcp section
 	level int
-	any   bool // the * level
-	exact bool // + prefix: only users with exactly this level
-	named bool // a named level, like friend
-	me    bool // me: our own events only
-	notMe bool // ! prefix: not our own events
-	op    bool // @ prefix: only when we're an op on the channel
-	regex bool // $ prefix: match is a regular expression
+	any   bool   // the * level
+	exact bool   // + prefix: only users with exactly this level
+	named bool   // a named level, like friend
+	me    bool   // me: our own events only
+	notMe bool   // ! prefix: not our own events
+	op    bool   // @ prefix: only when we're an op on the channel
+	regex bool   // $ prefix: match is a regular expression
+	name  string // a named level, like friend
+	cmp   string // <, >, <=, >=, <> or =: compare the actor's and target's levels
+	text  string // the level as written, for $clevel
 	match string
 	loc   string
 	group string // the #group it's in, or ""
@@ -251,6 +254,12 @@ func (p *parser) onDef(l srcLine, rest string) {
 	}
 	kind := strings.ToUpper(strings.TrimSpace(head[1]))
 	n, ok := eventFields[kind]
+	if kind == "OPEN" {
+		// on OPEN has matchtext only for queries (? or *): on OPEN:=: doesn't.
+		if loc := strings.TrimSpace(splitFields(rest, 4)[min(2, len(splitFields(rest, 4))-1)]); loc != "?" && loc != "*" {
+			n = 1
+		}
+	}
 	if !ok {
 		p.problem(l.n, false, "on "+kind+" isn't supported")
 		p.body(l, afterColons(rest, 0))
@@ -263,10 +272,14 @@ func (p *parser) onDef(l srcLine, rest string) {
 		return
 	}
 	ev := &event{kind: kind, me: me}
-	switch n {
-	case 2:
+	switch {
+	case n == 2 && kind == "OPEN":
+		ev.loc, ev.match = f[2], f[3]
+	case n == 2:
 		ev.match, ev.loc = f[2], f[3]
-	case 1:
+	case n == 1 && matchOnly[kind]:
+		ev.match = f[2]
+	case n == 1:
 		ev.loc = f[2]
 	}
 	if !p.level(l, ev, f[0]) {
@@ -294,8 +307,7 @@ func (p *parser) level(l srcLine, ev *event, s string) bool {
 		case '$':
 			ev.regex = true
 		case '<', '>', '=':
-			p.problem(l.n, false, "comparing levels needs the Users list, which trout doesn't have")
-			return false
+			ev.cmp += s[:1]
 		case '&':
 			// Only skip the event if default text was halted: trout's never is.
 		case '!':
@@ -305,17 +317,16 @@ func (p *parser) level(l srcLine, ev *event, s string) bool {
 		case '+':
 			ev.exact = true
 		default:
+			ev.text = s
 			switch {
 			case s == "*":
 				ev.any, ev.level = true, 1
 			case isDigits(s):
 				ev.level = atoi(s)
-				if ev.level > 1 {
-					p.problem(l.n, false, "level "+s+" needs the Users list, which trout doesn't have; this event never triggers")
-				}
 			default:
-				ev.named = true
-				p.problem(l.n, false, "the named level "+s+" needs the Users list, which trout doesn't have; this event never triggers")
+				// A named level is specific: it ranks above numbered ones
+				// when choosing the event that runs.
+				ev.named, ev.name, ev.level = true, s, 1<<20
 			}
 			return true
 		}

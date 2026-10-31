@@ -14,12 +14,13 @@ var builtins map[string]builtin
 
 // lazyArgs are identifiers that evaluate their own arguments: $iif only
 // evaluates the branch it returns, and $eval decides how many times.
-var lazyArgs = map[string]bool{"iif": true, "eval": true, "": true, "regsubex": true}
+var lazyArgs = map[string]bool{"iif": true, "eval": true, "": true, "regsubex": true, "var": true}
 
 func init() {
 	builtins = map[string]builtin{"regsubex": regsubexIdent}
 	for _, m := range []map[string]builtin{eventIdents, coreIdents, textIdents, tokenIdents, numIdents,
-		timeIdents, hashIdents, regexIdents, timerIdents, fileIdents, menuIdents} {
+		timeIdents, hashIdents, regexIdents, timerIdents, fileIdents, menuIdents, miscIdents,
+		fileHandleIdents, connIdents, userIdents} {
 		maps.Copy(builtins, m)
 	}
 }
@@ -92,11 +93,10 @@ var eventIdents = map[string]builtin{
 		if !c.hasArgs {
 			return evField(fr, func(ev *Event) string { return ev.Address }), nil
 		}
-		addr := r.h.Address(fr.network, c.arg(0))
-		if addr == "" {
-			return "", nil
+		if a, ok := r.ialEntry(fr.network, c.arg(0)); ok {
+			return mask(a, int(c.num(1)))
 		}
-		return mask(c.arg(0)+"!"+addr, int(c.num(1)))
+		return "", nil
 	},
 	"mask": func(r *run, fr *frame, c *call) (string, error) {
 		return mask(c.arg(0), int(c.num(1)))
@@ -285,6 +285,12 @@ var coreIdents = map[string]builtin{
 	"v2": func(r *run, fr *frame, c *call) (string, error) {
 		return fr.v2, nil
 	},
+	"signal": func(r *run, fr *frame, c *call) (string, error) {
+		return evField(fr, func(ev *Event) string { return iff(ev.Kind == "SIGNAL", ev.Target, "") }), nil
+	},
+	"error": func(r *run, fr *frame, c *call) (string, error) {
+		return r.errText, nil
+	},
 	"result": func(r *run, fr *frame, c *call) (string, error) {
 		return fr.result, nil
 	},
@@ -386,10 +392,11 @@ func mask(address string, kind int) (string, error) {
 }
 
 // wildHost makes the most specific part of a host a wildcard: *.b.c for
-// a.b.c, and 1.2.3.* for an IP address.
+// a.b.c, and 1.2.3.* for an IP address. A host of one or two parts stays
+// as it is (checked in mIRC: a.b is a.b).
 func wildHost(host string) string {
 	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
+	if len(parts) < 3 {
 		return host
 	}
 	if strings.Trim(host, "0123456789.") == "" {

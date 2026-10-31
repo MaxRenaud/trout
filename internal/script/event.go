@@ -26,6 +26,11 @@ type Event struct {
 	// CTCP skip them. Our own JOIN, PART and NICK do trigger events, like
 	// mIRC's: scripts use the me and ! prefixes to tell.
 	Own bool
+
+	// A mode event's line, split up ($mode), and whether it's its first
+	// or last event ($modefirst, $modelast).
+	modes               []modeChange
+	modeFirst, modeLast bool
 }
 
 // EventFromMessage makes an Event from any IRC message from network. own
@@ -46,12 +51,17 @@ func EventFromMessage(network string, m ircmsg.Message, own bool) Event {
 		ev.Kind = "TEXT"
 		if m.Command == "NOTICE" {
 			ev.Kind = "NOTICE"
+			if addr == "" && (nick == "" || strings.Contains(nick, ".")) && !own {
+				// From a server (a name, or no source, not a nick!user@host):
+				// on SNOTICE.
+				ev.Kind = "SNOTICE"
+			}
 		}
 		ev.Target, ev.Text = param(0), param(1)
 		if isChannel(ev.Target) {
 			ev.Chan = ev.Target
 		}
-		if inner, ok := strings.CutPrefix(ev.Text, "\x01"); ok {
+		if inner, ok := strings.CutPrefix(ev.Text, "\x01"); ok && ev.Kind != "SNOTICE" {
 			inner = strings.TrimSuffix(inner, "\x01")
 			switch {
 			case m.Command == "NOTICE":
@@ -76,6 +86,17 @@ func EventFromMessage(network string, m ircmsg.Message, own bool) Event {
 		ev.Kind, ev.Chan, ev.Text = "TOPIC", param(0), param(1)
 	case "INVITE":
 		ev.Kind, ev.Target, ev.Chan = "INVITE", param(0), param(1)
+	case "MODE":
+		// A channel's: on RAWMODE, which Dispatch turns into OP, BAN, MODE...
+		// Ours: on USERMODE.
+		ev.Kind, ev.Text = "USERMODE", strings.Join(m.Params[min(1, len(m.Params)):], " ")
+		if isChannel(param(0)) {
+			ev.Kind, ev.Chan = "RAWMODE", param(0)
+		}
+	case "WALLOPS", "ERROR":
+		ev.Kind, ev.Text = m.Command, param(0)
+	case "PING", "PONG":
+		ev.Kind, ev.Text = m.Command, strings.Join(m.Params, " ")
 	default:
 		// A numeric, or a command trout doesn't handle: raw events see its
 		// parameters as $1-.
@@ -97,9 +118,19 @@ func isChannel(name string) bool {
 var eventFields = map[string]int{
 	"TEXT": 2, "ACTION": 2, "NOTICE": 2,
 	"JOIN": 1, "PART": 1, "KICK": 1, "TOPIC": 1, "INVITE": 1,
-	"QUIT": 0, "NICK": 0, "CONNECT": 0, "DISCONNECT": 0,
-	"LOAD": 0, "START": 0,
+	"QUIT": 0, "NICK": 0, "CONNECT": 0, "DISCONNECT": 0, "CONNECTFAIL": 0,
+	"LOAD": 0, "START": 0, "UNLOAD": 0, "EXIT": 0,
+	"SIGNAL": 1, // on SIGNAL:name: the name can be a wildcard
+	"OP":     1, "DEOP": 1, "SERVEROP": 1, "VOICE": 1, "DEVOICE": 1, "HELP": 1, "DEHELP": 1,
+	"OWNER": 1, "DEOWNER": 1, "BAN": 1, "UNBAN": 1, "MODE": 1, "SERVERMODE": 1, "RAWMODE": 1,
+	"USERMODE": 0, "NOTIFY": 0, "UNOTIFY": 0, "PING": 0, "PONG": 0,
+	"CTCPREPLY": 1, "SNOTICE": 1, "WALLOPS": 1, "ERROR": 1,
+	// on OPEN:?:matchtext: and on CLOSE:?: (see onDef).
+	"OPEN": 2, "CLOSE": 1,
 }
+
+// matchOnly are the events whose one field is matchtext, not a location.
+var matchOnly = map[string]bool{"CTCPREPLY": true, "SNOTICE": true, "WALLOPS": true, "ERROR": true}
 
 // dispatchFile runs f's handler for ev, if one matches. Like mIRC, a
 // script runs at most one handler per event: the matching one with the
@@ -124,10 +155,32 @@ func (r *run) dispatchFile(f *file, ev *Event) bool {
 		return false
 	}
 	// Each script's handler has its own budget: one that never ends
-	// doesn't stop the others.
-	r.steps = 0
+	// doesn't stop the others. A /signal -n's handlers run inside the
+	// script that sent it, on its budget.
+	if r.depth == 0 {
+		r.steps = 0
+	}
 	fr := r.eventFrame(f, ev)
+	_, fr.ulevel = r.e.access(best, eventUser(ev))
+	fr.clevel = best.text
 	return r.runBody(fr, best.body)
+}
+
+// eventUser is who did an event, as nick!user@host, for the Users list.
+func eventUser(ev *Event) string {
+	return ev.Nick + "!" + ev.Address
+}
+
+// fullAddress is nick's nick!user@host from the client's address list, or
+// nick! if it isn't known. A mask (with ! or @) is returned as it is.
+func (r *run) fullAddress(network, nick string) string {
+	if strings.ContainsAny(nick, "!@") {
+		return nick
+	}
+	if a, ok := r.ialEntry(network, nick); ok {
+		return a
+	}
+	return nick + "!"
 }
 
 func (r *run) eventFrame(f *file, ev *Event) *frame {
@@ -143,15 +196,15 @@ func (r *run) eventFrame(f *file, ev *Event) *frame {
 
 // matches reports whether handler h triggers for ev.
 func (r *run) matches(f *file, h *event, ev *Event) bool {
-	// Without a Users list everyone has the default level, 1, like an
-	// unlisted user in mIRC: they get * events and levels up to 1, or
-	// exactly 1 with the + prefix. Named levels need the list, so they
-	// never trigger (Load says so).
+	// The Users list decides who can trigger an event at its level. Events
+	// nobody did (on START, on SIGNAL...) aren't anyone's to gate.
+	if ok, _ := r.e.access(h, eventUser(ev)); !ok && ev.Nick != "" {
+		return false
+	}
+	if h.cmp != "" && !r.e.compareLevels(h.cmp, r.e.levelOf(eventUser(ev)), r.e.levelOf(r.fullAddress(ev.Network, ev.Target))) {
+		return false
+	}
 	switch {
-	case h.named:
-		return false
-	case h.exact && h.level != 1, !h.any && h.level > 1:
-		return false
 	case h.me && !ev.Own, h.notMe && ev.Own:
 		return false
 	}
@@ -160,6 +213,14 @@ func (r *run) matches(f *file, h *event, ev *Event) bool {
 		return false
 	}
 	switch {
+	case h.kind == "OPEN" || h.kind == "CLOSE":
+		if !windowLoc(h.loc, ev.Target) {
+			return false
+		}
+	case h.kind == "SIGNAL":
+		if !wildMatch(h.loc, ev.Target, false) {
+			return false
+		}
 	case h.kind == "RAW":
 		// raw <numeric>:<matchtext>: the numeric or command name, which can
 		// be a wildcard.
@@ -232,4 +293,18 @@ func (r *run) matchLocation(fr *frame, loc string, ev *Event) bool {
 func firstWord(s string) string {
 	w, _, _ := strings.Cut(s, " ")
 	return w
+}
+
+// windowLoc matches on OPEN's and on CLOSE's location: ? a query, = a DCC
+// chat, @ a custom window, ! a fileserver, * any window.
+func windowLoc(loc, window string) bool {
+	kind := "?"
+	switch {
+	case isChannel(window):
+		// A channel window: none of OPEN's or CLOSE's locations but *.
+		kind = "#"
+	case window != "" && strings.ContainsRune("=@!", rune(window[0])):
+		kind = window[:1]
+	}
+	return loc == "*" || loc == kind
 }

@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Hash tables, from mIRC's Hash Tables section: named tables of items and
@@ -14,11 +15,12 @@ import (
 // to depend on ("items are stored in hash tables in a random order"); this
 // keeps the order items were added in, so it's at least the same each time.
 type table struct {
-	name  string
-	size  int
-	items []string          // item names, in the order they were added
-	data  map[string]string // by lower-case item name
-	names map[string]string // lower-case item name -> as added
+	expires map[string]time.Time // /hadd -uN: lower-case item -> when it's unset
+	name    string
+	size    int
+	items   []string          // item names, in the order they were added
+	data    map[string]string // by lower-case item name
+	names   map[string]string // lower-case item name -> as added
 }
 
 // newTable makes a table. Like mIRC, its size is made odd: 10 slots are
@@ -44,6 +46,7 @@ func (t *table) del(item string) {
 	}
 	delete(t.data, key)
 	delete(t.names, key)
+	delete(t.expires, key)
 	t.items = slices.DeleteFunc(t.items, func(s string) bool { return strings.EqualFold(s, item) })
 }
 
@@ -129,6 +132,7 @@ func (r *run) cmdHash(fr *frame, name, rest string) error {
 			return errorf("/hadd: insufficient parameters")
 		}
 		t.set(arg(1), arg(2))
+		r.itemExpiry(t, arg(1), sw)
 	case "hinc", "hdec":
 		if err := need(); err != nil {
 			return err
@@ -142,6 +146,7 @@ func (r *run) cmdHash(fr *frame, name, rest string) error {
 		}
 		cur, _ := parseNum(t.data[strings.ToLower(arg(1))])
 		t.set(arg(1), formatNum(cur+by))
+		r.itemExpiry(t, arg(1), sw)
 	case "hdel":
 		if t == nil {
 			return errorf("/hdel: no such table '", tname, "'")
@@ -293,4 +298,20 @@ var hashIdents = map[string]builtin{
 		}
 		return "", nil
 	},
+}
+
+// itemExpiry applies /hadd -uN to an item: it's deleted after N seconds,
+// unless it's set again without -u (or with -k, which keeps the time).
+func (r *run) itemExpiry(t *table, item, sw string) {
+	key := strings.ToLower(item)
+	n, u := switchNum(sw, 'u')
+	switch {
+	case u && n > 0:
+		if t.expires == nil {
+			t.expires = map[string]time.Time{}
+		}
+		t.expires[key] = r.h.Now().Add(time.Duration(n) * time.Second)
+	case !strings.Contains(sw, "k"):
+		delete(t.expires, key)
+	}
 }

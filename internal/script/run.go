@@ -6,19 +6,24 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // run is one Dispatch, Alias or Init: the actions it collects and the
 // steps it has left.
 type run struct {
-	e       *Engine
-	h       Host
-	actions []Action
-	steps   int
-	stack   []*alias // aliases being run: an alias can't call itself, like mIRC
-	unset   []string // global variables set with -u0, unset when it's done
-	literal int      // > 0: eval leaves text as it is (it's evaluated already)
-	files   map[string]*pendingFile
+	e         *Engine
+	h         Host
+	actions   []Action
+	steps     int
+	stack     []*alias // aliases being run: an alias can't call itself, like mIRC
+	unset     []string // global variables set with -u0, unset when it's done
+	literal   int      // > 0: eval leaves text as it is (it's evaluated already)
+	files     map[string]*pendingFile
+	errText   string // $error: the error an :error label caught
+	signals   []signal
+	depth     int  // nested /signal -n calls
+	quietCall bool // the alias about to be called was called with a .
 }
 
 // frame is an alias or event handler being run: its parameters, local
@@ -32,8 +37,12 @@ type frame struct {
 	params  []string
 	locals  map[string]string
 	typed   bool   // run from the editbox or a popup, not an event: /echo's default window
+	ulevel  string // $ulevel: the user's level that let them trigger the event
+	clevel  string // $clevel: the event's level
 	menu    string // the popup being built or run: $menu
+	home    string // the network before /scid, for /scid -r
 	isid    bool   // called as $identifier
+	quiet   bool   // called with a . in front: $show is $false
 	prop    string // the identifier's .property
 	v1, v2  string // the last if comparison's values
 	result  string // the last alias call's /return value
@@ -59,6 +68,15 @@ type scriptErr struct {
 	file string
 }
 
+// text is the error as mIRC shows it, and as $error has it.
+func (e *scriptErr) text() string {
+	where := ""
+	if e.line > 0 {
+		where = " (line " + itoa(e.line) + ", " + e.file + ")"
+	}
+	return "* " + e.msg + where
+}
+
 func (e *returnErr) Error() string { return "return" }
 func (e *gotoErr) Error() string   { return "goto " + e.label }
 func (e *scriptErr) Error() string { return e.msg }
@@ -68,20 +86,61 @@ func errorf(parts ...string) error { return &scriptErr{msg: strings.Join(parts, 
 func (e *Engine) newRun(h Host) *run { return &run{e: e, h: h} }
 
 // finish returns the actions, with a Save if global variables changed.
+// Signals sent without -n run first, now that the scripts that sent them
+// are done.
 func (r *run) finish() []Action {
+	for n := 0; len(r.signals) > 0 && n < 1000; n++ {
+		s := r.signals[0]
+		r.signals = r.signals[1:]
+		r.dispatchSignal(s)
+	}
 	for _, name := range r.unset {
 		delete(r.e.vars, name)
 	}
-	if r.e.dirty {
-		r.e.dirty = false
-		r.actions = append(r.actions, Action{Save: &Save{Vars: r.e.Vars()}})
+	if r.e.dirty || r.e.usersDirty {
+		s := &Save{DLevel: r.e.dlevel}
+		if r.e.dirty {
+			s.Vars = r.e.Vars()
+		}
+		if r.e.usersDirty {
+			s.Users = append([]string{}, r.e.Users()...)
+		}
+		r.e.dirty, r.e.usersDirty = false, false
+		r.actions = append(r.actions, Action{Save: s})
 	}
 	return r.actions
 }
 
 // runBody runs an event handler's body and reports whether it /halted.
 func (r *run) runBody(fr *frame, body []stmt) bool {
-	return r.report(fr, r.block(fr, body))
+	return r.report(fr, r.catching(fr, body))
+}
+
+// catching runs an alias's or handler's body. A script error jumps to its
+// :error label, if it has one, with the error in $error, like mIRC. The
+// script goes on from there; unless it does /reseterror, the error then
+// goes on to the calling alias, until one has an :error or it's shown.
+func (r *run) catching(fr *frame, body []stmt) error {
+	err := r.block(fr, body)
+	var se *scriptErr
+	if !errors.As(err, &se) {
+		return err
+	}
+	i := slices.IndexFunc(body, func(s stmt) bool {
+		l, ok := s.(*labelStmt)
+		return ok && l.name == "error"
+	})
+	if i < 0 {
+		return err
+	}
+	r.errText = se.text()
+	if err := r.blockFrom(fr, body, i+1); err != nil {
+		return err
+	}
+	if r.errText != "" {
+		return err
+	}
+	return nil
 }
 
 // report shows a handler's error, if any, and reports whether it halted.
@@ -92,11 +151,7 @@ func (r *run) report(fr *frame, err error) bool {
 	case err == errHalt:
 		return true
 	case errors.As(err, &se):
-		where := ""
-		if se.line > 0 {
-			where = " (line " + itoa(se.line) + ", " + se.file + ")"
-		}
-		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: "* " + se.msg + where}})
+		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: se.text()}})
 	case errors.As(err, &ge):
 		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: "* /goto: '" + ge.label + "' not found"}})
 	}
@@ -113,7 +168,12 @@ func (r *run) step() error {
 
 // block runs statements, handling /goto to labels in it.
 func (r *run) block(fr *frame, stmts []stmt) error {
-	for i := 0; i < len(stmts); i++ {
+	return r.blockFrom(fr, stmts, 0)
+}
+
+// blockFrom runs statements from stmts[start].
+func (r *run) blockFrom(fr *frame, stmts []stmt, start int) error {
+	for i := start; i < len(stmts); i++ {
 		err := r.exec(fr, stmts[i])
 		var ge *gotoErr
 		if errors.As(err, &ge) {
@@ -190,6 +250,11 @@ func (r *run) at(fr *frame, s stmt, err error) error {
 
 // command runs one command line.
 func (r *run) command(fr *frame, text string) error {
+	if t := strings.TrimSpace(text); t == "=" || t == "!" {
+		// An event whose commands are = or ! is there to stop users from
+		// getting lower levels' events, like mIRC's: it does nothing.
+		return nil
+	}
 	text = strings.TrimSpace(strings.TrimLeft(text, "/"))
 	words := splitWords(text)
 	if len(words) == 0 {
@@ -246,6 +311,19 @@ func (r *run) command(fr *frame, text string) error {
 			return err
 		}
 		return &gotoErr{strings.ToLower(v)}
+	case "signal":
+		return r.cmdSignal(fr, rest)
+	case "auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel":
+		return r.cmdUsers(fr, strings.ToLower(name), rest)
+	case "scid", "scon":
+		return r.cmdScid(fr, strings.ToLower(name), rest)
+	case "ial", "ialclear", "ialfill", "ialmark":
+		// The client keeps its address list itself.
+		_, err := r.eval(fr, rest)
+		return err
+	case "reseterror":
+		r.errText = ""
+		return nil
 	case "noop":
 		_, err := r.eval(fr, rest)
 		return err
@@ -259,6 +337,20 @@ func (r *run) command(fr *frame, text string) error {
 		return r.cmdHash(fr, strings.ToLower(name), rest)
 	case "write":
 		return r.cmdWrite(fr, rest)
+	case "writeini":
+		return r.cmdWriteini(fr, rest)
+	case "remini":
+		return r.cmdRemini(fr, rest)
+	case "flushini":
+		// INI files are written straight away: there's nothing to flush.
+		_, err := r.eval(fr, rest)
+		return err
+	case "remove":
+		return r.cmdRemove(fr, rest)
+	case "copy", "rename":
+		return r.cmdCopy(fr, rest, strings.EqualFold(name, "rename"))
+	case "fopen", "fclose", "fwrite", "fseek":
+		return r.cmdFile(fr, strings.ToLower(name), rest)
 	}
 	if id, ok := cutPrefixFold(name, "timer"); ok {
 		return r.cmdTimer(fr, id, rest)
@@ -296,6 +388,7 @@ func (r *run) command(fr *frame, text string) error {
 	}
 	if !noAlias {
 		if a := r.e.alias(fr.file, name); a != nil && !slices.Contains(r.stack, a) {
+			r.quietCall = quiet
 			v, err := r.callAlias(fr, a, fields(args), false, "")
 			fr.result = v
 			return err
@@ -316,10 +409,11 @@ func (r *run) command(fr *frame, text string) error {
 // callAlias runs an alias from fr and returns its /return value.
 func (r *run) callAlias(fr *frame, a *alias, params []string, isid bool, prop string) (string, error) {
 	child := &frame{file: a.file, ev: fr.ev, network: fr.network, window: fr.window, channel: fr.channel,
-		params: params, typed: fr.typed, isid: isid, prop: prop}
+		params: params, typed: fr.typed, isid: isid, prop: prop, quiet: r.quietCall}
+	r.quietCall = false
 	r.stack = append(r.stack, a)
 	defer func() { r.stack = r.stack[:len(r.stack)-1] }()
-	err := r.block(child, a.body)
+	err := r.catching(child, a.body)
 	var re *returnErr
 	var ge *gotoErr
 	switch {
@@ -389,6 +483,7 @@ func (r *run) assign(fr *frame, name, value string) error {
 		return err
 	}
 	r.setVar(fr, name, mathOp(v), r.isTemp(name))
+	r.expiry(fr, name, "")
 	return nil
 }
 
@@ -475,8 +570,6 @@ func (r *run) setWith(fr *frame, sw, name, value string, local bool) error {
 			return nil
 		}
 	}
-	// -uN with N > 0 needs timers, which aren't supported yet: those
-	// variables are kept, but not saved.
 	temp := strings.Contains(sw, "e") || strings.Contains(sw, "u")
 	switch {
 	case local:
@@ -486,10 +579,33 @@ func (r *run) setWith(fr *frame, sw, name, value string, local bool) error {
 	default:
 		r.setVar(fr, name, v, temp)
 	}
-	if strings.Contains(sw, "u0") && !local {
-		r.unset = append(r.unset, key)
+	if !local {
+		r.expiry(fr, name, sw)
 	}
 	return nil
+}
+
+// expiry applies -uN to a global variable just set: -u0 unsets it when
+// the script ends, -uN after N seconds. Setting it again without -u
+// cancels that, like mIRC, unless -k keeps it.
+func (r *run) expiry(fr *frame, name, sw string) {
+	key := strings.ToLower(name)
+	if _, local := fr.locals[key]; local {
+		return
+	}
+	v := r.e.vars[key]
+	if v == nil {
+		return
+	}
+	n, u := switchNum(sw, 'u')
+	switch {
+	case u && n == 0:
+		r.unset = append(r.unset, key)
+	case u:
+		v.expires = r.h.Now().Add(time.Duration(n) * time.Second)
+	case !strings.Contains(sw, "k"):
+		v.expires = time.Time{}
+	}
 }
 
 // cmdVar is /var %x = 1, %y = 2: local variables, separated by commas.
@@ -578,7 +694,8 @@ func (r *run) cmdInc(fr *frame, rest string, dec bool) error {
 		// Like mIRC, text isn't a number to add to: it's left as it is.
 		return nil
 	}
-	r.setVar(fr, name, formatNum(cur+by), strings.Contains(sw, "e") || r.isTemp(name))
+	r.setVar(fr, name, formatNum(cur+by), strings.ContainsAny(sw, "eu") || r.isTemp(name))
+	r.expiry(fr, name, sw)
 	return nil
 }
 
@@ -677,9 +794,55 @@ func engineCommand(name string) bool {
 	switch strings.ToLower(strings.TrimLeft(name, "/.!")) {
 	case "set", "var", "unset", "unsetall", "inc", "dec", "halt", "haltdef", "return", "break",
 		"continue", "goto", "noop", "echo", "enable", "disable", "tokenize", "hmake", "hfree",
-		"hadd", "hdel", "hinc", "hdec", "hsave", "hload", "write":
+		"hadd", "hdel", "hinc", "hdec", "hsave", "hload", "write", "reseterror", "signal",
+		"writeini", "remini", "flushini", "remove", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
+		"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
+		"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel":
 		return true
 	}
 	_, ok := cutPrefixFold(strings.TrimLeft(name, "/.!"), "timer")
 	return ok
+}
+
+// signal is a /signal waiting for the scripts running now to finish.
+type signal struct {
+	from *file // the script that sent it, which hears it first
+	ev   Event
+}
+
+// cmdSignal is /signal [-n] <name> [parameters]: on SIGNAL events in all
+// scripts, after the scripts running now finish, or with -n right now.
+func (r *run) cmdSignal(fr *frame, rest string) error {
+	line, err := r.eval(fr, rest)
+	if err != nil {
+		return err
+	}
+	sw, line := switches(line)
+	name, params, _ := strings.Cut(line, " ")
+	if name == "" {
+		return errorf("/signal: insufficient parameters")
+	}
+	s := signal{from: fr.file, ev: Event{Kind: "SIGNAL", Network: fr.network, Target: name, Text: params}}
+	if !strings.Contains(sw, "n") {
+		r.signals = append(r.signals, s)
+		return nil
+	}
+	if r.depth >= 50 {
+		return errorf("/signal: too many signals inside each other")
+	}
+	r.depth++
+	defer func() { r.depth-- }()
+	r.dispatchSignal(s)
+	return nil
+}
+
+// dispatchSignal runs on SIGNAL in the sending script, then the others.
+func (r *run) dispatchSignal(s signal) {
+	order := slices.Clone(r.e.scripts)
+	if i := slices.Index(order, s.from); i > 0 {
+		order = append([]*file{s.from}, slices.Delete(order, i, i+1)...)
+	}
+	for _, f := range order {
+		r.dispatchFile(f, &s.ev)
+	}
 }
