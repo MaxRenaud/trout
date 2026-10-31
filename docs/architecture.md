@@ -90,6 +90,7 @@ The IRC side of the UI acts on networks, and trout asks soju to do it:
 | File > Select Server: Add / Edit / Delete | `network create` / `network update` / `network delete`; SASL with `sasl set-plain -network` |
 | `/server host` | focuses the network soju has on that host, or creates one (never repoints the current one, unlike mIRC) |
 | Channel popup > Detach | `channel update <#chan> -detached true`; soju parts it on our side, `/join` reattaches |
+| Unknown Certificate / Certificate Changed > Trust | `network update <name> -certfp <sha-512>` |
 
 On soju's own status window, Connect and Disconnect are the bouncer connection itself.
 Bouncers live under Tools > Bouncers (config.toml's list: Use / Add / Edit / Remove).
@@ -100,6 +101,13 @@ trout never guesses at the outcome: soju reports network changes through
 the bound connection when a network goes down, so trout marks them parted itself; they
 come back with JOINs. There's no "enabled" attribute, so a network you disabled and one
 soju is retrying both just show as disconnected.
+
+A network whose certificate soju can't check (`tls: failed to verify certificate`: most of
+EFnet's are self-signed or expired) gets asked about, in `internal/ui/netcert.go`. soju
+only says a server's fingerprint when a pinned one doesn't match, so trout pins a
+placeholder, reads the SHA-512 from the mismatch error, clears the placeholder at once,
+and asks with soju as it was. Trust pins it with `-certfp`; a mismatch trout didn't cause
+is a Certificate Changed warning; Cancel stops asking until the network is edited.
 
 BouncerServ commands trout sends itself (`serv` in `internal/ui/soju.go`) are sent as
 shell-quoted PRIVMSGs; their echo-message copy is dropped (it can hold a password) and

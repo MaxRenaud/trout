@@ -41,7 +41,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   slash commands into IRC. `app.go` has the App, keys and mouse. `connect.go` has the
   Connect dialog, certificate trust, bouncer switching and settings saving;
   `bouncerlist.go` is Tools > Bouncers; `soju.go` manages soju's networks through
-  BouncerServ (Connect/Disconnect, the Servers dialog, `/server`, Detach); `read.go` catches
+  BouncerServ (Connect/Disconnect, the Servers dialog, `/server`, Detach), and `netcert.go`
+  asks about a network's certificate soju can't check (pinned with `-certfp`); `read.go` catches
   up on history and syncs read markers with soju; `find.go` is Ctrl+F; `away.go` has away,
   WHO, WHOIS formatting and the bell; `prompts.go` has the Commands menu prompts, URLs List
   and Save to File; `chancentral.go` is Channel Central (modes, ban/exception/invite

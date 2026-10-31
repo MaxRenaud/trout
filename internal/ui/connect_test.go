@@ -440,3 +440,105 @@ func TestCatchUp(t *testing.T) {
 		t.Fatalf("sent %q", got)
 	}
 }
+
+// TestNetworkCertificate: a network whose certificate the bouncer can't
+// check (irc.prison.net's is self-signed) gets its fingerprint from soju
+// through a placeholder pin, then a question; Trust pins it, a changed one
+// warns, and Cancel stops asking until the network's edited.
+func TestNetworkCertificate(t *testing.T) {
+	a, sent := fakeSoju(t)
+	feed := func(lines ...string) {
+		for _, l := range lines {
+			m, err := ircmsg.ParseLine(l)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.Update(ircLineMsg{a.home, m})
+		}
+	}
+	toServ := func() string { // skipping the network status checks
+		t.Helper()
+		for {
+			select {
+			case got := <-sent:
+				if got != "PRIVMSG BouncerServ :network status" {
+					return got
+				}
+			case <-time.After(200 * time.Millisecond):
+				return ""
+			}
+		}
+	}
+	nothingSent := func(when string) {
+		t.Helper()
+		if got := toServ(); got != "" {
+			t.Fatalf("%s: sent %q", when, got)
+		}
+	}
+	tagged := func(s string) string { return strings.ReplaceAll(s, " ", `\s`) }
+	failed := tagged("connection error: failed to register: failed to read message: tls: failed to verify " +
+		"certificate: x509: certificate relies on legacy Common Name field, use SANs instead")
+	fp, other := strings.Repeat("ab", 64), strings.Repeat("cd", 64)
+	mismatch := func(fp string) string {
+		return tagged("connection error: failed to register: failed to read message: the configured TLS " +
+			"certificate fingerprint doesn't match the server's - " + fp)
+	}
+
+	feed("BOUNCER NETWORK 9 name=Prison;host=irc.prison.net;port=6697;tls=1;state=connecting")
+	n := a.nets[1]
+	feed("BOUNCER NETWORK 9 state=disconnected;error=" + failed)
+	if got := toServ(); got != "PRIVMSG BouncerServ :network update Prison -certfp "+strings.Repeat("0", 64) {
+		t.Fatalf("a certificate the bouncer couldn't check sent %q", got)
+	}
+	feed("BOUNCER NETWORK 9 error=" + failed) // soju retrying before the placeholder took
+	nothingSent("a second failure while probing")
+
+	feed("BOUNCER NETWORK 9 error=" + mismatch(fp))
+	if got := toServ(); got != `PRIVMSG BouncerServ :network update Prison -certfp ""` {
+		t.Fatalf("the fingerprint came, and trout sent %q, not the placeholder's clearing", got)
+	}
+	d, ok := a.dlg.(*msgBox)
+	if !ok || d.Title != "Unknown Certificate" || d.Buttons[d.Sel] != "Cancel" {
+		t.Fatalf("no question, or Trust focused: %#v", a.dlg)
+	}
+	text := strings.Join(d.Lines, "\n")
+	for _, want := range []string{"Prison", "certificate relies on legacy Common Name field", fp[:64], fp[64:]} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the question doesn't say %q:\n%s", want, text)
+		}
+	}
+	feed("BOUNCER NETWORK 9 error=" + failed) // soju without the placeholder again
+	nothingSent("a failure while asking")
+	d.Sel = 0
+	a.dlg.key(a, "enter")
+	if got := toServ(); got != "PRIVMSG BouncerServ :network update Prison -certfp "+fp {
+		t.Fatalf("Trust sent %q", got)
+	}
+
+	// Later the network's certificate changes: a warning, Cancel focused.
+	feed("BOUNCER NETWORK 9 state=connected", "BOUNCER NETWORK 9 state=disconnected;error="+mismatch(other))
+	d, ok = a.dlg.(*msgBox)
+	if !ok || d.Title != "Certificate Changed" || d.Buttons[d.Sel] != "Cancel" ||
+		!strings.Contains(strings.Join(d.Lines, "\n"), other[:64]) {
+		t.Fatalf("a changed certificate: %#v", a.dlg)
+	}
+	a.dlg.key(a, "esc")
+	if a.dlg != nil || !strings.Contains(lastLine(n.Status()), "Not trusting Prison's certificate") {
+		t.Fatalf("Cancel: dialog %#v, status %q", a.dlg, lastLine(n.Status()))
+	}
+	feed("BOUNCER NETWORK 9 error=" + mismatch(other))
+	feed("BOUNCER NETWORK 9 error=" + failed)
+	if a.dlg != nil {
+		t.Fatal("asked again after Cancel")
+	}
+	nothingSent("failures after Cancel")
+
+	// Editing the network asks again.
+	if _, err := a.saveNetwork(n, []string{"Prison", "ircs://irc.prison.net:6697", "", "", "", "", "", ""}); err != nil {
+		t.Fatal(err)
+	}
+	feed("BOUNCER NETWORK 9 error=" + failed)
+	if got := toServ(); !strings.HasSuffix(got, "-certfp "+strings.Repeat("0", 64)) {
+		t.Fatalf("after editing the network, a failure sent %q", got)
+	}
+}

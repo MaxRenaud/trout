@@ -95,6 +95,7 @@ type App struct {
 	listing     map[*state.Network]*listBox
 	listRows    map[*state.Network][]demo.ChanInfo
 	chanLists   map[*state.Network]*chanList // the Channels List's last download, per network
+	netCerts    map[*state.Network]*netCert  // networks whose certificate the bouncer can't check
 	listWaiting map[*state.Network]int       // a LIST trout sent, by its listSeq
 	listFilter  map[*state.Network]listFilter
 	listSeq     int
@@ -293,6 +294,7 @@ func New(opts Options) *App {
 		menuBar: -1, pressedTool: -1,
 		sbars:       map[HitKind]scrollGeom{},
 		conns:       map[*state.Network]*irc.Conn{},
+		netCerts:    map[*state.Network]*netCert{},
 		batches:     map[string]*histBatch{},
 		joining:     map[string]bool{},
 		listing:     map[*state.Network]*listBox{},

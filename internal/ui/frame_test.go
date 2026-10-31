@@ -114,6 +114,12 @@ func TestFrames(t *testing.T) {
 		Fingerprint: "SHA256:9f2cXq1v0b0lZ0Yw3o8m7Jm9uEo0qkqH3H3cS0kR3hE"}))
 	frame("unknown certificate")
 	a.dlg = nil // its buttons only make sense with a bouncer
+	fp := "4f1c" + strings.Repeat("9e07b2d5", 15) + "a3d6"
+	a.openDialog(a.netCertBox(a.nets[0], "certificate relies on legacy Common Name field, use SANs instead", fp))
+	frame("network certificate")
+	a.openDialog(a.netCertChangedBox(a.nets[0], fp))
+	frame("network certificate changed")
+	a.dlg = nil
 	a.openServers()
 	a.dlg.key(a, "down")
 	frame("servers")

@@ -7,6 +7,7 @@ import (
 	"crypto/sha512"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"os"
@@ -353,6 +354,52 @@ func TestClientCertLive(t *testing.T) {
 
 	fp := sha512.Sum512(a2.clientCert.Certificate[0])
 	a2.control.Send("CLIENTCERT", "DELETE", hex.EncodeToString(fp[:]))
+}
+
+// TestNetworkCertificateLive adds TroutNet over TLS, whose certificate
+// ergo signed itself: soju can't check it, trout asks with the fingerprint
+// soju sees (ergo's real one), and Trust gets soju connected.
+//
+//	go test -tags integration ./internal/ui -run TestNetworkCertificateLive -v
+func TestNetworkCertificateLive(t *testing.T) {
+	out, err := exec.Command("docker", "compose", "-f", "../../dev/compose.yaml", "exec", "-T", "troutnet",
+		"cat", "/ircd/fullchain.pem").Output()
+	if err != nil {
+		t.Skip("can't read TroutNet's certificate from the dev env:", err)
+	}
+	block, _ := pem.Decode(out)
+	if block == nil {
+		t.Fatal("no certificate in TroutNet's fullchain.pem")
+	}
+	sum := sha512.Sum512(block.Bytes)
+	want := hex.EncodeToString(sum[:])
+
+	a, pump := liveApp(t)
+	pump("the bouncer", func() bool { return a.control != nil && a.netsBatch == "" && len(a.nets) > 1 })
+	name := "TLS" + time.Now().Format("150405")
+	if _, err := a.saveNetwork(nil, []string{name, "ircs://troutnet:6697", "tlsprobe", "", "", "", "", ""}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		a.serv(a.home, a.home.Status(), true, "network", "delete", name)
+		pump("the network to go away", func() bool {
+			return !slices.ContainsFunc(a.nets, func(n *state.Network) bool { return n.Name == name })
+		})
+	})
+	var d *msgBox
+	pump("the certificate question", func() bool {
+		d, _ = a.dlg.(*msgBox)
+		return d != nil && d.Title == "Unknown Certificate"
+	})
+	if text := strings.Join(d.Lines, "\n"); !strings.Contains(text, want[:64]) || !strings.Contains(text, want[64:]) {
+		t.Fatalf("the question doesn't show TroutNet's fingerprint %s:\n%s", want, text)
+	}
+	d.Sel = 0
+	a.dlg.key(a, "enter")
+	pump(name+" connected over TLS", func() bool {
+		i := slices.IndexFunc(a.nets, func(n *state.Network) bool { return n.Name == name })
+		return i > 0 && a.nets[i].Attrs["state"] == "connected"
+	})
 }
 
 // TestDCCChatLive chats with the xdcc bot over DCC.

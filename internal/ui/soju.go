@@ -353,6 +353,7 @@ func (a *App) saveNetwork(n *state.Network, vals []string) (tea.Cmd, error) {
 	}
 
 	status := n.Status()
+	delete(a.netCerts, n) // a certificate you turned down gets asked about again
 	if acct != "" {
 		a.serv(a.home, status, false, "sasl", "set-plain", "-network", n.Name, acct, acctPass)
 	}

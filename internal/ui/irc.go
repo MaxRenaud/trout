@@ -824,6 +824,9 @@ func (a *App) networkAttrs(n *state.Network, attrs map[string]string) {
 	if port, err := strconv.Atoi(n.Attrs["port"]); err == nil {
 		n.Port = port
 	}
+	if e := attrs["error"]; e != "" {
+		a.networkError(n, e) // a certificate to ask about?
+	}
 	st := n.Attrs["state"]
 	if st == was {
 		return
