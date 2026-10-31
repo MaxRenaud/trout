@@ -78,13 +78,20 @@ server. Tools > Connect a Phone shows a QR code that opens your bouncer in
   host, URL catching, timestamps, the line marker, Options pages and the Colors dialog.
 - The multi-line editbox (Alt+Enter), the second editbox (Alt+Q), per-window options in
   each button's popup, a proxy (SOCKS4, SOCKS5, HTTP) for the bouncer and DCC.
-- mIRC scripts (`/load -rs`, the Scripts Editor): aliases, events, popups, timers, hash
-  tables, files and the Users list, for the scripts that automate things. Not mIRC's
-  dialogs, custom windows or DLLs, which need Windows.
+- mIRC scripts and the Scripts Editor (see [Scripting](#scripting)).
 
 F1 lists the keys. Right-click, Ctrl+click or a long press opens popups.
 
 ![Menus and dialogs: Tools, Options, the Channels List, the nick popup, the Address Book](docs/gifs/menus.gif)
+
+## Scripting
+
+trout runs mIRC scripts: aliases, popups, events, variables, timers, hash tables, files
+and the Users list, for the scripts that automate things (auto-op, greetings, `!seen`,
+trivia). The Scripts Editor (Tools > Scripts Editor, or Alt+R) works like mIRC's, with its Aliases,
+Popups, Remote, Users and Variables tabs and its files, so yours can be copied over. Every
+right-click menu comes from `popups.ini`, so you can change them. Not mIRC's dialogs,
+custom windows or DLLs, which need Windows. See [docs/scripting.md](docs/scripting.md).
 
 ## Terminal notes
 

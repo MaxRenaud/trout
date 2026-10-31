@@ -71,7 +71,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   asks at startup.
 - `internal/script`: mIRC scripting (aliases, events, variables, identifiers, hash
   tables, timers, regex, popups, files, the Users list), pure: events in, actions out;
-  `ui/scripts.go` hooks it into the client (see `tmp/scripting.md`). Its tests are
+  `ui/scripts.go` hooks it into the client (`docs/scripting.md` is what users get,
+  `tmp/scripting.md` the design). Its tests are
   user-journey transcripts in `testdata/journeys/`, `spec_test.go` (from the help file),
   `mirc_test.go` (against real mIRC, `-tags mirc`) and `corpus_test.go` (real scripts in
   `tmp/msl-corpus`). When mIRC's behavior is unclear, check it with mirc-run rather than
