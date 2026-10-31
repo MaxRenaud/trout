@@ -337,6 +337,16 @@ func TestStatements(t *testing.T) {
   }
   else echo -a none
 }`, "7", []string{"#trout: big"}},
+		{"terms after a bare value", `alias t {
+  if (1 == 2) || $len($1) && (1 == 1) { echo -a both }
+  if (1 == 2) || $len($1) && (1 == 2) { echo -a no }
+  else echo -a and stops it
+}`, "abc", []string{"#trout: both", "#trout: and stops it"}},
+		{"bare value after ||", `alias t {
+  if (1 == 2) || (2 == 3) || $len($1) { echo -a yes }
+  if (1 == 2) || $null { echo -a no }
+  else echo -a else
+}`, "abc", []string{"#trout: yes", "#trout: else"}},
 		{"else if", `alias t {
   if ($1 == a) echo -a A
   else if ($1 == b) echo -a B

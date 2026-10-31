@@ -78,6 +78,9 @@ server. Tools > Connect a Phone shows a QR code that opens your bouncer in
   host, URL catching, timestamps, the line marker, Options pages and the Colors dialog.
 - The multi-line editbox (Alt+Enter), the second editbox (Alt+Q), per-window options in
   each button's popup, a proxy (SOCKS4, SOCKS5, HTTP) for the bouncer and DCC.
+- mIRC scripts (`/load -rs`, Tools > Scripts): aliases, events, popups, timers, hash
+  tables, files and the Users list, for the scripts that automate things. Not mIRC's
+  dialogs, custom windows or DLLs, which need Windows.
 
 F1 lists the keys. Right-click, Ctrl+click or a long press opens popups.
 

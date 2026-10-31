@@ -24,6 +24,8 @@ type run struct {
 	signals   []signal
 	depth     int  // nested /signal -n calls
 	quietCall bool // the alias about to be called was called with a .
+	caret     bool // running ^ handlers (DispatchBefore)
+	haltdef   bool // a handler used /haltdef: the client's default is off
 }
 
 // frame is an alias or event handler being run: its parameters, local
@@ -293,7 +295,9 @@ func (r *run) command(fr *frame, text string) error {
 	case "halt":
 		return errHalt
 	case "haltdef":
-		// trout always shows its default text, so there's nothing to halt.
+		// Stops the client's default (its text, or what was typed) without
+		// stopping the script.
+		r.haltdef = true
 		return nil
 	case "return":
 		v, err := r.eval(fr, rest)

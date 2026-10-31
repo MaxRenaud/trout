@@ -282,7 +282,8 @@ func (l *listBox) size(a *App) (int, int) {
 	for _, r := range l.Rows {
 		w = max(w, runewidth.StringWidth(r))
 	}
-	return min(max(w+8, 40), a.w-2), l.visible(a) + 7
+	// Wide enough for its buttons too.
+	return min(max(w+8, 40, buttonsWidth(l.buttons())+4), a.w-2), l.visible(a) + 7
 }
 
 func (l *listBox) draw(a *App, c *Canvas, x, y, w, h int) {

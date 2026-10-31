@@ -259,6 +259,8 @@ var mircScripts = []string{
 	// :error, $error and /reseterror (e2, e3 and e4 are below).
 	"if (1 == 2) || (2 == 2) w or | if (1 == 1) && (2 == 3) w and | w done",
 	"if (1 == 2) || (2 == 3) || (3 == 3) { w three } | else w none",
+	"if (1 == 2) || (2 == 3) || $len(ab) { w bare } | else w none",
+	"if (1 == 2) || $null { w a } | else w b",
 	"w $iif($error,set,unset)",
 	"w a | e2 | w b",
 	"w a | e3 | w b",

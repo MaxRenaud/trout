@@ -178,6 +178,21 @@ func TestFrames(t *testing.T) {
 			a.openOptionKey()
 		}},
 		{"channel modes", func() { a.openChannelModes(a.nets[0].Wins[1]) }},
+		{"scripts", func() {
+			a.scriptMem = map[string]string{"seen.mrc": "alias seen echo -a $1", "odd.mrc": "on *:FOO:#:echo"}
+			a.loadScript("seen.mrc", true)
+			a.loadScript("odd.mrc", true)
+			a.dlg = nil
+			a.openScripts()
+		}},
+		{"script users", func() {
+			a.scripts.Command(a.nets[0].Name, "", "auser 10,friend boss!*@boss.example the boss", false, a.scriptHost())
+			a.openScriptUsers()
+		}},
+		{"script variables", func() {
+			a.scripts.Command(a.nets[0].Name, "", "set %kicks 3", false, a.scriptHost())
+			a.openScriptVars()
+		}},
 		{"send file", func() { a.openSendFile("") }},
 		{"nick info", func() { a.openNickInfo(a.nets[0], "bob") }},
 		{"dcc get window", func() {

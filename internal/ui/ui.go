@@ -56,7 +56,7 @@ var menuBarNames = [...]string{"File", "View", "Favorites", "Tools", "Commands",
 const menuMnemonics = "fvatcwh"
 
 // An empty label is a separator.
-var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "",
+var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "Scripts", "",
 	"Address Book", "Notify", "", "Send File", "Received", "", "Colors"}
 
 type textRow struct {

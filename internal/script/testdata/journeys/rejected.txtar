@@ -10,7 +10,7 @@ dialog settings {
 alias opts dialog -m settings settings
 on *:TEXT:!sys:#:msg # $dll(sysinfo.dll,cpu,_)
 -- good.mrc --
-on ^*:JOIN:#:echo $chan Joins: $nick | halt
+on *:NOSUCHEVENT:#:echo never
 on *:TEXT:hi:#:msg # $window(@greet)
 on *:SOCKREAD:sock:noop
 menu nicklist {
@@ -22,7 +22,7 @@ on *:TEXT:!ok:#:msg # still here
 ! bad.mrc: line 1: dialogs aren't supported: they need Windows [fatal]
 ! bad.mrc: line 5: /dialog: dialogs aren't supported [fatal]
 ! bad.mrc: line 6: $dll: DLLs aren't supported [fatal]
-! good.mrc: line 1: ^ events (replacing the default text) aren't supported
+! good.mrc: line 1: on NOSUCHEVENT isn't supported
 ! good.mrc: line 2: $window isn't supported yet
 ! good.mrc: line 3: on SOCKREAD isn't supported
 ! good.mrc: line 7: $? asks for input, which isn't supported

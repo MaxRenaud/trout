@@ -35,6 +35,46 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 	n := w.Net
 	need := func() { a.addLine(w, state.RoleInfo, "* /"+name+": insufficient parameters") }
 	switch strings.ToLower(name) {
+	case "beep": // the terminal bell, which is trout's only sound
+		a.bellDue = true
+		return nil, true
+	case "flash":
+		// mIRC flashes its window when it isn't in front: the bell is the
+		// terminal's way to get your attention.
+		if !a.focused {
+			a.bellDue = true
+		}
+		return nil, true
+	case "ping": // /ping nick is a CTCP PING, like mIRC's
+		if arg == "" {
+			need()
+			return nil, true
+		}
+		a.sendCTCP(w, arg, "PING")
+		return nil, true
+	case "timestamp":
+		// /timestamp -f format sets the format (mIRC's, like trout's own);
+		// /timestamp [on|off] switches them, for every window. -g is the
+		// log's format: the bouncer keeps the logs.
+		sw, arg := "", strings.TrimSpace(rest)
+		if strings.HasPrefix(arg, "-") {
+			sw, arg, _ = strings.Cut(arg, " ")
+			arg = strings.TrimSpace(arg)
+		}
+		switch {
+		case strings.Contains(sw, "f"):
+			if arg != "" {
+				a.stampFormat = arg
+			}
+		case strings.Contains(sw, "g"):
+		case strings.EqualFold(arg, "on"):
+			a.stamps = true
+		case strings.EqualFold(arg, "off"):
+			a.stamps = false
+		case arg == "":
+			a.stamps = !a.stamps
+		}
+		return nil, true
 	case "privmsg": // like /msg
 		return a.ircCommand(w, "msg "+rest), true
 	case "say": // to the active window, even text starting with /

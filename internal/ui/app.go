@@ -19,6 +19,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/demo"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/local"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
 
@@ -249,6 +250,22 @@ type App struct {
 	lastY       int           // window, so a double-click in a window's text
 	lastWin     *state.Window // is on the same spot of the same window
 	title       string
+
+	// Scripts (scripts.go): the engine, each loaded script's problems, its
+	// files without a scripts folder (tests), when the engine is next
+	// woken, everyone's address and each network's ISUPPORT for it, and
+	// when you last typed ($idle). hideLines is a ^ event halting trout's
+	// text for a line; ctcpHalted a CTCP handler's /halt, for no reply.
+	scripts        *script.Engine
+	scriptProblems map[string][]script.Problem
+	scriptMem      map[string]string
+	scriptTickAt   time.Time
+	ial            map[*state.Network]map[string]string
+	isupport       map[*state.Network]map[string]string
+	scriptCmds     []tea.Cmd // from script events in places that can't return a command
+	hideLines      bool
+	ctcpHalted     bool
+	lastTyped      time.Time
 }
 
 // Run starts the UI and blocks until the user quits.
@@ -300,6 +317,8 @@ func New(opts Options) *App {
 		a.applySettings(a.cfg.Settings)
 	}
 	a.saved = a.settings()
+	a.scripts, a.scriptProblems = script.New(script.Options{}), map[string][]script.Problem{}
+	a.lastTyped = time.Now() // $idle counts from the start
 	if !opts.Demo {
 		a.setBouncer(opts.Bouncer, opts.Password)
 		return a
@@ -318,14 +337,14 @@ func New(opts Options) *App {
 
 func (a *App) Init() tea.Cmd {
 	if a.opts.Demo {
-		return tick()
+		return tea.Batch(tick(), a.startScripts())
 	}
 	if !a.bouncerSet() {
 		a.stopped = true
 		a.openConnect("")
-		return nil
+		return a.startScripts()
 	}
-	return tea.Batch(a.connectBouncer(), a.optionKeyStart())
+	return tea.Batch(a.connectBouncer(), a.optionKeyStart(), a.startScripts())
 }
 
 type tickMsg struct{}
@@ -340,6 +359,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.w, a.h = msg.Width, msg.Height
+	case scriptTickMsg:
+		cmd = a.scriptTick()
+	case scriptEditedMsg:
+		cmd = a.scriptEdited(msg)
 	case tickMsg:
 		if ev, ok := demo.Traffic(a.nets); ok {
 			a.addLine(ev.Win, ev.Role, ev.Text)
@@ -406,7 +429,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		cmd = a.mouse(msg)
 	}
-	cmd = tea.Batch(cmd, a.openWaiting())
+	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds())
 	if t := "trout - [" + a.winTitle(a.active) + "]"; t != a.title {
 		a.title = t
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
@@ -866,7 +889,8 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		case m.Ctrl && m.Button == tea.MouseButtonLeft: // copy with codes, like mIRC
 			a.startSelection(w, m.X, m.Y)
 			a.sel.codes = true
-		case right:
+		case right: // the scripts' popup for this kind of window, like mIRC's
+			a.textMenu(w, m.X, m.Y)
 		case double && r.Kind == HitNickText:
 			a.openQuery(w.Net, r.S)
 		case double && r.Kind == HitURL && w.Net.IsChannel(r.S):
@@ -984,6 +1008,8 @@ func (a *App) toolAction(label string) tea.Cmd {
 		a.openFavorites()
 	case "Channels":
 		return a.openChannelsList(false)
+	case "Scripts": // mIRC's Scripts Editor
+		a.openScripts()
 	case "Address Book":
 		a.openAddressBook()
 	case "Notify":
@@ -1039,13 +1065,41 @@ func (a *App) submit(w *state.Window) tea.Cmd {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		a.lastTyped = time.Now() // $idle
+		c, stop := a.scriptInput(w, line)
+		cmds = append(cmds, c)
+		if stop {
+			continue
+		}
 		if cmd, ok := strings.CutPrefix(line, cmp.Or(a.cmdPrefix, "/")); ok { // Options > Other
-			cmds = append(cmds, a.command(w, cmd))
+			cmds = append(cmds, a.typedCommand(w, cmd))
 			continue
 		}
 		a.say(w, line)
 	}
 	return tea.Batch(cmds...)
+}
+
+// typedCommand runs a typed command (without its first slash): a script's
+// alias or command, or with a second slash (//) any line evaluated like
+// mIRC's, or else trout's.
+func (a *App) typedCommand(w *state.Window, cmd string) tea.Cmd {
+	if c, ok := a.scriptAdmin(cmd, false); ok {
+		return c
+	}
+	if a.scriptsOn() {
+		eval := strings.HasPrefix(cmd, "/")
+		window := w.Name
+		if w.Kind == state.KStatus {
+			window = ""
+		}
+		if actions, ok := a.scripts.Command(w.Net.Name, window, strings.TrimPrefix(cmd, "/"), eval, a.scriptHost()); ok {
+			return a.runScript(actions)
+		}
+	}
+	// ! skips aliases and . is quiet, in a script's terms: trout's own
+	// commands take neither.
+	return a.command(w, strings.TrimLeft(cmd, "/.!"))
 }
 
 func (a *App) say(w *state.Window, text string) {
@@ -1206,6 +1260,10 @@ func (a *App) closeWindow(w *state.Window) {
 		a.chatClose(w)
 	}
 	a.removeWindow(w)
+	if w.Kind == state.KQuery || w.Kind == state.KChat { // on CLOSE:?: and on CLOSE:=:
+		a.queueScript(a.scriptEvent(script.Event{Kind: "CLOSE", Network: w.Net.Name,
+			Nick: strings.TrimPrefix(w.Name, "="), Target: w.Name}))
+	}
 }
 
 func (a *App) removeWindow(w *state.Window) {
@@ -1255,6 +1313,9 @@ func (a *App) addLineAt(w *state.Window, role state.Role, text string, t time.Ti
 
 // addLineL adds a whole line, a highlight rule's color and all.
 func (a *App) addLineL(w *state.Window, l state.Line) {
+	if a.hideLines { // a script's ^ event halted trout's text for this line
+		return
+	}
 	w.Lines = append(w.Lines, l)
 	if n := len(w.Lines) - state.MaxLines; n > 0 {
 		w.Lines = slices.Delete(w.Lines, 0, n)
@@ -1301,6 +1362,7 @@ func clamp(v, lo, hi int) int {
 // "Confirm exit". The bouncer stays on IRC either way.
 func (a *App) quit() tea.Cmd {
 	if !a.confirmExit || a.opts.Demo {
+		a.scriptsExit()
 		return tea.Quit
 	}
 	d := message("Quit trout?", "", "The bouncer keeps you on your networks.")
@@ -1308,6 +1370,7 @@ func (a *App) quit() tea.Cmd {
 	d.Buttons, d.Cancel = []string{"Yes", "No"}, 1
 	d.OnClose = func(a *App, button int) tea.Cmd {
 		if button == 0 {
+			a.scriptsExit()
 			return tea.Quit
 		}
 		return nil

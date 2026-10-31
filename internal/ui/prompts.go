@@ -104,6 +104,8 @@ func commandsBox() *msgBox {
 		"/server [host]          Switch to or add a network",
 		"/quote line             Send a raw line",
 		"/clear                  Clear the window",
+		"/load -rs file          Load a mIRC script (Tools > Scripts)",
+		"//command               Evaluate $identifiers and %variables first",
 		"",
 		"Anything else goes to the server as it is, like /list.",
 	)
@@ -144,7 +146,7 @@ var urlRe = regexp.MustCompile(`(?i)\bhttps?://[^\s<>"]+`)
 // noteURLs remembers the links in a message for Tools > URLs List,
 // newest first, at most 200.
 func (a *App) noteURLs(w *state.Window, nick, text string, at time.Time) {
-	if a.winOpts(w).TrackURLs == "off" { // the window's Track URLs
+	if a.winOpts(w).TrackURLs == "off" || a.hideLines { // the window's Track URLs, or a script hid it
 		return
 	}
 	for _, u := range urlRe.FindAllString(stripCodes(text), -1) {

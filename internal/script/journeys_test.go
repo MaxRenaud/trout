@@ -28,7 +28,10 @@ import (
 //	query bob                 an open query window
 //	event OPEN bob bob :hi    an event only the client makes: kind, nick, target, text
 //	< :bob!b@h PRIVMSG #c :hi a raw IRC line (\x01 for CTCP); our nicklists follow it
-//	/j #help                  typed in the editbox
+//	/j #help                  typed in the editbox (after on INPUT)
+//	type hello there          text typed in the editbox: on INPUT, then > /say
+//	* hidden                  a ^ handler halted the client's text for the line
+//	* input stopped           on INPUT halted what was typed
 //	@ +3h                     time passes
 //	reload                    restart: load the scripts again with the saved variables
 //	> /msg #c hi              a command the scripts run
@@ -209,7 +212,7 @@ func (j *journey) step(l string) {
 		return
 	}
 	switch {
-	case strings.HasPrefix(l, "> "), strings.HasPrefix(l, "= "), l == "* halted":
+	case strings.HasPrefix(l, "> "), strings.HasPrefix(l, "= "), l == "* halted", l == "* hidden", l == "* input stopped":
 		if len(j.out) == 0 {
 			t.Fatalf("want %q, but the scripts did nothing more", l)
 		}
@@ -240,12 +243,37 @@ func (j *journey) step(l string) {
 			t.Fatalf("%q: %v", l, err)
 		}
 		nick, _, _ := strings.Cut(m.Source, "!")
+		ev := EventFromMessage(j.host.net, m, strings.EqualFold(nick, j.host.me))
+		// Like the client: ^ handlers before it shows the line, the rest
+		// after.
+		if j.e.HasBefore(ev.Kind) {
+			actions, halted := j.e.DispatchBefore(ev, j.host)
+			j.record(actions, false)
+			if halted {
+				j.out = append(j.out, "* hidden")
+			}
+			ev.Halted = halted
+		}
 		j.host.apply(m)
-		actions, halted := j.e.Dispatch(EventFromMessage(j.host.net, m, strings.EqualFold(nick, j.host.me)), j.host)
+		actions, halted := j.e.Dispatch(ev, j.host)
 		j.record(actions, halted)
-	case strings.HasPrefix(l, "/"):
-		// Like the client: /!cmd skips aliases, and a command that isn't one
-		// runs as a built-in.
+	case strings.HasPrefix(l, "type "), strings.HasPrefix(l, "/"):
+		// Like the client: on INPUT first, which can stop the line.
+		text := strings.TrimPrefix(l, "type ")
+		actions, halted := j.e.Dispatch(Event{Kind: "INPUT", Network: j.host.net, Target: j.host.active,
+			Chan: iff(isChannel(j.host.active), j.host.active, ""), Text: text}, j.host)
+		j.record(actions, false)
+		if halted {
+			j.out = append(j.out, "* input stopped")
+			return
+		}
+		if !strings.HasPrefix(text, "/") {
+			j.out = append(j.out, "> /say "+text)
+			return
+		}
+		l = text
+		// /!cmd skips aliases, and a command that isn't one runs as a
+		// built-in.
 		name, args, _ := strings.Cut(l[1:], " ")
 		if actions, ok := j.e.Alias(j.host.net, j.host.active, name, args, j.host); ok && !strings.HasPrefix(name, "!") {
 			j.record(actions, false)

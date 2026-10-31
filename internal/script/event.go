@@ -26,6 +26,9 @@ type Event struct {
 	// CTCP skip them. Our own JOIN, PART and NICK do trigger events, like
 	// mIRC's: scripts use the me and ! prefixes to tell.
 	Own bool
+	// Halted is whether a ^ handler halted the client's text for this
+	// event (DispatchBefore said so): $halted, and & events skip it.
+	Halted bool
 
 	// A mode event's line, split up ($mode), and whether it's its first
 	// or last event ($modefirst, $modelast).
@@ -127,6 +130,8 @@ var eventFields = map[string]int{
 	"CTCPREPLY": 1, "SNOTICE": 1, "WALLOPS": 1, "ERROR": 1,
 	// on OPEN:?:matchtext: and on CLOSE:?: (see onDef).
 	"OPEN": 2, "CLOSE": 1,
+	// on INPUT:#: typed text, in a channel (#), query (?), any window (*).
+	"INPUT": 1,
 }
 
 // matchOnly are the events whose one field is matchtext, not a location.
@@ -141,7 +146,8 @@ func (r *run) dispatchFile(f *file, ev *Event) bool {
 	}
 	var best *event
 	for _, h := range f.events {
-		if h.kind != ev.Kind || (h.group != "" && !r.e.groups[strings.ToLower(h.group)]) {
+		if h.kind != ev.Kind || h.caret != r.caret || h.amp && ev.Halted ||
+			(h.group != "" && !r.e.groups[strings.ToLower(h.group)]) {
 			continue
 		}
 		if best != nil && h.level <= best.level {
@@ -213,7 +219,7 @@ func (r *run) matches(f *file, h *event, ev *Event) bool {
 		return false
 	}
 	switch {
-	case h.kind == "OPEN" || h.kind == "CLOSE":
+	case h.kind == "OPEN" || h.kind == "CLOSE" || h.kind == "INPUT":
 		if !windowLoc(h.loc, ev.Target) {
 			return false
 		}
@@ -295,13 +301,17 @@ func firstWord(s string) string {
 	return w
 }
 
-// windowLoc matches on OPEN's and on CLOSE's location: ? a query, = a DCC
-// chat, @ a custom window, ! a fileserver, * any window.
+// windowLoc matches on OPEN's, CLOSE's and INPUT's location: ? a query, #
+// a channel (INPUT), = a DCC chat, @ a custom window, ! a fileserver, * any
+// window.
 func windowLoc(loc, window string) bool {
 	kind := "?"
 	switch {
+	case window == "":
+		// The status window: only *.
+		kind = ""
 	case isChannel(window):
-		// A channel window: none of OPEN's or CLOSE's locations but *.
+		// A channel window: # (on INPUT's), or *.
 		kind = "#"
 	case window != "" && strings.ContainsRune("=@!", rune(window[0])):
 		kind = window[:1]

@@ -166,25 +166,35 @@ func (sp *stmtParser) condBody(n int, rest string) (string, []stmt) {
 	rest = strings.TrimSpace(rest)
 	var cond string
 	if strings.HasPrefix(rest, "(") {
-		// (a) || (b) is one condition too, like mIRC reads it.
-		end := -1
+		// (a) || (b) && $c is one condition too, like mIRC reads it: each
+		// term after the first is bracketed or one bare word (an
+		// identifier's brackets and all).
+		end, pos := -1, 0
 		for {
-			e := matchParen(rest, end+1)
-			if e < 0 {
-				sp.p.problem(n, false, "this ( has no matching )")
-				end = len(rest) - 1
-				break
+			if strings.HasPrefix(rest[pos:], "(") {
+				e := matchParen(rest, pos)
+				if e < 0 {
+					sp.p.problem(n, false, "this ( has no matching )")
+					end = len(rest) - 1
+					break
+				}
+				end = e
+			} else {
+				w := splitWords(rest[pos:])
+				if len(w) == 0 {
+					break
+				}
+				end = pos + len(w[0]) - 1
 			}
-			end = e
 			after := strings.TrimLeft(rest[end+1:], " ")
 			if !strings.HasPrefix(after, "&&") && !strings.HasPrefix(after, "||") {
 				break
 			}
 			next := strings.TrimLeft(after[2:], " ")
-			if !strings.HasPrefix(next, "(") {
+			if next == "" || next == "{" || strings.HasPrefix(next, "{ ") {
 				break
 			}
-			end = len(rest) - len(next) - 1
+			pos = len(rest) - len(next)
 		}
 		cond, rest = "("+rest[:end+1]+")", strings.TrimSpace(rest[end+1:])
 	} else {

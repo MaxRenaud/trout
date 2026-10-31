@@ -160,8 +160,14 @@ func New(opts Options) *Engine {
 // Load parses a script and loads it, replacing a script of the same name.
 // The Problems say what's wrong or unsupported; if one is Fatal, nothing
 // was loaded. Loading doesn't run on LOAD or on START: that's Init.
-func (e *Engine) Load(name, src string) []Problem {
-	f, problems := parseFile(name, src)
+func (e *Engine) Load(name, src string) []Problem { return e.LoadAs(name, src, "") }
+
+// LoadAs loads a file of aliases ("aliases", like mIRC's /load -a, each
+// alias without alias in front) or of popup items (as is the popup:
+// status, channel, query, nicklist or menubar, like /load -ps... -pm), or
+// with "" a script, like Load.
+func (e *Engine) LoadAs(name, src, as string) []Problem {
+	f, problems := parseFileAs(name, src, as)
 	problems = append(problems, e.check(f)...)
 	slices.SortStableFunc(problems, func(a, b Problem) int { return a.Line - b.Line })
 	if slices.ContainsFunc(problems, func(p Problem) bool { return p.Fatal }) {
@@ -237,12 +243,7 @@ func (e *Engine) Init(name string, first bool, h Host) []Action {
 // its own reply.
 func (e *Engine) Dispatch(ev Event, h Host) (actions []Action, halted bool) {
 	r := e.newRun(h)
-	events := []Event{ev}
-	if ev.Kind == "RAWMODE" {
-		// A channel MODE line is on RAWMODE, then an event for each change.
-		events[0].modes = r.splitModes(ev.Network, ev.Params[min(1, len(ev.Params)):])
-		events = append(events, r.modeEvents(&events[0])...)
-	}
+	events := r.expand(ev)
 	for i := range events {
 		for _, f := range e.scripts {
 			if r.dispatchFile(f, &events[i]) {
@@ -250,8 +251,55 @@ func (e *Engine) Dispatch(ev Event, h Host) (actions []Action, halted bool) {
 			}
 		}
 	}
-	return r.finish(), halted
+	return r.finish(), halted || r.haltdef
 }
+
+// DispatchBefore runs every script's ^ handler for an event, before the
+// client shows it, and reports whether one halted that (with /halt or
+// /haltdef), like mIRC's ^ events. Dispatch runs the others after, with
+// ev.Halted set to what this returned.
+func (e *Engine) DispatchBefore(ev Event, h Host) (actions []Action, halted bool) {
+	r := e.newRun(h)
+	r.caret = true
+	events := r.expand(ev)
+	for i := range events {
+		for _, f := range e.scripts {
+			if r.dispatchFile(f, &events[i]) {
+				halted = true
+			}
+		}
+	}
+	return r.finish(), halted || r.haltdef
+}
+
+// expand is the events an event is: a channel MODE line is on RAWMODE,
+// then an event for each change (OP, BAN...) and MODE for the rest.
+func (r *run) expand(ev Event) []Event {
+	events := []Event{ev}
+	if ev.Kind == "RAWMODE" {
+		events[0].modes = r.splitModes(ev.Network, ev.Params[min(1, len(ev.Params)):])
+		events = append(events, r.modeEvents(&events[0])...)
+	}
+	return events
+}
+
+// HasBefore reports whether any script has a ^ handler for this kind of
+// event, so the client knows whether to call DispatchBefore.
+func (e *Engine) HasBefore(kind string) bool {
+	for _, f := range e.scripts {
+		for _, h := range f.events {
+			if h.caret && (h.kind == kind || kind == "RAWMODE" && modeKind[h.kind]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// modeKind are the events a RAWMODE line turns into.
+var modeKind = map[string]bool{"OP": true, "DEOP": true, "SERVEROP": true, "VOICE": true, "DEVOICE": true,
+	"HELP": true, "DEHELP": true, "OWNER": true, "DEOWNER": true, "BAN": true, "UNBAN": true,
+	"MODE": true, "SERVERMODE": true}
 
 // Alias runs a command typed in the editbox, name and args, with a single
 // / (so args aren't evaluated). See Command.

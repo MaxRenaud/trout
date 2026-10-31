@@ -281,10 +281,12 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		}
 		return items
 	case 3:
-		// mIRC's Aliases, Popups and Scripts Editor wait for scripting.
+		// mIRC's Scripts Editor is Scripts: its Aliases and Popups are in
+		// the scripts themselves, edited in $EDITOR.
 		items := []MenuItem{{Label: "Address Book...", Action: func(a *App) tea.Cmd { a.openAddressBook(); return nil }}, sep,
 			{Label: "Channels List...", Key: "Alt+L", Action: func(a *App) tea.Cmd { return a.openChannelsList(false) }},
-			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }}, sep}
+			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }},
+			{Label: "Scripts...", Action: func(a *App) tea.Cmd { a.openScripts(); return nil }}, sep}
 		if a.opts.Demo { // bouncer setup is a mock-up so far
 			items = append(items,
 				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openSetup(); return nil }},
@@ -303,7 +305,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 			ch = a.active.Name
 		}
 		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
-		return []MenuItem{
+		items := []MenuItem{
 			{Label: "Join Channel...", Action: a.commandPrompt("Join Channel", "Channel:", "join", "#")},
 			{Label: "Part Channel...", Action: a.commandPrompt("Part Channel", "Channel:", "part", ch)},
 			{Label: "Query User...", Action: a.commandPrompt("Query User", "Nick:", "query", a.selectedNick())},
@@ -316,6 +318,10 @@ func (a *App) menuBarItems(i int) []MenuItem {
 			{Label: "Ignore User...", Action: a.commandPrompt("Ignore User", "Nick or mask:", "ignore", a.selectedNick())},
 			{Label: "Invite User...", Disabled: ch == "", Action: a.commandPrompt("Invite User", "Nick:", "invite", "")},
 		}
+		if more := a.scriptMenu("menubar", a.active, nil); len(more) > 0 { // like mIRC's Commands menu
+			items = append(append(items, sep), more...)
+		}
+		return items
 	case 5:
 		items := []MenuItem{{Label: "Order...", Action: func(a *App) tea.Cmd { a.openOrder(); return nil }}, sep}
 		for n, w := range a.order() {
@@ -422,13 +428,17 @@ func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
 		}
 		slap.Action = do(func() { a.action(win, slapText(nick)) })
 	}
-	a.closeMenus()
-	a.pushMenu([]MenuItem{
+	items := []MenuItem{
 		info, whois, {Label: "Query", Action: query}, {Sep: true},
 		{Label: "Control", Sub: control},
 		{Label: "CTCP", Sub: ctcp},
 		sendFile,
 		{Sep: true},
 		slap,
-	}, x, y)
+	}
+	if more := a.scriptMenu("nicklist", win, []string{nick}); len(more) > 0 { // scripts' menu nicklist
+		items = append(append(items, MenuItem{Sep: true}), more...)
+	}
+	a.closeMenus()
+	a.pushMenu(items, x, y)
 }

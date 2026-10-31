@@ -186,6 +186,9 @@ const bellGap = 2 * time.Second
 // beepFor rings the terminal bell for a highlight or private message that
 // arrives where you aren't looking.
 func (a *App) beepFor(w *state.Window, l state.Line) {
+	if a.hideLines { // a script's ^ event hid the line
+		return
+	}
 	said := l.Role == state.RoleNormal || l.Role == state.RoleAction || l.Role == state.RoleHighlight
 	private := (w.Kind == state.KQuery || w.Kind == state.KChat) && said
 	// A window's own Beeping beeps on every message there, like mIRC's.

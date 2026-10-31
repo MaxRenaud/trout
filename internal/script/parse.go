@@ -32,6 +32,8 @@ type event struct {
 	notMe bool   // ! prefix: not our own events
 	op    bool   // @ prefix: only when we're an op on the channel
 	regex bool   // $ prefix: match is a regular expression
+	caret bool   // ^ prefix: runs before the client shows the event, and can halt that
+	amp   bool   // & prefix: not if a ^ event halted the client's text
 	name  string // a named level, like friend
 	cmp   string // <, >, <=, >=, <> or =: compare the actor's and target's levels
 	text  string // the level as written, for $clevel
@@ -67,10 +69,26 @@ func (p *parser) problem(line int, fatal bool, text string) {
 
 // parseFile parses a script file: alias, on and ctcp sections, #groups,
 // and the old [script]/[aliases] ini format mIRC used to save them in.
-func parseFile(name, src string) (*file, []Problem) {
+func parseFile(name, src string) (*file, []Problem) { return parseFileAs(name, src, "") }
+
+// parseFileAs parses a file loaded as something other than a script, like
+// mIRC's /load -a (aliases, with no alias in front of each) or /load -pn
+// (nicklist popup items, with no menu around them): as is "aliases", or a
+// popup's kind.
+func parseFileAs(name, src, as string) (*file, []Problem) {
 	p := &parser{f: &file{name: name, aliases: map[string]*alias{}}}
 	p.lines, p.problems = sourceLines(src)
-	aliasFile := false
+	if as != "" && as != "aliases" {
+		var lines []srcLine
+		for _, l := range p.lines {
+			if !strings.HasPrefix(l.text, "[") {
+				lines = append(lines, l)
+			}
+		}
+		p.popupItems([]string{as}, lines)
+		return p.f, p.problems
+	}
+	aliasFile := as == "aliases"
 	for p.i < len(p.lines) {
 		l := p.lines[p.i]
 		p.i++
@@ -187,10 +205,15 @@ func (p *parser) section(l srcLine) {
 		p.onDef(l, rest)
 	case "ctcp":
 		f := splitFields(rest, 4)
-		if len(f) < 4 {
-			p.problem(l.n, false, "a ctcp event needs level:matchtext:location:commands")
-			p.body(l, rest)
-			return
+		if len(f) < 4 || !isLocation(f[2]) {
+			// ctcp level:matchtext:commands, without a location, is any
+			// window, like mIRC takes it: ctcp *:SOUND:return.
+			f = splitFields(rest, 3)
+			if len(f) < 3 {
+				p.problem(l.n, false, "a ctcp event needs level:matchtext:location:commands")
+				return
+			}
+			f = []string{f[0], f[1], "*", f[2]}
 		}
 		ev := &event{kind: "CTCP", match: f[1], loc: f[2]}
 		if p.level(l, ev, f[0]) {
@@ -302,14 +325,13 @@ func (p *parser) level(l srcLine, ev *event, s string) bool {
 	for s != "" {
 		switch s[0] {
 		case '^':
-			p.problem(l.n, false, "^ events (replacing the default text) aren't supported")
-			return false
+			ev.caret = true
 		case '$':
 			ev.regex = true
 		case '<', '>', '=':
 			ev.cmp += s[:1]
 		case '&':
-			// Only skip the event if default text was halted: trout's never is.
+			ev.amp = true
 		case '!':
 			ev.notMe = true
 		case '@':
@@ -445,4 +467,22 @@ func braceDelta(w string) int {
 		return -1
 	}
 	return 0
+}
+
+// isLocation reports whether s is an event's location field: *, #, ?, a
+// channel, a list of them, or a %variable holding them.
+func isLocation(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.ContainsAny(s, " {") {
+		return false
+	}
+	if strings.HasPrefix(s, "%") {
+		return true
+	}
+	for l := range strings.SplitSeq(s, ",") {
+		if l != "*" && l != "?" && l != "=" && l != "!" && l != "@" && !strings.HasPrefix(l, "#") && !strings.HasPrefix(l, "&") {
+			return false
+		}
+	}
+	return true
 }

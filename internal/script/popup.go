@@ -36,11 +36,17 @@ type popupItem struct {
 // menuDef parses a menu section's lines.
 func (p *parser) menuDef(l srcLine, rest string) {
 	names, first, _ := strings.Cut(strings.TrimSpace(rest), " ")
-	pop := &popup{}
+	var kinds []string
 	for k := range strings.SplitSeq(names, ",") {
-		pop.kinds = append(pop.kinds, strings.ToLower(strings.TrimSpace(k)))
+		kinds = append(kinds, strings.ToLower(strings.TrimSpace(k)))
 	}
-	lines := p.body(l, first)
+	p.popupItems(kinds, p.body(l, first))
+}
+
+// popupItems adds a menu's item lines, from a menu section or a popups
+// file.
+func (p *parser) popupItems(kinds []string, lines []srcLine) {
+	pop := &popup{kinds: kinds}
 	for i := 0; i < len(lines); i++ {
 		t := lines[i].text
 		depth := len(t) - len(strings.TrimLeft(t, "."))

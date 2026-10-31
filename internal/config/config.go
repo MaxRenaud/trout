@@ -54,6 +54,15 @@ type Config struct {
 	NickColors []NickColorRule `toml:"nick-color,omitempty"`
 	Highlights []HighlightRule `toml:"highlight-rule,omitempty"`
 
+	// Scripts are the loaded scripts, in the order they load: file names
+	// in the scripts folder next to config.toml, or full paths. ScriptsOff
+	// is /remote off; ScriptLevel the Users list's default level (0 is 1).
+	// Their variables and Users list are vars.ini and users.ini in that
+	// folder, like mIRC's.
+	Scripts     []string `toml:"scripts,omitempty"`
+	ScriptsOff  bool     `toml:"scripts-off,omitempty"`
+	ScriptLevel int      `toml:"script-level,omitempty"`
+
 	// Windows are a window's own options from its popup, like mIRC's
 	// system menu, by "network/window" in lowercase.
 	Windows map[string]WindowOpts `toml:"window,omitempty"`

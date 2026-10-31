@@ -288,6 +288,11 @@ var coreIdents = map[string]builtin{
 	"signal": func(r *run, fr *frame, c *call) (string, error) {
 		return evField(fr, func(ev *Event) string { return iff(ev.Kind == "SIGNAL", ev.Target, "") }), nil
 	},
+	// $halted is whether a ^ event halted the client's text: in a ^
+	// handler, one before this one; after, any of them.
+	"halted": func(r *run, fr *frame, c *call) (string, error) {
+		return boolStr(r.haltdef || fr.ev != nil && fr.ev.Halted), nil
+	},
 	"error": func(r *run, fr *frame, c *call) (string, error) {
 		return r.errText, nil
 	},
