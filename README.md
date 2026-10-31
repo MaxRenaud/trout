@@ -26,11 +26,11 @@ trout                 # the Connect dialog the first time, then your saved bounc
 trout --demo          # a fake world, no network: look around first
 ```
 
-Or download an archive for macOS, Linux or Windows (Intel/AMD or ARM) from
-[Releases](https://github.com/MaxRenaud/trout/releases) and run `trout` from where you
-unpack it: the soju it installs and runs comes in the same archive, next to it. From
-source, `go install github.com/MaxRenaud/trout/cmd/trout@latest` works too, and
-`dev/build-soju` builds that soju.
+Or download an archive for macOS, Linux or Windows (Intel/AMD or ARM; `linux_armv6` is
+for 32-bit Raspberry Pi OS) from [Releases](https://github.com/MaxRenaud/trout/releases)
+and run `trout` from where you unpack it: the soju it installs and runs comes in the same
+archive, next to it. From source, `go install github.com/MaxRenaud/trout/cmd/trout@latest`
+works too, and `dev/build-soju` builds that soju.
 
 trout isn't signed yet. Homebrew takes care of that on macOS; from a downloaded archive,
 macOS says it can't check trout: run `xattr -dr com.apple.quarantine` on the unpacked

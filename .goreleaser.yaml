@@ -1,6 +1,6 @@
 # trout's release, from a v* tag (.github/workflows/release.yml): archives
 # for macOS, Linux and Windows, each with the soju trout installs on servers
-# (Linux amd64 and arm64) and the one it runs itself (This Computer) for
+# (Linux amd64, arm64 and 32-bit arm) and the one it runs itself (This Computer) for
 # that platform, with soju's AGPL license and source; a GitHub release; and
 # the Homebrew cask, pushed to MaxRenaud/homebrew-tap with a deploy key
 # (TAP_DEPLOY_KEY). Try it without publishing anything:
@@ -11,7 +11,7 @@ project_name: trout
 
 before:
   hooks:
-    - dev/build-soju dist-soju linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+    - dev/build-soju dist-soju linux/amd64 linux/arm64 linux/arm darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 builds:
   - &build
@@ -24,7 +24,9 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
   # One build per OS and arch below, so each archive can name its own soju
-  # (archive files' dst isn't a template).
+  # (archive files' dst isn't a template). 32-bit ARM is GOARM=6, for every
+  # Raspberry Pi; Homebrew doesn't run there, so it's not in the cask.
+  - { <<: *build, id: linux-arm, goos: [linux], goarch: [arm], goarm: ["6"] }
   - { <<: *build, id: darwin-amd64, goos: [darwin], goarch: [amd64] }
   - { <<: *build, id: darwin-arm64, goos: [darwin], goarch: [arm64] }
   - { <<: *build, id: windows-amd64, goos: [windows], goarch: [amd64] }
@@ -35,34 +37,38 @@ archives:
     id: linux
     ids: [linux]
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
     files:
       - &license LICENSE*
       - &readme README.md
       - &sojulicense { src: dist-soju/SOJU-*, dst: ., strip_parent: true }
       - &linuxamd64 { src: dist-soju/linux-amd64/*, dst: soju-linux-amd64, strip_parent: true }
       - &linuxarm64 { src: dist-soju/linux-arm64/*, dst: soju-linux-arm64, strip_parent: true }
+      - &linuxarm { src: dist-soju/linux-arm/*, dst: soju-linux-arm, strip_parent: true }
+  - <<: *archive
+    id: linux-arm
+    ids: [linux-arm]
   - <<: *archive
     id: darwin-amd64
     ids: [darwin-amd64]
-    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64, *linuxarm,
       { src: dist-soju/darwin-amd64/*, dst: soju-darwin-amd64, strip_parent: true }]
   - <<: *archive
     id: darwin-arm64
     ids: [darwin-arm64]
-    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64, *linuxarm,
       { src: dist-soju/darwin-arm64/*, dst: soju-darwin-arm64, strip_parent: true }]
   - <<: *archive
     id: windows-amd64
     ids: [windows-amd64]
     formats: [zip]
-    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64, *linuxarm,
       { src: dist-soju/windows-amd64/*, dst: soju-windows-amd64, strip_parent: true }]
   - <<: *archive
     id: windows-arm64
     ids: [windows-arm64]
     formats: [zip]
-    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64,
+    files: [*license, *readme, *sojulicense, *linuxamd64, *linuxarm64, *linuxarm,
       { src: dist-soju/windows-arm64/*, dst: soju-windows-arm64, strip_parent: true }]
 
 checksum:

@@ -299,7 +299,8 @@ Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/in
   `~/.ssh/config`, agents, ProxyJump, known_hosts and hardware keys work as in a terminal.
   When ssh needs you (a new host key, a locked key), trout hands it the terminal once
   (`tea.ExecProcess`). `ssh -G` gives the real host name for the bouncer's address.
-- **Probe:** Linux on x86_64 or ARM64 with systemd, or trout says it can't.
+- **Probe:** Linux on x86_64, ARM64 or 32-bit ARM (ARMv6 and up: 32-bit Raspberry Pi OS;
+  soju is built with GOARM=6) with systemd, or trout says it can't.
 - **Root, in tiers:** logged in as root; `sudo -n`; sudo with your password (asked in a
   masked field, kept in memory, sent to `sudo -k -S`, through a pty if sudoers wants a
   tty; sudo-rs's messages are recognized too); or, when sudo says no, the command to run

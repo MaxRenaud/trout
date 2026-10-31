@@ -3,7 +3,8 @@
 // The install on this computer's own architecture (arm64 on Apple
 // silicon, where the Proxmox matrix is amd64 only): a privileged container
 // with systemd as PID 1 (dev/systemd), reached over ssh on a mapped port.
-// Needs Docker and dev/build-soju.
+// Needs Docker and dev/build-soju. TROUT_DOCKER_ARCH=arm runs it on 32-bit
+// ARM (armv7l, like Raspberry Pi OS) instead, emulated by Docker's QEMU.
 //
 //	go test -tags docker ./internal/install -run TestDockerInstall -v
 package install
@@ -21,7 +22,11 @@ import (
 )
 
 func TestDockerInstall(t *testing.T) {
-	if _, _, err := FindBinaries(runtime.GOARCH); err != nil {
+	arch, platform, image := runtime.GOARCH, "linux/"+runtime.GOARCH, "trout-systemd"
+	if os.Getenv("TROUT_DOCKER_ARCH") == "arm" {
+		arch, platform, image = "arm", "linux/arm/v7", "trout-systemd-arm"
+	}
+	if _, _, err := FindBinaries(arch); err != nil {
 		t.Fatal(err)
 	}
 	docker := func(args ...string) string {
@@ -32,10 +37,17 @@ func TestDockerInstall(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	docker("build", "-q", "-t", "trout-systemd", repo("dev/systemd"))
-	id := docker("run", "-d", "--privileged", "--cgroupns=host", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-		"-p", "127.0.0.1::22", "-p", "127.0.0.1::6697", "trout-systemd")
+	docker("build", "-q", "--platform", platform, "-t", image, repo("dev/systemd"))
+	id := docker("run", "-d", "--platform", platform, "--privileged", "--cgroupns=host", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
+		"-p", "127.0.0.1::22", "-p", "127.0.0.1::6697", image)
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
+	if arch == "arm" {
+		// QEMU's user-mode emulation can't make mount namespaces, so systemd
+		// fails soju's sandboxing with 226/NAMESPACE (journald too); a real
+		// Pi can. A drop-in turns it off here, and survives setup.sh.
+		docker("exec", id, "sh", "-c", "mkdir -p /etc/systemd/system/soju.service.d && printf '[Service]\\n"+
+			"ProtectSystem=no\\nProtectHome=no\\nPrivateTmp=no\\nReadWritePaths=\\n' > /etc/systemd/system/soju.service.d/qemu.conf")
+	}
 
 	key := filepath.Join(t.TempDir(), "key")
 	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
@@ -61,7 +73,7 @@ func TestDockerInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.Arch != runtime.GOARCH || !f.Systemd || f.Sudo != SudoNoPasswd {
+	if f.Arch != arch || !f.Systemd || f.Sudo != SudoNoPasswd {
 		t.Fatalf("probe: %+v", f)
 	}
 	t.Logf("%s, %s", f.OS, f.Machine)

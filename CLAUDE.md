@@ -19,6 +19,7 @@ dev/build-soju                                     # the soju trout installs on 
 go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean   # release archives in dist/, nothing published
 go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
+TROUT_DOCKER_ARCH=arm go test -tags docker ./internal/install -v   # on 32-bit ARM, emulated
 go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
 dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
 dev/windows/mirc-run script.mrc                    # run a script in real mIRC on that VM, print its out.txt
@@ -139,8 +140,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   templates through every root tier, and `ui/proxmox_test.go` drives the wizard for real.
   Only touch VMs in the trout-test pool (IDs 9900-9999). With `-tags docker`,
   `install/docker_test.go` installs in a privileged systemd container (`dev/systemd`), which
-  is arm64 on this Mac. `TestMoveNetworksLive` moves tester's networks to a throwaway soju
-  user it deletes afterwards. With `-tags cloud` (tokens in `tmp/cloud.env`),
+  is arm64 on this Mac, or armv7l (32-bit Raspberry Pi OS's kind) under QEMU with
+  `TROUT_DOCKER_ARCH=arm`, which can't sandbox systemd units, so the test turns that off.
+  `TestMoveNetworksLive` moves tester's networks to a throwaway soju user it deletes
+  afterwards. With `-tags cloud` (tokens in `tmp/cloud.env`),
   `cloud/live_test.go` lists regions and makes and deletes a server per provider, and
   `ui/cloud_test.go` runs the whole wizard on one, then deletes it from Bouncers. Check
   nothing's left at any provider afterwards (Google: instances, addresses, disks, the

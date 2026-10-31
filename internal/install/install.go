@@ -38,7 +38,7 @@ var setupScript string
 
 // Facts are what Probe found out about the server.
 type Facts struct {
-	Arch      string // "amd64" or "arm64"; "" for anything else
+	Arch      string // "amd64", "arm64" or "arm" (32-bit, ARMv6 and up); "" for anything else
 	Machine   string // uname -sm, for messages
 	OS        string // PRETTY_NAME from /etc/os-release
 	User      string // who ssh logs in as
@@ -83,7 +83,9 @@ func Probe(ctx context.Context, r Runner) (Facts, error) {
 			case strings.HasSuffix(v, " x86_64"):
 				f.Arch = "amd64"
 			case strings.HasSuffix(v, " aarch64"), strings.HasSuffix(v, " arm64"):
-				f.Arch = "arm64"
+				f.Arch = "arm64" // also 32-bit Raspberry Pi OS on a 64-bit kernel: static binaries run
+			case strings.HasSuffix(v, " armv6l"), strings.HasSuffix(v, " armv7l"), strings.HasSuffix(v, " armv8l"):
+				f.Arch = "arm" // 32-bit Raspberry Pi OS and the like; soju is built with GOARM=6
 			}
 		case "uid":
 			f.Root = v == "0"
@@ -115,7 +117,7 @@ func Probe(ctx context.Context, r Runner) (Facts, error) {
 func (f Facts) Unsupported() string {
 	switch {
 	case f.Arch == "":
-		return "trout's soju runs on Linux on x86_64 or ARM64; this server is " + f.Machine
+		return "trout's soju runs on Linux on x86_64, ARM64 or 32-bit ARM (ARMv6 and up); this server is " + f.Machine
 	case !f.Systemd:
 		return "this server doesn't run systemd, which trout's setup needs"
 	}

@@ -3,8 +3,8 @@
 # no cgo), so it runs anywhere without packages.
 #
 #   dev/build-soju                     into the cache install.FindFor looks in:
-#                                      linux amd64 and arm64, to install on
-#                                      servers, and this computer's, for
+#                                      linux amd64, arm64 and arm, to install
+#                                      on servers, and this computer's, for
 #                                      running its own (This Computer)
 #   dev/build-soju DIR os/arch...      into DIR/os-arch/ instead, plus soju's
 #                                      LICENSE (AGPL) and where its source is
@@ -19,7 +19,7 @@ if [ $# -gt 0 ]; then
 	platforms=$*
 else
 	cache=$(go run ./dev/cachedir)/trout/soju/$version
-	platforms="linux/amd64 linux/arm64 $(go env GOOS)/$(go env GOARCH)"
+	platforms="linux/amd64 linux/arm64 linux/arm $(go env GOOS)/$(go env GOARCH)"
 fi
 modcache=$(go env GOMODCACHE)
 tmp=$(mktemp -d)
@@ -32,7 +32,8 @@ for platform in $platforms; do
 		continue
 	fi
 	echo "soju $version $os/$arch..."
-	GOOS=$os GOARCH=$arch CGO_ENABLED=0 GOBIN= GOPATH=$tmp/gopath GOMODCACHE=$modcache \
+	# GOARM=6 for 32-bit ARM: every Raspberry Pi, the Pi 1 and Zero included.
+	GOOS=$os GOARCH=$arch GOARM=6 CGO_ENABLED=0 GOBIN= GOPATH=$tmp/gopath GOMODCACHE=$modcache \
 		go install -trimpath -ldflags='-s -w' -tags moderncsqlite \
 		codeberg.org/emersion/soju/cmd/soju@"$version" codeberg.org/emersion/soju/cmd/sojuctl@"$version"
 	mkdir -p "$out"
@@ -49,7 +50,7 @@ install -m 644 "$src/LICENSE" "$cache/SOJU-LICENSE" # read-only in the module ca
 cat >"$cache/SOJU-SOURCE.md" <<EOT
 The soju-*/ folders hold soju $version, an IRC bouncer by Simon Ser and
 contributors, licensed under the GNU AGPL v3 (SOJU-LICENSE). trout runs it
-as a separate program, unchanged, built with:
+as a separate program, unchanged, built with (and GOARM=6 for 32-bit ARM):
 
     CGO_ENABLED=0 go install -trimpath -ldflags='-s -w' -tags moderncsqlite \\
         codeberg.org/emersion/soju/cmd/soju@$version codeberg.org/emersion/soju/cmd/sojuctl@$version

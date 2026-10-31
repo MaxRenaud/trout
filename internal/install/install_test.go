@@ -79,6 +79,16 @@ func TestProbe(t *testing.T) {
 			t.Errorf("%+v: root %v, unsupported %q", c.facts, c.facts.BestRoot(), c.facts.Unsupported())
 		}
 	}
+
+	// Raspberry Pis: 32-bit Raspberry Pi OS says armv6l (Pi 1 and Zero) or
+	// armv7l, or aarch64 on a 64-bit kernel, where arm64 binaries run.
+	for uname, arch := range map[string]string{"Linux armv6l": "arm", "Linux armv7l": "arm", "Linux armv8l": "arm",
+		"Linux aarch64": "arm64", "Linux armv5tel": "", "Darwin arm64": ""} {
+		srv := &fakeServer{replies: []reply{{match: "uname", stdout: "uname=" + uname + "\nhome=/home/pi\nsystemd=yes\n"}}}
+		if f, err := Probe(context.Background(), srv); err != nil || f.Arch != arch {
+			t.Errorf("%s: arch %q, want %q (%v)", uname, f.Arch, arch, err)
+		}
+	}
 }
 
 func testInstaller(t *testing.T, srv *fakeServer) *Installer {
