@@ -227,8 +227,8 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 			return a.bouncerNetwork(b)
 		}
 	case "PRIVMSG", "NOTICE":
-		if isMe && m.Command == "PRIVMSG" {
-			a.delivered(n, arg(0), arg(1))
+		if isMe && m.Command == "PRIVMSG" && a.delivered(n, arg(0), arg(1)) {
+			return nil // a /msg already shown in the window it was typed in
 		}
 		if a.servReply(n, m) || a.ignored(n, m) || a.ctcp(n, m, t) {
 			return nil
@@ -930,16 +930,49 @@ func (a *App) awaitEcho(n *state.Network, target, text string) {
 	if a.unechoed == nil {
 		a.unechoed = map[*state.Network][]sentMsg{}
 	}
-	a.unechoed[n] = append(a.unechoed[n], sentMsg{target, text})
+	a.unechoed[n] = append(a.unechoed[n], sentMsg{target: target, text: text})
 }
 
-type sentMsg struct{ target, text string }
+type sentMsg struct {
+	target, text string
+	shown        bool // already in the window it was typed in: the echo shows nothing
+}
 
-// delivered is a message of ours coming back (echo-message).
-func (a *App) delivered(n *state.Network, target, text string) {
-	if i := slices.IndexFunc(a.unechoed[n], func(s sentMsg) bool { return n.Same(s.target, target) && s.text == text }); i >= 0 {
-		a.unechoed[n] = slices.Delete(a.unechoed[n], i, i+1)
+// sentElsewhere shows a message sent with /msg or /describe the way mIRC
+// does: "-> *nick* text" in the window it was typed in, without opening a
+// query (mIRC's help: /msg sends "without opening a query window"). With
+// echo-message, the echo still goes to the target's window when there is
+// one, so that window doesn't also get the "->" line.
+func (a *App) sentElsewhere(w *state.Window, target, part string, role state.Role, line string) {
+	n := w.Net
+	if !a.echoed(n) {
+		a.addLine(w, role, line)
+		return
 	}
+	wire := part
+	if role == state.RoleAction {
+		wire = asAction(part)
+	}
+	t := a.windowFor(n, target)
+	if t != w {
+		a.addLine(w, role, line)
+	}
+	a.awaitEcho(n, target, wire)
+	if t == nil {
+		a.unechoed[n][len(a.unechoed[n])-1].shown = true
+	}
+}
+
+// delivered is a message of ours coming back (echo-message). It reports
+// whether that message was already shown where it was typed.
+func (a *App) delivered(n *state.Network, target, text string) bool {
+	i := slices.IndexFunc(a.unechoed[n], func(s sentMsg) bool { return n.Same(s.target, target) && s.text == text })
+	if i < 0 {
+		return false
+	}
+	shown := a.unechoed[n][i].shown
+	a.unechoed[n] = slices.Delete(a.unechoed[n], i, i+1)
+	return shown
 }
 
 // notSent says which messages a connection that just died never delivered.
@@ -1047,9 +1080,7 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			break
 		}
 		for _, part := range a.sendText(n, "PRIVMSG", arg, tail, plain) {
-			if !a.echoed(n) {
-				a.addLine(w, state.RoleOwn, "-> *"+arg+"* "+part)
-			}
+			a.sentElsewhere(w, arg, part, state.RoleOwn, "-> *"+arg+"* "+part)
 		}
 	case "notice":
 		if tail == "" {

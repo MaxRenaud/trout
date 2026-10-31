@@ -118,6 +118,38 @@ func TestNotSent(t *testing.T) {
 	}
 }
 
+// TestMsgNoQuery: /msg and /describe to someone without a query window
+// show "-> *nick*" in the window they were typed in and don't open one,
+// like mIRC, even when the bouncer echoes them (/msg X on Undernet). With
+// a query open, the echo still lands there.
+func TestMsgNoQuery(t *testing.T) {
+	a, n, _, feed := optionsApp(t)
+	ch := n.Add(&state.Window{Kind: state.KChannel, Name: "#test"})
+	a.ircCommand(ch, "msg X login max pw")
+	a.ircCommand(ch, "describe X waves")
+	feed(":max!m@h PRIVMSG X :login max pw", ":max!m@h PRIVMSG X :\x01ACTION waves\x01")
+	if n.Find(state.KQuery, "X") != nil {
+		t.Fatal("/msg opened a query window")
+	}
+	want := []string{"-> *X* login max pw", "-> *X* max waves"}
+	if got := lineTexts(ch); !slices.Equal(got, want) {
+		t.Fatalf("channel:\n%q\nwant\n%q", got, want)
+	}
+
+	q := a.openQuery(n, "bob")
+	a.ircCommand(ch, "msg bob hi")
+	feed(":max!m@h PRIVMSG bob :hi")
+	if got := lastLine(ch); got != "-> *bob* hi" {
+		t.Errorf("channel: %q", got)
+	}
+	if got := lineTexts(q); !slices.Equal(got, []string{"<max> hi"}) {
+		t.Errorf("query: %q", got)
+	}
+	if len(a.unechoed[n]) != 0 {
+		t.Fatal("still waiting on echoes")
+	}
+}
+
 // TestNoNetworksYet: a bouncer with no networks (a new one, This Computer
 // the first time) says how to add one and opens Select Server, once.
 func TestNoNetworksYet(t *testing.T) {

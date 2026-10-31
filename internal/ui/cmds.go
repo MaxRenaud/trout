@@ -118,7 +118,7 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 			break
 		}
 		for _, part := range a.sendText(n, "PRIVMSG", arg, tail, asAction) {
-			a.addLine(w, state.RoleAction, "-> *"+arg+"* "+n.Nick+" "+part)
+			a.sentElsewhere(w, arg, part, state.RoleAction, "-> *"+arg+"* "+n.Nick+" "+part)
 		}
 	case "omsg", "onotice": // to a channel's ops: @#chan
 		ch, text := a.channelArg(w, rest)
