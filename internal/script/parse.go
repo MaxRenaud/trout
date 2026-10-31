@@ -73,11 +73,15 @@ func parseFile(name, src string) (*file, []Problem) { return parseFileAs(name, s
 
 // parseFileAs parses a file loaded as something other than a script, like
 // mIRC's /load -a (aliases, with no alias in front of each) or /load -pn
-// (nicklist popup items, with no menu around them): as is "aliases", or a
-// popup's kind.
+// (nicklist popup items, with no menu around them): as is "aliases", a
+// popup's kind, or "popups" for a popups.ini.
 func parseFileAs(name, src, as string) (*file, []Problem) {
 	p := &parser{f: &file{name: name, aliases: map[string]*alias{}}}
 	p.lines, p.problems = sourceLines(src)
+	if as == "popups" {
+		p.popupsIni()
+		return p.f, p.problems
+	}
 	if as != "" && as != "aliases" {
 		var lines []srcLine
 		for _, l := range p.lines {
@@ -123,16 +127,19 @@ func sourceLines(src string) ([]srcLine, []Problem) {
 	var lines []srcLine
 	var problems []Problem
 	inComment, ini := false, false
+	inSection := 0 // lines into an ini section: n0= is line 1, as the Scripts Editor shows it
 	var cont *srcLine
 	for n, t := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
 		n++
 		t = strings.TrimSpace(t)
 		if iniHeader.MatchString(t) {
-			ini = true
+			ini, inSection = true, 0
 			lines = append(lines, srcLine{n, strings.ToLower(t)})
 			continue
 		}
 		if ini {
+			inSection++
+			n = inSection
 			if k, v, ok := strings.Cut(t, "="); ok && len(k) > 1 && k[0] == 'n' && isDigits(k[1:]) {
 				t = strings.TrimSpace(v)
 			}
@@ -163,6 +170,38 @@ func sourceLines(src string) ([]srcLine, []Problem) {
 		problems = append(problems, Problem{Text: "a /* comment has no */"})
 	}
 	return lines, problems
+}
+
+// PopupSections are popups.ini's sections, mIRC's file for the five
+// popup menus, by kind.
+var PopupSections = map[string]string{"status": "mpopup", "channel": "cpopup", "query": "qpopup",
+	"nicklist": "lpopup", "menubar": "bpopup"}
+
+// popupsIni reads a popups.ini: each section is one popup's items.
+func (p *parser) popupsIni() {
+	kinds := map[string]string{}
+	for k, s := range PopupSections {
+		kinds["["+s+"]"] = k
+	}
+	kind := ""
+	var lines []srcLine
+	flush := func() {
+		if kind != "" && len(lines) > 0 {
+			p.popupItems([]string{kind}, lines)
+		}
+		lines = nil
+	}
+	for _, l := range p.lines {
+		if !strings.HasPrefix(l.text, "[") {
+			lines = append(lines, l)
+			continue
+		}
+		flush()
+		if kind = kinds[l.text]; kind == "" {
+			p.problem(l.n, false, l.text+" isn't one of popups.ini's sections")
+		}
+	}
+	flush()
 }
 
 // skipIni skips the rest of an unsupported ini section.

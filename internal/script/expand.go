@@ -229,7 +229,21 @@ func (r *run) evalIdentBody(fr *frame, s string) (string, error) {
 		}
 		prop = p[:n]
 	}
-	return r.ident(fr, name, &call{args: args, hasArgs: hasArgs, prop: strings.ToLower(prop)})
+	v, err := r.ident(fr, name, &call{args: args, hasArgs: hasArgs, prop: strings.ToLower(prop)})
+	if err != errNoIdent {
+		return v, err
+	}
+	switch {
+	case fr.editbox:
+		// Typed in the editbox, an identifier that doesn't exist stays as
+		// it was typed (checked in mIRC 7.86, with and without Identifier
+		// Warning).
+		return "$" + s, nil
+	case r.e.identWarn:
+		return "", errorf("No such identifier: $", name)
+	}
+	// Like mIRC, in a script an identifier that doesn't exist is $null.
+	return "", nil
 }
 
 // param is $N, $N-, $N-M or $0, with any text after it kept: $1's.
@@ -358,6 +372,5 @@ func (r *run) ident(fr *frame, name string, c *call) (string, error) {
 	if mircIdents[key] {
 		return "", errorf("$", name, " isn't supported yet")
 	}
-	// Like mIRC, an identifier that doesn't exist is $null.
-	return "", nil
+	return "", errNoIdent
 }

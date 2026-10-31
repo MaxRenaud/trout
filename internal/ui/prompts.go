@@ -104,7 +104,7 @@ func commandsBox() *msgBox {
 		"/server [host]          Switch to or add a network",
 		"/quote line             Send a raw line",
 		"/clear                  Clear the window",
-		"/load -rs file          Load a mIRC script (Tools > Scripts)",
+		"/load -rs file          Load a mIRC script (Tools > Scripts Editor)",
 		"//command               Evaluate $identifiers and %variables first",
 		"",
 		"Anything else goes to the server as it is, like /list.",

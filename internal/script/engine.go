@@ -137,6 +137,56 @@ type Engine struct {
 	usersDirty bool               // the Users list changed since the last Save
 	ctimer     string             // the timer running now
 	ltimer     string             // the last timer started
+	deaf       int                // the events not listened to: $remote's bits (1 ctcp, 2 named, 4 raw)
+	identWarn  bool               // an identifier that doesn't exist is an error
+}
+
+// Listen turns the three kinds of event on and off, like mIRC's /ctcps,
+// /events and /raw: ctcp events, named events (on JOIN...), and raw ones.
+func (e *Engine) Listen(ctcps, events, raw bool) {
+	e.deaf = 0
+	for bit, on := range map[int]bool{1: ctcps, 2: events, 4: raw} {
+		if !on {
+			e.deaf |= bit
+		}
+	}
+}
+
+// listening reports whether events of this kind run.
+func (e *Engine) listening(kind string) bool {
+	bit := 2
+	switch kind {
+	case "CTCP", "CTCPREPLY":
+		bit = 1
+	case "RAW":
+		bit = 4
+	}
+	return e.deaf&bit == 0
+}
+
+// IdentifierWarning makes an identifier that doesn't exist an error that
+// stops the script, rather than $null: the Scripts Editor's Options >
+// Identifier Warning, like mIRC's.
+func (e *Engine) IdentifierWarning(on bool) { e.identWarn = on }
+
+// Rename gives a loaded script a new name: the Scripts Editor's File >
+// Rename. Nothing runs.
+func (e *Engine) Rename(old, name string) {
+	if i := e.find(old); i >= 0 {
+		e.scripts[i].name = name
+	}
+}
+
+// Order puts the loaded scripts in this order (by name; others go after,
+// as they were): it's the order their events run in.
+func (e *Engine) Order(names []string) {
+	rank := func(f *file) int {
+		if i := slices.IndexFunc(names, func(n string) bool { return strings.EqualFold(n, f.name) }); i >= 0 {
+			return i
+		}
+		return len(names)
+	}
+	slices.SortStableFunc(e.scripts, func(a, b *file) int { return rank(a) - rank(b) })
 }
 
 type variable struct {
@@ -165,7 +215,8 @@ func (e *Engine) Load(name, src string) []Problem { return e.LoadAs(name, src, "
 // LoadAs loads a file of aliases ("aliases", like mIRC's /load -a, each
 // alias without alias in front) or of popup items (as is the popup:
 // status, channel, query, nicklist or menubar, like /load -ps... -pm), or
-// with "" a script, like Load.
+// with "" a script, like Load. "popups" is a popups.ini, mIRC's file for
+// all five popups.
 func (e *Engine) LoadAs(name, src, as string) []Problem {
 	f, problems := parseFileAs(name, src, as)
 	problems = append(problems, e.check(f)...)
@@ -319,7 +370,7 @@ func (e *Engine) Command(network, window, line string, eval bool, h Host) (actio
 	word, args, _ := strings.Cut(strings.TrimSpace(line), " ")
 	name := strings.TrimLeft(word, ".!")
 	r := e.newRun(h)
-	fr := &frame{network: network, window: window, params: fields(args), typed: true}
+	fr := &frame{network: network, window: window, params: fields(args), typed: true, editbox: true}
 	if isChannel(window) {
 		fr.channel = window
 	}
@@ -355,6 +406,22 @@ func (e *Engine) Vars() map[string]string {
 		}
 	}
 	return vars
+}
+
+// SetVars replaces the global variables (but not the ones that go when
+// trout quits), from the Scripts Editor's Variables tab.
+func (e *Engine) SetVars(vars map[string]string) {
+	maps.DeleteFunc(e.vars, func(_ string, v *variable) bool { return !v.temp })
+	e.Restore(vars)
+}
+
+// Check is the problems a file would have if it were loaded with LoadAs,
+// without loading it.
+func (e *Engine) Check(name, src, as string) []Problem {
+	f, problems := parseFileAs(name, src, as)
+	problems = append(problems, e.check(f)...)
+	slices.SortStableFunc(problems, func(a, b Problem) int { return a.Line - b.Line })
+	return problems
 }
 
 // Restore sets the global variables saved from an earlier session.

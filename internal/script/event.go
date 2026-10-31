@@ -141,6 +141,9 @@ var matchOnly = map[string]bool{"CTCPREPLY": true, "SNOTICE": true, "WALLOPS": t
 // script runs at most one handler per event: the matching one with the
 // highest level, or the first of those. It reports whether it /halted.
 func (r *run) dispatchFile(f *file, ev *Event) bool {
+	if !r.e.listening(ev.Kind) {
+		return false
+	}
 	if ev.Own && (ev.Kind == "TEXT" || ev.Kind == "ACTION" || ev.Kind == "NOTICE" || ev.Kind == "CTCP") {
 		return false
 	}

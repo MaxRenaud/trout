@@ -32,6 +32,9 @@ $ini = [regex]::Replace($ini, "(?s)\[rfiles\].*?$end", "[rfiles]`r`nn0=users.ini
 $ini = [regex]::Replace($ini, "(?s)\[afiles\].*?$end", "[afiles]")
 $ini = [regex]::Replace($ini, "(?s)\[pfiles\].*?$end", "[pfiles]")
 if ($ini -notmatch "\[rfiles\]") { $ini += "`r`n[rfiles]`r`nn0=users.ini`r`nn1=vars.ini`r`nn2=oracle.mrc`r`n" }
+# Options > Identifier Warning in the Scripts Editor (field 32 of options n0) off,
+# as mIRC ships, which the tests expect. (No apostrophes: this is in quotes.)
+$ini = [regex]::Replace($ini, "\[options\]\r?\nn0=([^\r\n]*)", { param($m) $f = $m.Groups[1].Value -split ","; if ($f.Count -gt 32) { $f[32] = "0" }; "[options]`r`nn0=" + ($f -join ",") })
 Set-Content "$d\mirc.ini" $ini
 schtasks /query /tn trout-mirc 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {

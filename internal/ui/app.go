@@ -230,6 +230,9 @@ type App struct {
 
 	menus   []openMenu // open popups, innermost last
 	menuBar int        // menubar entry that opened menus[0], or -1
+	dlgMenu bool       // menus[0] is from the dialog's own menubar
+	downX   int        // where the mouse button last went down
+	downY   int
 	dlg     modal      // drawn over everything and takes all input
 	pal     *palette   // Ctrl+K color picker
 	sel     *selection // text being selected in the message pane
@@ -266,6 +269,7 @@ type App struct {
 	hideLines      bool
 	ctcpHalted     bool
 	lastTyped      time.Time
+	scriptTab      edTab // the Scripts Editor's, when it was last open
 }
 
 // Run starts the UI and blocks until the user quits.
@@ -319,6 +323,7 @@ func New(opts Options) *App {
 	a.saved = a.settings()
 	a.scripts, a.scriptProblems = script.New(script.Options{}), map[string][]script.Problem{}
 	a.lastTyped = time.Now() // $idle counts from the start
+	a.scriptTab = edRemote
 	if !opts.Demo {
 		a.setBouncer(opts.Bouncer, opts.Password)
 		return a
@@ -361,8 +366,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.w, a.h = msg.Width, msg.Height
 	case scriptTickMsg:
 		cmd = a.scriptTick()
-	case scriptEditedMsg:
-		cmd = a.scriptEdited(msg)
 	case tickMsg:
 		if ev, ok := demo.Traffic(a.nets); ok {
 			a.addLine(ev.Win, ev.Role, ev.Text)
@@ -399,6 +402,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.phoneSHA1(msg)
 	case tea.FocusMsg:
 		a.focused = true
+		if ed, ok := a.dlg.(*scriptEditor); ok && !a.book().ScriptOpts.NoMonitor {
+			ed.reloadChanged(a)
+		}
 	case tea.BlurMsg:
 		a.focused = false
 	case readTickMsg:
@@ -445,6 +451,9 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		// Like mIRC, Ctrl+C copies the editbox's selection and never
 		// quits: File > Exit and /exit do. Text selected in the message
 		// pane was copied when the mouse let go.
+		if a.dlg != nil && len(a.menus) == 0 {
+			return a.dlg.key(a, s) // the Scripts Editor's selection
+		}
 		if a.dlg != nil || len(a.menus) > 0 || a.active == nil {
 			return nil
 		}
@@ -459,16 +468,19 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		a.themeIdx = (a.themeIdx + 1) % len(themes)
 		return nil
 	}
+	if len(a.menus) > 0 { // over a dialog too: the Scripts Editor's
+		return a.menuKey(s)
+	}
 	if a.dlg != nil {
+		if ed, ok := a.dlg.(*scriptEditor); ok && (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) && !k.Alt {
+			return ed.typed(a, k.Runes) // line breaks and all
+		}
 		if f, ok := a.dlg.(*formBox); ok {
 			if rs, ok := typedRunes(k); ok {
 				return f.typed(a, rs)
 			}
 		}
 		return a.dlg.key(a, s)
-	}
-	if len(a.menus) > 0 {
-		return a.menuKey(s)
 	}
 	if a.pal != nil && a.paletteKey(s) {
 		return nil
@@ -499,6 +511,12 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 			return nil
 		case ch == 'u':
 			a.openURLsList()
+			return nil
+		case ch == 'r': // the Scripts Editor's tabs, like mIRC (its Alt+A is Favorites here)
+			a.openScriptsTab(edRemote)
+			return nil
+		case ch == 'p':
+			a.openScriptsTab(edPopups)
 			return nil
 		case ch == 'q': // the second editbox, like mIRC
 			if a.active.Kind != state.KTransfer {
@@ -741,6 +759,9 @@ func (a *App) nickKey(s string) (tea.Cmd, bool) {
 
 func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 	a.mx, a.my = m.X, m.Y
+	if m.Action == tea.MouseActionPress {
+		a.downX, a.downY = m.X, m.Y
+	}
 	if a.drag != dragNone {
 		switch {
 		case m.Action == tea.MouseActionRelease:
@@ -770,6 +791,22 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			a.drag, a.thumbKind, a.thumbGrab = dragThumb, r.Kind, m.Y-r.Y
 			return nil
 		}
+	}
+	if len(a.menus) > 0 { // over a dialog too: the Scripts Editor's
+		switch {
+		case m.Action == tea.MouseActionMotion:
+			a.menuMotion(m.X, m.Y)
+		case m.Action == tea.MouseActionRelease:
+			// A click leaves the menu open; letting go on an item after
+			// dragging to it chooses it, like Windows.
+			a.pressedTool, a.hold = -1, nil
+			if m.X != a.downX || m.Y != a.downY {
+				return a.menuRelease(m.X, m.Y)
+			}
+		case m.Button == tea.MouseButtonLeft || m.Button == tea.MouseButtonRight:
+			return a.menuClick(m.X, m.Y)
+		}
+		return nil
 	}
 	if a.dlg != nil {
 		r, ok := a.hit(m.X, m.Y)
@@ -805,15 +842,6 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			a.pickColor(r.I)
 		case m.Action == tea.MouseActionPress:
 			a.pal = nil
-		}
-		return nil
-	}
-	if len(a.menus) > 0 {
-		switch {
-		case m.Action == tea.MouseActionMotion:
-			a.menuMotion(m.X, m.Y)
-		case m.Button == tea.MouseButtonLeft || m.Button == tea.MouseButtonRight:
-			return a.menuClick(m.X, m.Y)
 		}
 		return nil
 	}
@@ -972,8 +1000,11 @@ func (a *App) dragThumbTo(y int) {
 	case HitNickScroll:
 		a.active.NickTop = top
 	case HitDlg:
-		if l, ok := a.dlg.(*listBox); ok {
-			l.Top = top
+		switch d := a.dlg.(type) {
+		case *listBox:
+			d.Top = top
+		case *scriptEditor:
+			d.scrollTop(top)
 		}
 	}
 }

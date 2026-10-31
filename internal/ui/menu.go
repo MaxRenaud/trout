@@ -52,9 +52,43 @@ func (a *App) pushMenu(items []MenuItem, x, y int) {
 	a.menus = append(a.menus, m)
 }
 
-func (a *App) closeMenus() { a.menus, a.menuBar = nil, -1 }
+func (a *App) closeMenus() { a.menus, a.menuBar, a.dlgMenu = nil, -1, false }
+
+// menuStrip is a dialog with its own menubar, the Scripts Editor: its
+// menus open, and slide from one to the next, like the main menubar's.
+type menuStrip interface {
+	stripLen() int
+	stripMenu(a *App, i int) (items []MenuItem, x, y int)
+}
+
+func (a *App) openStripMenu(s menuStrip, i int) {
+	a.closeMenus()
+	a.menuBar, a.dlgMenu = i, true
+	items, x, y := s.stripMenu(a, i)
+	a.pushMenu(items, x, y)
+}
+
+// barLen is how many menus the open menubar has.
+func (a *App) barLen() int {
+	if s, ok := a.dlg.(menuStrip); ok && a.dlgMenu {
+		return s.stripLen()
+	}
+	return len(menuBarNames)
+}
+
+// onBar reports whether r is an entry of the open menubar.
+func (a *App) onBar(r Region) bool {
+	if a.dlgMenu {
+		return r.Kind == HitDlg && r.S == "strip"
+	}
+	return r.Kind == HitMenuBar && a.dlg == nil
+}
 
 func (a *App) openMenuBar(i int) {
+	if s, ok := a.dlg.(menuStrip); ok && a.dlgMenu {
+		a.openStripMenu(s, i)
+		return
+	}
 	a.closeMenus()
 	a.menuBar = i
 	a.pushMenu(a.menuBarItems(i), a.menuBarX[i], 2)
@@ -107,7 +141,7 @@ func (a *App) menuMotion(x, y int) {
 		}
 		return
 	}
-	if r, ok := a.hit(x, y); ok && r.Kind == HitMenuBar && a.menuBar >= 0 && r.I != a.menuBar {
+	if r, ok := a.hit(x, y); ok && a.onBar(r) && a.menuBar >= 0 && r.I != a.menuBar {
 		a.openMenuBar(r.I)
 	}
 }
@@ -123,11 +157,27 @@ func (a *App) menuClick(x, y int) tea.Cmd {
 		}
 		return nil
 	}
-	if r, ok := a.hit(x, y); ok && r.Kind == HitMenuBar && r.I != a.menuBar {
+	if r, ok := a.hit(x, y); ok && a.onBar(r) && r.I != a.menuBar {
 		a.openMenuBar(r.I)
 		return nil
 	}
 	a.closeMenus()
+	return nil
+}
+
+// menuRelease chooses the item under the pointer, if it's one (not a
+// submenu, which is open already).
+func (a *App) menuRelease(x, y int) tea.Cmd {
+	for l := len(a.menus) - 1; l >= 0; l-- {
+		m := &a.menus[l]
+		if !m.contains(x, y) {
+			continue
+		}
+		if i, ok := m.itemAt(x, y); ok && m.Items[i].Sub == nil {
+			return a.activateItem(l, i)
+		}
+		return nil
+	}
 	return nil
 }
 
@@ -162,14 +212,14 @@ func (a *App) menuKey(k string) tea.Cmd {
 			return a.activateItem(l, m.Sel)
 		}
 		if a.menuBar >= 0 {
-			a.openMenuBar((a.menuBar + 1) % len(menuBarNames))
+			a.openMenuBar((a.menuBar + 1) % a.barLen())
 			a.menus[0].Sel = 0
 		}
 	case "left":
 		if l > 0 {
 			a.menus = a.menus[:l]
 		} else if a.menuBar >= 0 {
-			a.openMenuBar((a.menuBar + len(menuBarNames) - 1) % len(menuBarNames))
+			a.openMenuBar((a.menuBar + a.barLen() - 1) % a.barLen())
 			a.menus[0].Sel = 0
 		}
 	case "enter", " ":
@@ -281,12 +331,10 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		}
 		return items
 	case 3:
-		// mIRC's Scripts Editor is Scripts: its Aliases and Popups are in
-		// the scripts themselves, edited in $EDITOR.
 		items := []MenuItem{{Label: "Address Book...", Action: func(a *App) tea.Cmd { a.openAddressBook(); return nil }}, sep,
 			{Label: "Channels List...", Key: "Alt+L", Action: func(a *App) tea.Cmd { return a.openChannelsList(false) }},
 			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }},
-			{Label: "Scripts...", Action: func(a *App) tea.Cmd { a.openScripts(); return nil }}, sep}
+			{Label: "Scripts Editor...", Key: "Alt+R", Action: func(a *App) tea.Cmd { a.openScripts(); return nil }}, sep}
 		if a.opts.Demo { // bouncer setup is a mock-up so far
 			items = append(items,
 				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openSetup(); return nil }},

@@ -71,3 +71,24 @@ func TestUnknownKeys(t *testing.T) {
 		t.Errorf("Load = %v, want an error naming settings.toolbr", err)
 	}
 }
+
+// TestScriptOpts: the Scripts Editor's options are saved, and left out
+// of config.toml while they're mIRC's defaults.
+func TestScriptOpts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	c, _ := Load(path)
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(path); strings.Contains(string(data), "script-options") {
+		t.Errorf("defaults saved:\n%s", data)
+	}
+	c.ScriptOpts.RawOff, c.ScriptOpts.IdentWarning = true, true
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := Load(path)
+	if err != nil || c2.ScriptOpts != c.ScriptOpts {
+		t.Errorf("reloaded %+v, %v", c2.ScriptOpts, err)
+	}
+}

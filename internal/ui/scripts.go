@@ -5,9 +5,7 @@ import (
 	"errors"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -132,6 +130,7 @@ func (a *App) startScripts() tea.Cmd {
 		return nil
 	}
 	b := a.book()
+	a.applyScriptOpts()
 	vars, _ := a.scriptReadFile("vars.ini")
 	saved := map[string]string{}
 	for _, l := range readIniList(vars, "variables") {
@@ -147,6 +146,14 @@ func (a *App) startScripts() tea.Cmd {
 		cmds = append(cmds, a.loadScript(name, false))
 	}
 	return tea.Batch(cmds...)
+}
+
+// applyScriptOpts tells the engine the Scripts Editor's Listen menu and
+// Identifier Warning.
+func (a *App) applyScriptOpts() {
+	o := a.book().ScriptOpts
+	a.scripts.Listen(!o.CTCPsOff, !o.EventsOff, !o.RawOff)
+	a.scripts.IdentifierWarning(o.IdentWarning)
 }
 
 // readIniList reads an ini section's n0=, n1=... lines (vars.ini,
@@ -220,6 +227,9 @@ func (a *App) loadScript(entry string, first bool) tea.Cmd {
 	if as != "" || !a.scripts.HasInit(name) {
 		return nil
 	}
+	if b.ScriptOpts.NoInitWarning { // Options > Initialization Warning, off
+		return a.runScript(a.scripts.Init(name, true, a.scriptHost()))
+	}
 	// Like mIRC's Script Warning: a new script's initialization commands
 	// run only if you say so.
 	d := message(name+" has initialization commands.", "", "Run them?")
@@ -231,7 +241,8 @@ func (a *App) loadScript(entry string, first bool) tea.Cmd {
 		}
 		return nil
 	}
-	a.openDialog(d)
+	// Loaded in the Scripts Editor, it asks once the editor has closed.
+	a.whenFree(func(a *App) tea.Cmd { a.openDialog(d); return nil })
 	return nil
 }
 
@@ -321,6 +332,26 @@ func (a *App) scriptAdmin(line string, fromScript bool) (tea.Cmd, bool) {
 			a.saveConfig()
 		}
 		a.addLine(a.active, state.RoleInfo, "* Remote is "+map[bool]string{true: "off", false: "on"}[b.ScriptsOff])
+		return nil, true
+	case "ctcps", "events", "raw":
+		// mIRC's listening switches. /raw is also trout's raw IRC line:
+		// only /raw on and /raw off are the switch, like mIRC.
+		o := &a.book().ScriptOpts
+		off := map[string]*bool{"ctcps": &o.CTCPsOff, "events": &o.EventsOff, "raw": &o.RawOff}[strings.ToLower(name)]
+		switch strings.ToLower(rest) {
+		case "on", "off":
+			*off = strings.EqualFold(rest, "off")
+			a.saveConfig()
+			a.applyScriptOpts()
+		case "":
+			if strings.EqualFold(name, "raw") {
+				return nil, false
+			}
+		default:
+			return nil, false
+		}
+		label := map[string]string{"ctcps": "Ctcps are ", "events": "Events are ", "raw": "Raw is "}[strings.ToLower(name)]
+		a.addLine(a.active, state.RoleInfo, "* "+label+map[bool]string{true: "off", false: "on"}[*off])
 		return nil, true
 	}
 	return nil, false
@@ -752,231 +783,6 @@ func (a *App) textMenu(w *state.Window, x, y int) {
 	}
 }
 
-// The Scripts dialog (Tools > Scripts), mIRC's Scripts Editor: the loaded
-// scripts, with their problems, and the Users list and variables. Editing
-// a script is in $EDITOR, which a terminal does better than a dialog.
-
-func (a *App) openScripts() {
-	if a.scripts == nil {
-		return
-	}
-	b := a.book()
-	rows := make([]string, len(b.Scripts))
-	for i, name := range b.Scripts {
-		_, file := splitLoad(name)
-		ps := a.scriptProblems[strings.ToLower(file)]
-		status := "ok"
-		if len(ps) > 0 {
-			status = strconv.Itoa(len(ps)) + " problem" + map[bool]string{true: "", false: "s"}[len(ps) == 1]
-		}
-		rows[i] = padRight(name, 32) + status
-	}
-	remote := "on"
-	if b.ScriptsOff {
-		remote = "off (/remote on)"
-	}
-	l := &listBox{Title: "Scripts", Header: padRight("Script", 32) + "Remote: " + remote, Rows: rows,
-		Keys:    slices.Clone(b.Scripts),
-		Buttons: []string{"Load...", "Edit", "Unload", "Problems", "Users", "Variables", "Close"}}
-	l.OnPress = func(a *App, l *listBox, button, key string) tea.Cmd {
-		_, file := splitLoad(key)
-		switch button {
-		case "Load...":
-			f := &formBox{Title: "Load Script", Buttons: []string{"OK", "Cancel"},
-				Lines:    []string{"A file in the scripts folder, or a full path."},
-				Fields:   []*formField{newField("File:", "", false)},
-				OnCancel: func(a *App) tea.Cmd { a.openScripts(); return nil }}
-			f.OnOK = func(a *App, v []string) (tea.Cmd, error) {
-				file := strings.TrimSpace(v[0])
-				if file == "" {
-					return nil, errors.New("give a file")
-				}
-				a.dlg = nil
-				cmd, _ := a.scriptAdmin("load -rs "+file, false)
-				if a.dlg == nil { // not asking about initialization commands
-					a.openScripts()
-				}
-				return cmd, nil
-			}
-			a.openDialog(f)
-			return nil
-		case "Edit":
-			if key != "" {
-				return a.editScript(file)
-			}
-		case "Unload":
-			if key != "" {
-				a.dlg = nil
-				cmd := a.unloadScript(key)
-				a.openScripts()
-				return cmd
-			}
-		case "Problems":
-			if key != "" {
-				a.openScriptProblems(file)
-			}
-		case "Users":
-			a.openScriptUsers()
-		case "Variables":
-			a.openScriptVars()
-		}
-		return nil
-	}
-	a.openDialog(l)
-}
-
-func (a *App) openScriptProblems(name string) {
-	lines := []string{name + ":"}
-	ps := a.scriptProblems[strings.ToLower(name)]
-	if len(ps) == 0 {
-		lines = append(lines, "", "No problems: trout runs all of it.")
-	}
-	for _, p := range ps {
-		lines = append(lines, p.String())
-	}
-	d := message(lines...)
-	d.Title = "Problems"
-	d.OnClose = func(a *App, _ int) tea.Cmd { a.openScripts(); return nil }
-	a.openDialog(d)
-}
-
-// editScript opens a script in $EDITOR (or a usual one), then loads it
-// again.
-func (a *App) editScript(name string) tea.Cmd {
-	path := name
-	if !filepath.IsAbs(name) {
-		p, ok := a.scriptFile(name)
-		if !ok || a.scriptsDir() == "" {
-			a.openDialog(message("There's no scripts folder to edit " + name + " in."))
-			return nil
-		}
-		path = p
-	}
-	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
-	if runtime.GOOS == "windows" && os.Getenv("VISUAL") == "" && os.Getenv("EDITOR") == "" {
-		editor = "notepad"
-	}
-	args := strings.Fields(editor)
-	a.dlg = nil
-	return tea.ExecProcess(exec.Command(args[0], append(args[1:], path)...), func(err error) tea.Msg {
-		return scriptEditedMsg{name: name, err: err}
-	})
-}
-
-// scriptEditedMsg is the editor closing: the script is loaded again.
-type scriptEditedMsg struct {
-	name string
-	err  error
-}
-
-func (a *App) scriptEdited(msg scriptEditedMsg) tea.Cmd {
-	if msg.err != nil {
-		a.addLine(a.active, state.RoleQuit, "* The editor: "+msg.err.Error())
-	}
-	cmd, _ := a.scriptAdmin("reload -rs "+msg.name, false)
-	a.openScripts()
-	return cmd
-}
-
-// openScriptUsers is the Users list: who has which access levels.
-func (a *App) openScriptUsers() {
-	users := a.scripts.Users()
-	l := &listBox{Title: "Users", Header: "levels:address info", Rows: users, Keys: users,
-		Buttons: []string{"Add...", "Edit...", "Remove", "Close"}}
-	l.OnClose = func(a *App) { a.openScripts() }
-	run := func(line string) tea.Cmd {
-		actions, _ := a.scripts.Command(a.active.Net.Name, "", line, false, a.scriptHost())
-		cmd := a.runScript(actions)
-		a.openScriptUsers()
-		return cmd
-	}
-	l.OnPress = func(a *App, l *listBox, button, key string) tea.Cmd {
-		levels, rest, _ := strings.Cut(key, ":")
-		addr, info, _ := strings.Cut(rest, " ")
-		switch button {
-		case "Remove":
-			if key != "" {
-				return run("ruser " + addr)
-			}
-			return nil
-		case "Edit...":
-			if key == "" {
-				return nil
-			}
-		case "Add...":
-			levels, addr, info = "", "", ""
-		}
-		f := &formBox{Title: "User", Buttons: []string{"OK", "Cancel"},
-			Lines: []string{"Levels: like 5, or 5,friend; =5 for only level 5.", "Address: a nick, or a mask like *!*@host."},
-			Fields: []*formField{newField("Levels:", levels, false), newField("Address:", addr, false),
-				newField("Info:", info, false)},
-			OnCancel: func(a *App) tea.Cmd { a.openScriptUsers(); return nil }}
-		old := addr
-		f.OnOK = func(a *App, v []string) (tea.Cmd, error) {
-			lv, ad := strings.ReplaceAll(strings.TrimSpace(v[0]), " ", ""), strings.TrimSpace(v[1])
-			if lv == "" || ad == "" || strings.Contains(ad, " ") {
-				return nil, errors.New("give levels and an address")
-			}
-			if old != "" {
-				a.scripts.Command(a.active.Net.Name, "", "ruser "+old, false, a.scriptHost())
-			}
-			return run(strings.TrimSpace("auser " + lv + " " + ad + " " + v[2])), nil
-		}
-		a.openDialog(f)
-		return nil
-	}
-	a.openDialog(l)
-}
-
-// openScriptVars is the global variables, which scripts keep between
-// sessions.
-func (a *App) openScriptVars() {
-	vars := a.scripts.Vars()
-	names := slices.Sorted(maps.Keys(vars))
-	rows := make([]string, len(names))
-	for i, n := range names {
-		rows[i] = padRight("%"+n, 24) + vars[n]
-	}
-	l := &listBox{Title: "Variables", Header: padRight("Variable", 24) + "Value", Rows: rows, Keys: names,
-		Buttons: []string{"Add...", "Edit...", "Remove", "Close"}}
-	l.OnClose = func(a *App) { a.openScripts() }
-	run := func(line string) tea.Cmd {
-		actions, _ := a.scripts.Command(a.active.Net.Name, "", line, false, a.scriptHost())
-		cmd := a.runScript(actions)
-		a.openScriptVars()
-		return cmd
-	}
-	l.OnPress = func(a *App, l *listBox, button, key string) tea.Cmd {
-		name, value := key, vars[key]
-		switch button {
-		case "Remove":
-			if key != "" {
-				return run("unset %" + key)
-			}
-			return nil
-		case "Edit...":
-			if key == "" {
-				return nil
-			}
-		case "Add...":
-			name, value = "", ""
-		}
-		f := &formBox{Title: "Variable", Buttons: []string{"OK", "Cancel"},
-			Fields:   []*formField{newField("Name:", name, false), newField("Value:", value, false)},
-			OnCancel: func(a *App) tea.Cmd { a.openScriptVars(); return nil }}
-		f.OnOK = func(a *App, v []string) (tea.Cmd, error) {
-			n := strings.TrimPrefix(strings.TrimSpace(v[0]), "%")
-			if n == "" || strings.Contains(n, " ") {
-				return nil, errors.New("give a name, without spaces")
-			}
-			return run("set -n %" + n + " " + v[1]), nil
-		}
-		a.openDialog(f)
-		return nil
-	}
-	a.openDialog(l)
-}
-
 // firstStatus is where trout reports on scripts: the bouncer's status
 // window, or the demo's first network's.
 func (a *App) firstStatus() *state.Window {
@@ -1029,9 +835,13 @@ var loadKinds = map[string]string{"-a": "aliases", "-ps": "status", "-pc": "chan
 	"-pq": "query", "-pn": "nicklist", "-pm": "menubar"}
 
 // splitLoad reads a loaded script's entry in the config: a file name, or a
-// /load switch and one, like "-a aliases.mrc".
+// /load switch and one, like "-a aliases.mrc". "-p popups.ini" is the
+// Scripts Editor's popups.ini, all five popups (there's no /load -p).
 func splitLoad(entry string) (as, file string) {
 	if sw, f, ok := strings.Cut(entry, " "); ok && strings.HasPrefix(sw, "-") {
+		if strings.EqualFold(sw, "-p") {
+			return "popups", f
+		}
 		return loadKinds[strings.ToLower(sw)], f
 	}
 	return "", entry
@@ -1046,17 +856,10 @@ func (a *App) loadVarsOrUsers(file string, vars bool) tea.Cmd {
 		return nil
 	}
 	var lines []string
-	for l := range strings.Lines(data) {
-		l = strings.TrimSpace(l)
-		if _, v, ok := strings.Cut(l, "="); ok && strings.HasPrefix(l, "n") {
-			l = v // the ini format's n0=
-		}
-		if l == "" || strings.HasPrefix(l, "[") || strings.HasPrefix(l, ";") {
-			continue
-		}
-		if vars && strings.HasPrefix(l, "%") {
+	for _, l := range mircList(data, vars) {
+		if vars {
 			lines = append(lines, "set -n "+l)
-		} else if !vars && strings.Contains(l, ":") {
+		} else {
 			levels, rest, _ := strings.Cut(l, ":")
 			lines = append(lines, "auser "+levels+" "+rest)
 		}

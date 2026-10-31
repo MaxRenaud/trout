@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -284,48 +285,329 @@ alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	}
 }
 
-// TestScriptsDialog walks Tools > Scripts: loaded scripts with their
-// problems, the Users list and the variables.
-func TestScriptsDialog(t *testing.T) {
+// TestScriptsEditor walks the Scripts Editor: each tab saves its file in
+// mIRC's format and loads it, Cancel forgets, and Users and Variables
+// replace the lists.
+func TestScriptsEditor(t *testing.T) {
 	a := New(Options{Demo: true})
 	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
-	a.scriptMem = map[string]string{"ok.mrc": "alias hi echo -a hi", "odd.mrc": "on *:FOO:#:echo\nalias x echo $window(@x)"}
+	a.scriptMem = map[string]string{}
 	w := a.active
-	for _, s := range []string{"ok.mrc", "odd.mrc"} {
-		a.edit(w).Buf = []rune("/load -rs " + s)
+	paste := func(s string) { a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s), Paste: true}) }
+	press := func(k tea.KeyType) { a.Update(tea.KeyMsg{Type: k}) }
+	editor := func() *scriptEditor {
+		t.Helper()
+		ed, ok := a.dlg.(*scriptEditor)
+		if !ok {
+			t.Fatalf("dialog = %T", a.dlg)
+		}
+		return ed
+	}
+	typed := func(line string) {
+		a.edit(w).Buf = []rune(line)
 		a.submit(w)
 	}
-	a.openScripts()
-	l, ok := a.dlg.(*listBox)
-	if !ok {
-		t.Fatalf("dialog = %T", a.dlg)
-	}
-	if want := []string{padRight("ok.mrc", 32) + "ok", padRight("odd.mrc", 32) + "2 problems"}; !slices.Equal(l.Rows, want) {
-		t.Errorf("rows = %q", l.Rows)
-	}
-	l.Sel = 1
-	l.press(a, "Problems")
-	if d, ok := a.dlg.(*msgBox); !ok || !strings.Contains(strings.Join(d.Lines, "\n"), "on FOO isn't supported") {
-		t.Errorf("problems = %#v", a.dlg)
-	}
-	a.dlg = nil
+	lastLine := func() string { return w.Lines[len(w.Lines)-1].Text }
 
-	a.edit(w).Buf = []rune("/auser 5,friend *!*@h.example")
-	a.submit(w)
-	a.edit(w).Buf = []rune("/set %greeting hi there")
-	a.submit(w)
-	a.openScriptUsers()
-	if l := a.dlg.(*listBox); !slices.Equal(l.Rows, []string{"5,=friend:*!*@h.example"}) {
-		t.Errorf("users = %q", l.Rows)
+	// Aliases: aliases.ini, loaded with -a.
+	a.openScriptsTab(edAliases)
+	ed := editor()
+	if got := ed.title(); got != "Scripts Editor - aliases.ini" {
+		t.Errorf("title = %q", got)
 	}
-	a.openScriptVars()
-	if l := a.dlg.(*listBox); !slices.Equal(l.Rows, []string{padRight("%greeting", 24) + "hi there"}) {
-		t.Errorf("variables = %q", l.Rows)
+	paste("/hi echo -a hello")
+	press(tea.KeyEnter)
+	paste("/hi2 echo -a two")
+	ed.press(a, "OK")
+	if a.dlg != nil {
+		t.Fatalf("still open: %T", a.dlg)
 	}
-	l = a.dlg.(*listBox)
-	l.press(a, "Remove")
-	if l := a.dlg.(*listBox); len(l.Rows) != 0 {
-		t.Errorf("after Remove: %q", l.Rows)
+	if got, want := a.scriptMem["aliases.ini"], "[aliases]\r\nn0=/hi echo -a hello\r\nn1=/hi2 echo -a two\r\n"; got != want {
+		t.Errorf("aliases.ini = %q, want %q", got, want)
+	}
+	if !slices.Contains(a.book().Scripts, "-a aliases.ini") {
+		t.Errorf("scripts = %q", a.book().Scripts)
+	}
+	typed("/hi2")
+	if got := lastLine(); got != "two" {
+		t.Errorf("/hi2: %q", got)
+	}
+
+	// Remote: remote.ini, with a pasted multi-line alias, kept when the
+	// editor opens again; a second save reloads it.
+	a.openScriptsTab(edRemote)
+	ed = editor()
+	paste("alias bye {\r\n  echo -a bye now\r\n}")
+	ed.press(a, "OK")
+	if got := a.scriptMem["remote.ini"]; got != "[script]\r\nn0=alias bye {\r\nn1=  echo -a bye now\r\nn2=}\r\n" {
+		t.Errorf("remote.ini = %q", got)
+	}
+	typed("/bye")
+	if got := lastLine(); got != "bye now" {
+		t.Errorf("/bye: %q", got)
+	}
+	a.openScripts()
+	ed = editor()
+	if ed.tab != edRemote || ed.doc().text() != "alias bye {\n  echo -a bye now\n}" {
+		t.Errorf("reopened on %v: %q", ed.tab, ed.doc().text())
+	}
+	a.key(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	press(tea.KeyEnter)
+	paste("alias hey echo -a hey")
+	a.key(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if a.dlg != ed {
+		t.Errorf("Save closed the editor: %T", a.dlg)
+	}
+	typed("/hey")
+	if got := lastLine(); got != "hey" {
+		t.Errorf("/hey: %q", got)
+	}
+	ed.press(a, "Cancel")
+
+	// Popups: each View is one of popups.ini's sections.
+	a.openScriptsTab(edPopups)
+	ed = editor()
+	if got := ed.title(); got != "Scripts Editor - Status" {
+		t.Errorf("title = %q", got)
+	}
+	items, _, _ := ed.stripMenu(a, 2) // View
+	var labels []string
+	for _, it := range items {
+		labels = append(labels, it.Label)
+	}
+	if want := []string{"1 Status", "2 Channel", "3 Query", "4 Nickname List", "5 Menu Bar"}; !slices.Equal(labels, want) {
+		t.Errorf("View = %q", labels)
+	}
+	items[3].Action(a)
+	paste("Info:/whois $$1")
+	ed.press(a, "OK")
+	if got := a.scriptMem["popups.ini"]; got != "[lpopup]\r\nn0=Info:/whois $$1\r\n" {
+		t.Errorf("popups.ini = %q", got)
+	}
+	if !slices.Contains(a.book().Scripts, "-p popups.ini") {
+		t.Errorf("scripts = %q", a.book().Scripts)
+	}
+	if got := a.scriptMenu("nicklist", w, []string{"bob"}); len(got) != 1 || got[0].Label != "Info" {
+		t.Errorf("nicklist popup = %+v", got)
+	}
+
+	// Users and Variables replace the lists; a line that isn't right
+	// keeps the editor open.
+	typed("/auser 5 old!*@old.example")
+	a.openScriptsTab(edUsers)
+	ed = editor()
+	a.key(tea.KeyMsg{Type: tea.KeyCtrlA})
+	paste("5,friend:*!*@h.example")
+	ed.setTab(a, edVars)
+	paste("greeting hi")
+	ed.press(a, "OK")
+	if m, ok := a.dlg.(*msgBox); !ok || !strings.Contains(strings.Join(m.Lines, "\n"), "line 1: not %name value") {
+		t.Fatalf("dialog = %#v", a.dlg)
+	}
+	a.dlg.key(a, "enter")
+	ed = editor()
+	a.key(tea.KeyMsg{Type: tea.KeyHome})
+	paste("%")
+	ed.press(a, "OK")
+	if got := a.scripts.Users(); !slices.Equal(got, []string{"5,friend:*!*@h.example"}) {
+		t.Errorf("users = %q", got)
+	}
+	if got := a.scriptMem["users.ini"]; got != "[users]\r\nn0=5,friend:*!*@h.example\r\n" {
+		t.Errorf("users.ini = %q", got)
+	}
+	if got := a.scripts.Vars(); !maps.Equal(got, map[string]string{"greeting": "hi"}) {
+		t.Errorf("vars = %v", got)
+	}
+
+	// Cancel asks to save first (Options > Ask to Save Files): its
+	// Cancel goes back, No forgets. Undo and Redo.
+	a.openScriptsTab(edRemote)
+	ed = editor()
+	paste("junk")
+	ed.press(a, "Cancel")
+	if m, ok := a.dlg.(*msgBox); !ok || m.Lines[0] != "Save the changes to your scripts?" {
+		t.Fatalf("Cancel: %#v", a.dlg)
+	}
+	a.dlg.key(a, "esc") // its Cancel: back to the editor
+	if a.dlg != ed {
+		t.Fatalf("Cancel, Cancel: %T", a.dlg)
+	}
+	a.key(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	if strings.Contains(ed.doc().text(), "junk") {
+		t.Errorf("undo: %q", ed.doc().text())
+	}
+	a.key(tea.KeyMsg{Type: tea.KeyCtrlY})
+	if !strings.Contains(ed.doc().text(), "junk") {
+		t.Errorf("redo: %q", ed.doc().text())
+	}
+	press(tea.KeyEscape)
+	a.dlg.key(a, "right")
+	a.dlg.key(a, "enter") // No
+	if a.dlg != nil || strings.Contains(a.scriptMem["remote.ini"], "junk") {
+		t.Errorf("No: %T, %q", a.dlg, a.scriptMem["remote.ini"])
+	}
+	// Yes saves; with the option off, Cancel just forgets.
+	a.openScriptsTab(edRemote)
+	paste("alias yes echo -a yes")
+	ed = editor()
+	ed.press(a, "Cancel")
+	a.dlg.key(a, "enter") // Yes
+	if a.dlg != nil || !strings.Contains(a.scriptMem["remote.ini"], "alias yes") {
+		t.Errorf("Yes: %T, %q", a.dlg, a.scriptMem["remote.ini"])
+	}
+	a.book().ScriptOpts.NoAskSave = true
+	a.openScriptsTab(edRemote)
+	paste("junk")
+	editor().press(a, "Cancel")
+	if a.dlg != nil || strings.Contains(a.scriptMem["remote.ini"], "junk") {
+		t.Errorf("Cancel without asking: %T, %q", a.dlg, a.scriptMem["remote.ini"])
+	}
+}
+
+// TestScriptsEditorFiles: File > Load... and New on the Remote tab, the
+// ✓ button, and a loaded script's initialization, which waits until the
+// editor has closed, like mIRC's.
+func TestScriptsEditorFiles(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	a.scriptMem = map[string]string{"x.mrc": "on *:LOAD:set %loaded 1\nalias x echo -a x", "odd.mrc": "on *:FOO:#:echo"}
+	a.openScriptsTab(edRemote)
+	ed := a.dlg.(*scriptEditor)
+	ed.loadPrompt(a)
+	f := a.dlg.(*formBox)
+	f.Fields[0].Edit = state.EditBox{Buf: []rune("x.mrc")}
+	a.dlg.key(a, "enter")
+	if a.dlg != ed || ed.doc().file != "x.mrc" || !ed.doc().load {
+		t.Fatalf("after Load: %T, %+v", a.dlg, ed.doc())
+	}
+	if slices.Contains(a.book().Scripts, "x.mrc") {
+		t.Error("loaded before OK")
+	}
+	ed.newDoc(a)
+	if got := ed.doc().file; got != "script1.mrc" {
+		t.Errorf("New: %q", got)
+	}
+	ed.typed(a, []rune("alias new1 echo -a new"))
+	ed.press(a, "OK")
+	if want := []string{"x.mrc", "script1.mrc"}; !slices.Equal(a.book().Scripts, want) {
+		t.Errorf("scripts = %q, want %q", a.book().Scripts, want)
+	}
+	if m, ok := a.dlg.(*msgBox); !ok || m.Title != "Script Warning" {
+		t.Fatalf("no Script Warning: %T", a.dlg)
+	}
+	a.dlg.key(a, "enter")
+	if got := a.scripts.Vars()["loaded"]; got != "1" {
+		t.Errorf("on LOAD didn't run: %q", got)
+	}
+	if got := a.scriptMem["script1.mrc"]; got != "alias new1 echo -a new\n" {
+		t.Errorf("script1.mrc = %q", got)
+	}
+
+	// The check button shows what trout can't run.
+	a.openScriptsTab(edRemote)
+	ed = a.dlg.(*scriptEditor)
+	ed.loadPrompt(a)
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("odd.mrc")}
+	a.dlg.key(a, "enter")
+	ed.check(a)
+	if m, ok := a.dlg.(*msgBox); !ok || !strings.Contains(strings.Join(m.Lines, "\n"), "on FOO isn't supported") {
+		t.Errorf("check: %#v", a.dlg)
+	}
+	a.dlg.key(a, "enter")
+
+	// Save As loads the script under its new name instead.
+	ed.cur[edRemote] = ed.findDoc(edRemote, "script1.mrc")
+	ed.saveAsPrompt(a)
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("renamed.mrc")}
+	a.dlg.key(a, "enter")
+	if ed.doc().file != "renamed.mrc" || ed.title() != "Scripts Editor - renamed.mrc" {
+		t.Errorf("Save As: %q", ed.doc().file)
+	}
+
+	// File > Unload takes a script out on OK.
+	ed.cur[edRemote] = ed.findDoc(edRemote, "x.mrc")
+	ed.unload(a, ed.doc())
+	ed.press(a, "OK")
+	if want := []string{"renamed.mrc", "odd.mrc"}; !slices.Equal(a.book().Scripts, want) {
+		t.Errorf("scripts = %q, want %q", a.book().Scripts, want)
+	}
+	if got := a.scriptMem["renamed.mrc"]; got != "alias new1 echo -a new\n" {
+		t.Errorf("renamed.mrc = %q", got)
+	}
+	if _, ok := a.scripts.Alias(a.active.Net.Name, "", "new1", "", a.scriptHost()); !ok {
+		t.Error("new1 went with script1.mrc")
+	}
+
+	// popups.ini is loaded when a menu has items, whichever changed first.
+	a.openScriptsTab(edPopups)
+	ed = a.dlg.(*scriptEditor)
+	ed.typed(a, []rune("x"))
+	ed.key(a, "backspace") // Status: changed, and empty
+	ed.cur[edPopups] = ed.docs[1]
+	ed.typed(a, []rune("Hello:/echo -a hello"))
+	ed.press(a, "OK")
+	if !slices.Contains(a.book().Scripts, "-p popups.ini") {
+		t.Errorf("popups.ini not loaded: %q", a.book().Scripts)
+	}
+}
+
+// TestScriptsEditorKeys: the editor's menus open over it, the mouse puts
+// the caret, and text is selected, copied and found.
+func TestScriptsEditorKeys(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a.scriptMem = map[string]string{"remote.ini": "[script]\r\nn0=alias one echo -a 1\r\nn1=alias two echo -a 2\r\n"}
+	a.openScriptsTab(edRemote)
+	ed := a.dlg.(*scriptEditor)
+	a.View()
+
+	// Alt+E is the Edit menu, over the editor; Esc closes only the menu.
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e"), Alt: true})
+	if len(a.menus) != 1 || !a.dlgMenu || a.menus[0].Items[0].Label != "Undo" {
+		t.Fatalf("menus = %+v", a.menus)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if a.menuBar != 2 || a.menus[0].Items[0].Label != "1 remote.ini" {
+		t.Errorf("Right: menu %d, %+v", a.menuBar, a.menus[0].Items)
+	}
+	if !strings.Contains(a.View(), "remote.ini") {
+		t.Error("menu not drawn")
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if len(a.menus) != 0 || a.dlg != ed {
+		t.Fatalf("Esc: menus %d, %T", len(a.menus), a.dlg)
+	}
+
+	// A click on line 2, column 7 puts the caret there.
+	a.View()
+	a.Update(tea.MouseMsg{X: ed.tx + 6, Y: ed.ty + 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	a.Update(tea.MouseMsg{X: ed.tx + 6, Y: ed.ty + 1, Action: tea.MouseActionRelease})
+	d := ed.doc()
+	if d.row != 1 || d.col != 6 {
+		t.Errorf("caret at %d:%d", d.row, d.col)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	a.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	a.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	if got := d.selText(); got != "two" {
+		t.Errorf("selected %q", got)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if got := string(d.lines[1]); got != "alias x echo -a 2" {
+		t.Errorf("typed over the selection: %q", got)
+	}
+
+	// Find goes round to the top.
+	ed.find = "ONE"
+	ed.findNext(a)
+	if d.row != 0 || d.selText() != "one" {
+		t.Errorf("find: %d %q", d.row, d.selText())
+	}
+	if got := ed.title(); got != "Scripts Editor - remote.ini" {
+		t.Errorf("title = %q", got)
+	}
+	if !strings.Contains(a.View(), "File: "+filepath.Join("scripts", "remote.ini")) {
+		t.Error("no status line")
 	}
 }
 
@@ -422,17 +704,254 @@ on ^*:OP:#:echo $chan opped $opnick | haltdef`}
 	}
 }
 
-// TestScriptsLoadButton: Tools > Scripts > Load... loads the script.
-func TestScriptsLoadButton(t *testing.T) {
+// TestScriptsEditorMenus walks the menus mIRC's editor has: Index's
+// submenus, Listen, the Options, Check Brackets, More Files, Rename,
+// Delete, Order, Monitor File Changes and Help.
+func TestScriptsEditorMenus(t *testing.T) {
 	a := New(Options{Demo: true})
 	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
-	a.scriptMem = map[string]string{"x.mrc": "alias x echo -a x"}
-	a.openScripts()
-	a.dlg.(*listBox).press(a, "Load...")
-	f := a.dlg.(*formBox)
-	f.Fields[0].Edit = state.EditBox{Buf: []rune("x.mrc")}
+	a.scriptMem = map[string]string{
+		"remote.ini": "[script]\r\nn0=alias envtest echo -a from an alias\r\nn1=on *:TEXT:!echotest:#:envtest\r\nn2=on *:JOIN:#:{\r\nn3=  echo -a hi\r\nn4=}\r\n",
+		"b.mrc":      "on *:LOAD:set %b loaded\nalias b echo -a b",
+	}
+	w := a.active
+	for _, e := range []string{"remote.ini", "b.mrc"} {
+		a.loadScript(e, true)
+		a.dlg = nil
+	}
+	a.openScriptsTab(edRemote)
+	ed := a.dlg.(*scriptEditor)
+	menu := func(name string) []MenuItem {
+		items, _, _ := ed.stripMenu(a, slices.Index(edMenuNames[:], name))
+		return items
+	}
+	labels := func(items []MenuItem) []string {
+		var out []string
+		for _, it := range items {
+			out = append(out, it.Label)
+		}
+		return out
+	}
+
+	// Index: a submenu for each kind of section; choosing goes there.
+	idx := menu("Index")
+	if got := labels(idx); !slices.Equal(got, []string{"alias", "on"}) {
+		t.Fatalf("Index = %q", got)
+	}
+	if got := labels(idx[1].Sub); !slices.Equal(got, []string{"*:TEXT:!echotest:#:envtest", "*:JOIN:#:"}) {
+		t.Errorf("Index > on = %q", got)
+	}
+	idx[1].Sub[1].Action(a)
+	if ed.doc().row != 2 {
+		t.Errorf("Index went to line %d", ed.doc().row+1)
+	}
+
+	// Check Brackets finds the { that's never closed.
+	ed.doc().moveTo(2, 13, false)
+	ed.typed(a, []rune(" {"))
+	ed.key(a, "ctrl+h")
+	if m, ok := a.dlg.(*msgBox); !ok || m.Lines[0] != "The brackets don't match: line 3." {
+		t.Fatalf("Check Brackets: %#v", a.dlg)
+	}
 	a.dlg.key(a, "enter")
-	if !slices.Contains(a.book().Scripts, "x.mrc") {
-		t.Errorf("scripts = %q", a.book().Scripts)
+	if ed.doc().selText() != "on *:JOIN:#:{ {" {
+		t.Errorf("selected %q", ed.doc().selText())
+	}
+	ed.key(a, "ctrl+z")
+
+	// Find Selection: Find starts with what's selected.
+	ed.doc().moveTo(1, 3, false)
+	ed.doc().moveTo(1, 9, true)
+	ed.key(a, "ctrl+f")
+	if f := a.dlg.(*formBox); string(f.Fields[0].Edit.Buf) != "*:TEXT" {
+		t.Errorf("Find: %q", string(f.Fields[0].Edit.Buf))
+	}
+	a.dlg.key(a, "esc")
+
+	// Listen: Events off stops on TEXT; /events on turns it back on.
+	menu("Listen")[1].Action(a)
+	if !a.book().ScriptOpts.EventsOff || slices.Contains(labels(menu("Listen")), "") {
+		t.Errorf("Events: %+v", a.book().ScriptOpts)
+	}
+	if menu("Listen")[1].Check {
+		t.Error("Events still checked")
+	}
+	a.dlg = nil
+	typed := func(line string) {
+		a.edit(w).Buf = []rune(line)
+		a.submit(w)
+	}
+	typed("/events on")
+	typed("/raw off")
+	if o := a.book().ScriptOpts; o.EventsOff || !o.RawOff {
+		t.Errorf("/events on, /raw off: %+v", o)
+	}
+	if got := w.Lines[len(w.Lines)-1].Text; got != "* Raw is off" {
+		t.Errorf("/raw off said %q", got)
+	}
+	typed("/raw on")
+	typed("//echo -a $remote")
+	if got := w.Lines[len(w.Lines)-1].Text; got != "7" {
+		t.Errorf("$remote = %q", got)
+	}
+
+	// Options: Line Numbers off, kept in the config.
+	a.openScriptsTab(edRemote)
+	ed = a.dlg.(*scriptEditor)
+	opts := menu("Options")
+	if got := labels(opts); !slices.Equal(got, []string{"Initialization Warning", "Ask to Save Files", "Monitor File Changes",
+		"Backup File on Save", "Find Selection", "Line Numbers", "", "Identifier Warning", "", "Default Level: 1"}) {
+		t.Errorf("Options = %q", got)
+	}
+	opts[5].Action(a)
+	if !a.book().ScriptOpts.NoLineNumbers || menu("Options")[5].Check {
+		t.Error("Line Numbers didn't turn off")
+	}
+	opts[7].Action(a) // Identifier Warning
+	a.dlg = nil
+	a.scriptMem["w.mrc"] = "alias w echo -a $nosuchthing"
+	typed("/load -rs w.mrc")
+	typed("/w")
+	if st := a.firstStatus(); !strings.Contains(st.Lines[len(st.Lines)-1].Text, "No such identifier: $nosuchthing") {
+		t.Errorf("Identifier Warning: %q", st.Lines[len(st.Lines)-1].Text) // errors go to status, like mIRC's
+	}
+	typed("/unload -rs w.mrc")
+
+	// Rename: the file and the loaded script, now; Order puts it first.
+	a.openScriptsTab(edRemote)
+	ed = a.dlg.(*scriptEditor)
+	ed.cur[edRemote] = ed.findDoc(edRemote, "b.mrc")
+	ed.renamePrompt(a)
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("bee.mrc")}
+	a.dlg.key(a, "enter")
+	if _, ok := a.scriptMem["b.mrc"]; ok || a.scriptMem["bee.mrc"] == "" || !slices.Equal(a.book().Scripts, []string{"remote.ini", "bee.mrc"}) {
+		t.Errorf("Rename: %q, files %v", a.book().Scripts, slices.Sorted(maps.Keys(a.scriptMem)))
+	}
+	ed.openOrder(a)
+	l := a.dlg.(*listBox)
+	l.Sel = 1
+	l.press(a, "Move Up")
+	if want := []string{"bee.mrc", "remote.ini"}; !slices.Equal(a.book().Scripts, want) || !slices.Equal(a.scripts.Scripts(), want) {
+		t.Errorf("Order: %q, engine %q", a.book().Scripts, a.scripts.Scripts())
+	}
+	l.press(a, "Close")
+	if a.dlg != ed {
+		t.Fatalf("Order closed to %T", a.dlg)
+	}
+
+	// More Files picks one of the tab's files.
+	ed.moreFiles(a)
+	l = a.dlg.(*listBox)
+	l.Sel = slices.Index(l.Rows, "remote.ini")
+	l.press(a, "Open")
+	if a.dlg != ed || ed.doc().file != "remote.ini" {
+		t.Errorf("More Files: %T %q", a.dlg, ed.doc().file)
+	}
+
+	// Monitor File Changes: a file changed elsewhere is read again when
+	// the terminal has the focus back.
+	a.scriptMem["remote.ini"] = "[script]\r\nn0=alias changed echo -a changed\r\n"
+	a.Update(tea.FocusMsg{})
+	if got := ed.doc().text(); got != "alias changed echo -a changed" {
+		t.Errorf("after the change: %q", got)
+	}
+
+	// Backup File on Save keeps the old file.
+	a.book().ScriptOpts.Backup = true
+	ed.typed(a, []rune("; "))
+	ed.key(a, "ctrl+s")
+	if a.scriptMem["remote.ini.bak"] != "[script]\r\nn0=alias changed echo -a changed\r\n" {
+		t.Errorf("backup = %q", a.scriptMem["remote.ini.bak"])
+	}
+
+	// Delete unloads it and deletes the file.
+	ed.cur[edRemote] = ed.findDoc(edRemote, "bee.mrc")
+	ed.deletePrompt(a)
+	a.dlg.key(a, "enter")
+	if _, ok := a.scriptMem["bee.mrc"]; ok || slices.Contains(a.book().Scripts, "bee.mrc") || ed.findDoc(edRemote, "bee.mrc") != nil {
+		t.Errorf("Delete: %q", a.book().Scripts)
+	}
+
+	// View on Users is the Remote tab's files; the title says Users.
+	ed.setTab(a, edUsers)
+	if ed.title() != "Scripts Editor - Users" || !slices.Equal(labels(menu("View")), []string{"1 remote.ini"}) {
+		t.Errorf("Users: %q, View %q", ed.title(), labels(menu("View")))
+	}
+
+	// Help: Search says what trout does with a name.
+	ed.helpTopic(a, "Search...")
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("$window")}
+	a.dlg.key(a, "enter")
+	if m, ok := a.dlg.(*msgBox); !ok || !strings.Contains(m.Lines[0], "isn't supported yet") {
+		t.Errorf("Search: %#v", a.dlg)
+	}
+	a.dlg.key(a, "enter")
+	ed.helpTopic(a, "Identifiers")
+	if l, ok := a.dlg.(*listBox); !ok || !slices.Contains(l.Rows, "$nick") {
+		t.Errorf("Identifiers: %#v", a.dlg)
+	}
+	a.dlg.key(a, "esc")
+	if a.dlg != ed {
+		t.Errorf("Identifiers closed to %T", a.dlg)
+	}
+
+	// Initialization Warning off: a new script's on LOAD runs without
+	// asking.
+	a.dlg = nil
+	a.book().ScriptOpts.NoInitWarning = true
+	a.scriptMem["c.mrc"] = "on *:LOAD:set %c loaded"
+	typed("/load -rs c.mrc")
+	if a.dlg != nil || a.scripts.Vars()["c"] != "loaded" {
+		t.Errorf("no warning: %T, %%c = %q", a.dlg, a.scripts.Vars()["c"])
+	}
+}
+
+// TestMenuClickStaysOpen: a click on a menubar, the main one or the
+// Scripts Editor's, leaves its menu open (letting go doesn't close it);
+// dragging to an item and letting go chooses it.
+func TestMenuClickStaysOpen(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	click := func(x, y int) {
+		a.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+		a.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	}
+	find := func(kind HitKind, s string, i int) Region {
+		t.Helper()
+		a.View()
+		for _, r := range a.regions {
+			if r.Kind == kind && r.S == s && r.I == i {
+				return r
+			}
+		}
+		t.Fatalf("no region %v %q %d", kind, s, i)
+		return Region{}
+	}
+	r := find(HitMenuBar, "", 0)
+	click(r.X+1, r.Y)
+	if len(a.menus) != 1 {
+		t.Fatalf("main File menu: %d menus open", len(a.menus))
+	}
+	a.closeMenus()
+
+	a.openScriptsTab(edRemote)
+	r = find(HitDlg, "strip", 5) // Options
+	click(r.X+1, r.Y)
+	if len(a.menus) != 1 || !a.dlgMenu {
+		t.Fatalf("Options menu: %d menus open", len(a.menus))
+	}
+	m := a.menus[0]
+	click(m.X+3, m.Y+6) // Line Numbers
+	if len(a.menus) != 0 || !a.book().ScriptOpts.NoLineNumbers {
+		t.Errorf("click on Line Numbers: menus %d, off %v", len(a.menus), a.book().ScriptOpts.NoLineNumbers)
+	}
+
+	// Press on the bar, drag to the item, let go.
+	a.Update(tea.MouseMsg{X: r.X + 1, Y: r.Y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m = a.menus[0]
+	a.Update(tea.MouseMsg{X: m.X + 3, Y: m.Y + 6, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	a.Update(tea.MouseMsg{X: m.X + 3, Y: m.Y + 6, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	if len(a.menus) != 0 || a.book().ScriptOpts.NoLineNumbers {
+		t.Errorf("drag to Line Numbers: menus %d, off %v", len(a.menus), a.book().ScriptOpts.NoLineNumbers)
 	}
 }

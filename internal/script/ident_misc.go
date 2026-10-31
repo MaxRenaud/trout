@@ -25,6 +25,9 @@ import (
 // hashes and encodings, from its Text and Number, File and Other
 // Identifiers sections.
 var miscIdents = map[string]builtin{
+	// $remote is which events are listened to, as bits: 1 ctcp events, 2
+	// named events, 4 raw events (/ctcps, /events, /raw).
+	"remote": func(r *run, _ *frame, _ *call) (string, error) { return itoa(7 &^ r.e.deaf), nil },
 	// $var(%name, N) is the Nth variable matching name (a wildcard), local
 	// ones first; N = 0 is how many. .value is its value, .local whether
 	// it's local, .secs the seconds until -uN unsets it.

@@ -178,20 +178,35 @@ func TestFrames(t *testing.T) {
 			a.openOptionKey()
 		}},
 		{"channel modes", func() { a.openChannelModes(a.nets[0].Wins[1]) }},
-		{"scripts", func() {
-			a.scriptMem = map[string]string{"seen.mrc": "alias seen echo -a $1", "odd.mrc": "on *:FOO:#:echo"}
+		{"scripts editor", func() {
+			a.scriptMem = map[string]string{"remote.ini": "[script]\r\nn0=on *:JOIN:#:{\r\nn1=  if ($nick != $me) msg $chan welcome $nick\r\nn2=}\r\n",
+				"seen.mrc": "alias seen echo -a $1\non *:FOO:#:echo"}
+			a.loadScript("remote.ini", true)
 			a.loadScript("seen.mrc", true)
-			a.loadScript("odd.mrc", true)
 			a.dlg = nil
-			a.openScripts()
+			a.openScriptsTab(edRemote)
 		}},
-		{"script users", func() {
+		{"scripts editor popups", func() {
+			a.scriptMem = map[string]string{"popups.ini": "[lpopup]\r\nn0=Whois:/whois $$1\r\nn1=-\r\nn2=Slap:/me slaps $$1 around a bit with a large trout\r\n"}
+			a.openScriptsTab(edPopups)
+			ed := a.dlg.(*scriptEditor)
+			ed.cur[edPopups] = ed.docs[3] // Nickname List
+		}},
+		{"scripts editor file menu", func() {
+			a.openScriptsTab(edAliases)
+			a.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f"), Alt: true})
+		}},
+		{"scripts editor options menu", func() {
+			a.openScriptsTab(edRemote)
+			a.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o"), Alt: true})
+		}},
+		{"scripts editor users", func() {
 			a.scripts.Command(a.nets[0].Name, "", "auser 10,friend boss!*@boss.example the boss", false, a.scriptHost())
-			a.openScriptUsers()
+			a.openScriptsTab(edUsers)
 		}},
-		{"script variables", func() {
+		{"scripts editor variables", func() {
 			a.scripts.Command(a.nets[0].Name, "", "set %kicks 3", false, a.scriptHost())
-			a.openScriptVars()
+			a.openScriptsTab(edVars)
 		}},
 		{"send file", func() { a.openSendFile("") }},
 		{"nick info", func() { a.openNickInfo(a.nets[0], "bob") }},

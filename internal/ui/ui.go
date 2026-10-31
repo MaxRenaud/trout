@@ -107,9 +107,9 @@ func (a *App) View() string {
 		x = a.treeW + 1
 	}
 	a.drawWindow(c, a.active, x, y, a.w-x, a.h-y)
-	a.drawMenus(c)
 	a.drawPalette(c)
 	a.drawModal(c)
+	a.drawMenus(c) // over the dialog: the Scripts Editor has its own menubar
 	return c.String()
 }
 
@@ -133,7 +133,7 @@ func (a *App) drawMenuBar(c *Canvas, y int) {
 	x := 1
 	for i, name := range menuBarNames {
 		st := face
-		if a.menuBar == i && len(a.menus) > 0 {
+		if a.menuBar == i && len(a.menus) > 0 && !a.dlgMenu {
 			st = Style{FG: t.MenuSelText, BG: t.MenuSel}
 		}
 		w := len(name) + 2

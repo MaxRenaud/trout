@@ -1,6 +1,7 @@
 package script
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -341,4 +342,148 @@ func echoes(actions []Action) []string {
 		}
 	}
 	return out
+}
+
+// TestPopupsIni: a popups.ini, mIRC's file for all five popups, loads each
+// section as its popup; Check finds problems without loading anything.
+func TestPopupsIni(t *testing.T) {
+	e := New(Options{})
+	src := "[mpopup]\r\nn0=Server\r\nn1=.Lusers:/lusers\r\n[lpopup]\r\nn0=Whois:/whois $$1\r\n[xpopup]\r\nn0=Odd:/echo odd\r\n"
+	if ps := e.Check("popups.ini", src, "popups"); len(ps) != 1 || ps[0].Line != 6 {
+		t.Errorf("Check: %v", ps)
+	}
+	if items, _ := e.Popups("status", "TestNet", "", nil, evalHost()); len(items) != 0 {
+		t.Errorf("Check loaded something: %+v", items)
+	}
+	e.LoadAs("popups.ini", src, "popups")
+	status, _ := e.Popups("status", "TestNet", "", nil, evalHost())
+	if len(status) != 1 || status[0].Label != "Server" || len(status[0].Items) != 1 || status[0].Items[0].Label != "Lusers" {
+		t.Errorf("status = %+v", status)
+	}
+	nicks, _ := e.Popups("nicklist", "TestNet", "#trout", []string{"bob"}, evalHost())
+	if len(nicks) != 1 || nicks[0].Label != "Whois" {
+		t.Errorf("nicklist = %+v", nicks)
+	}
+	if chans, _ := e.Popups("channel", "TestNet", "#trout", nil, evalHost()); len(chans) != 0 {
+		t.Errorf("channel = %+v", chans)
+	}
+}
+
+// TestSetVars: the Variables tab replaces the variables, but leaves the
+// ones that go when trout quits.
+func TestSetVars(t *testing.T) {
+	e := New(Options{})
+	e.Restore(map[string]string{"a": "1", "b": "2"})
+	load(t, e, "t.mrc", "alias t set -e %sess 1")
+	e.Command("TestNet", "", "t", false, evalHost())
+	e.SetVars(map[string]string{"b": "3", "c": "4"})
+	if got := e.Vars(); !maps.Equal(got, map[string]string{"b": "3", "c": "4"}) {
+		t.Errorf("vars = %v", got)
+	}
+	if _, ok := e.vars["sess"]; !ok {
+		t.Error("the -e variable went")
+	}
+}
+
+// TestIniLineNumbers: an ini-format script's lines are numbered as the
+// Scripts Editor shows them, n0= being line 1, like mIRC's.
+func TestIniLineNumbers(t *testing.T) {
+	e := New(Options{})
+	ps := e.Check("remote.ini", "[script]\r\nn0=alias x echo -a x\r\nn1=on *:FOO:#:echo\r\n", "")
+	if len(ps) != 1 || ps[0].Line != 2 {
+		t.Errorf("problems = %v", ps)
+	}
+}
+
+// TestListen: /ctcps, /events and /raw off stop their kind of event, and
+// $remote says which are on.
+func TestListen(t *testing.T) {
+	e := New(Options{})
+	load(t, e, "l.mrc", "on *:TEXT:*:#:echo -a text\nctcp *:PING:*:echo -a ping\nraw 001:*:echo -a raw\nalias listening return $remote")
+	fired := func(ev Event) bool {
+		actions, _ := e.Dispatch(ev, evalHost())
+		return slices.ContainsFunc(actions, func(a Action) bool { return a.Echo != nil })
+	}
+	text := Event{Kind: "TEXT", Network: "TestNet", Nick: "bob", Chan: "#trout", Text: "hi"}
+	ping := Event{Kind: "CTCP", Network: "TestNet", Nick: "bob", Text: "PING 1"}
+	raw := Event{Kind: "RAW", Network: "TestNet", Command: "001", Params: []string{"me", "welcome"}}
+	remote := func() string {
+		actions, _ := e.Command("TestNet", "", "echo -a $listening", true, evalHost())
+		return actions[0].Echo.Text
+	}
+	if !fired(text) || !fired(ping) || !fired(raw) || remote() != "7" {
+		t.Fatalf("not all on to start with: text %v ping %v raw %v $remote %s", fired(text), fired(ping), fired(raw), remote())
+	}
+	e.Listen(true, false, true)
+	if fired(text) || !fired(ping) || !fired(raw) || remote() != "5" {
+		t.Errorf("events off: text %v ping %v raw %v $remote %s", fired(text), fired(ping), fired(raw), remote())
+	}
+	e.Listen(false, true, false)
+	if !fired(text) || fired(ping) || fired(raw) || remote() != "2" {
+		t.Errorf("ctcps and raw off: text %v ping %v raw %v $remote %s", fired(text), fired(ping), fired(raw), remote())
+	}
+}
+
+// TestIdentifierWarning: with it on, an identifier that doesn't exist
+// stops the script with an error instead of being $null.
+func TestIdentifierWarning(t *testing.T) {
+	e := New(Options{})
+	load(t, e, "w.mrc", "alias w echo -a x $+ $nosuch $+ y")
+	echo := func() string {
+		actions, _ := e.Command("TestNet", "", "w", false, evalHost())
+		return actions[0].Echo.Text
+	}
+	if got := echo(); got != "xy" {
+		t.Errorf("off: %q", got)
+	}
+	e.IdentifierWarning(true)
+	if got := echo(); !strings.Contains(got, "No such identifier: $nosuch") {
+		t.Errorf("on: %q", got)
+	}
+	// Typed in the editbox, it stays as typed, warning or not (checked in
+	// mIRC 7.86); the aliases the line calls are scripts.
+	for _, warn := range []bool{true, false} {
+		e.IdentifierWarning(warn)
+		actions, _ := e.Command("TestNet", "", "echo -a x $nosuch y $nosuch(1,2) $len(ab)", true, evalHost())
+		if got := actions[0].Echo.Text; got != "x $nosuch y $nosuch(1,2) 2" {
+			t.Errorf("typed, warning %v: %q", warn, got)
+		}
+	}
+}
+
+// TestRenameOrder: File > Rename and Order in the Scripts Editor.
+func TestRenameOrder(t *testing.T) {
+	e := New(Options{})
+	for _, n := range []string{"a.mrc", "b.mrc", "c.mrc"} {
+		load(t, e, n, "on *:TEXT:*:#:echo -a "+n)
+	}
+	e.Rename("b.mrc", "bee.mrc")
+	e.Order([]string{"c.mrc", "bee.mrc"})
+	if got, want := e.Scripts(), []string{"c.mrc", "bee.mrc", "a.mrc"}; !slices.Equal(got, want) {
+		t.Errorf("scripts = %q, want %q", got, want)
+	}
+	actions, _ := e.Dispatch(Event{Kind: "TEXT", Network: "TestNet", Nick: "bob", Chan: "#trout", Text: "x"}, evalHost())
+	if len(actions) != 3 || actions[0].Echo.Text != "c.mrc" {
+		t.Errorf("actions = %+v", actions)
+	}
+}
+
+// TestLookup: Help > Search in the Scripts Editor.
+func TestLookup(t *testing.T) {
+	for name, want := range map[string]string{
+		"$nick":    "$nick works in trout.",
+		"$window":  "isn't supported yet",
+		"$dll":     "DLLs aren't supported",
+		"$frobble": "isn't an identifier",
+		"/hadd":    "a scripting command",
+		"aline":    "custom windows",
+		"msg":      "as if you typed it",
+	} {
+		if got := Lookup(name); !strings.Contains(got, want) {
+			t.Errorf("%s: %q", name, got)
+		}
+	}
+	if !slices.Contains(Identifiers(), "nick") || !slices.Contains(Commands(), "hadd") {
+		t.Error("lists")
+	}
 }

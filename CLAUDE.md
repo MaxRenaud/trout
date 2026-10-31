@@ -52,7 +52,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   options and Window > Order; `editwin.go` the multi-line and second editboxes;
   `proxy.go` Options > Connect > Proxy; `form.go` is the text-field dialog they and Kick
   (why) use; `phone.go` Tools > Connect a Phone (a QR code for Goguma); `scripts.go`
-  scripts: the engine's hooks, its Host, `/load`, and Tools > Scripts.
+  scripts: the engine's hooks, its Host and `/load`; `scripteditor.go` the Scripts Editor
+  (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files).
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.

@@ -39,6 +39,7 @@ type frame struct {
 	params  []string
 	locals  map[string]string
 	typed   bool   // run from the editbox or a popup, not an event: /echo's default window
+	editbox bool   // the line typed in the editbox itself (not the aliases it calls)
 	ulevel  string // $ulevel: the user's level that let them trigger the event
 	clevel  string // $clevel: the event's level
 	menu    string // the popup being built or run: $menu
@@ -57,6 +58,7 @@ var (
 	errContinue = errors.New("continue")
 	errStop     = errors.New("stop") // $$1 was empty: end quietly
 	errNull     = errors.New("null") // an identifier's arguments make it $null
+	errNoIdent  = errors.New("no such identifier")
 )
 
 type returnErr struct{ value string }
@@ -795,17 +797,65 @@ func cutPrefixFold(s, prefix string) (string, bool) {
 // engineCommand reports whether the engine runs a command itself, rather
 // than handing it to the client.
 func engineCommand(name string) bool {
-	switch strings.ToLower(strings.TrimLeft(name, "/.!")) {
-	case "set", "var", "unset", "unsetall", "inc", "dec", "halt", "haltdef", "return", "break",
-		"continue", "goto", "noop", "echo", "enable", "disable", "tokenize", "hmake", "hfree",
-		"hadd", "hdel", "hinc", "hdec", "hsave", "hload", "write", "reseterror", "signal",
-		"writeini", "remini", "flushini", "remove", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
-		"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
-		"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel":
+	if slices.Contains(engineCommands, strings.ToLower(strings.TrimLeft(name, "/.!"))) {
 		return true
 	}
 	_, ok := cutPrefixFold(strings.TrimLeft(name, "/.!"), "timer")
 	return ok
+}
+
+var engineCommands = []string{"set", "var", "unset", "unsetall", "inc", "dec", "halt", "haltdef", "return", "break",
+	"continue", "goto", "noop", "echo", "enable", "disable", "tokenize", "hmake", "hfree",
+	"hadd", "hdel", "hinc", "hdec", "hsave", "hload", "write", "reseterror", "signal",
+	"writeini", "remini", "flushini", "remove", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
+	"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
+	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel"}
+
+// Commands is the scripting commands the engine runs itself, sorted, for
+// the Scripts Editor's Help. (The client's own commands work in scripts
+// too, as if typed.)
+func Commands() []string {
+	return slices.Sorted(slices.Values(append(slices.Clone(engineCommands), "timer", "if", "elseif", "else", "while")))
+}
+
+// Identifiers is the identifiers the engine has, sorted, for the Scripts
+// Editor's Help.
+func Identifiers() []string {
+	var out []string
+	for name := range builtins {
+		if name != "" && !strings.ContainsAny(name, "0123456789") {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Lookup says what trout does with a command or, starting with $, an
+// identifier: for the Scripts Editor's Help > Search.
+func Lookup(name string) string {
+	name = strings.ToLower(strings.TrimLeft(strings.TrimSpace(name), "/.!"))
+	if id, ok := strings.CutPrefix(name, "$"); ok {
+		id, _, _ = strings.Cut(id, "(")
+		switch {
+		case fatalIdents[id] != "":
+			return "$" + id + ": " + fatalIdents[id] + "; a script using it isn't loaded."
+		case builtins[id] != nil:
+			return "$" + id + " works in trout."
+		case mircIdents[id]:
+			return "$" + id + " isn't supported yet: it's an error when a script gets to it."
+		}
+		return "$" + id + " isn't an identifier: it's $null, unless a script has an alias called " + id + "."
+	}
+	switch {
+	case fatalCommands[name] != "":
+		return "/" + name + ": " + fatalCommands[name] + "; a script using it isn't loaded."
+	case Unsupported(name) != "":
+		return "/" + name + ": " + Unsupported(name) + "; it's an error when a script gets to it."
+	case engineCommand(name) || slices.Contains(Commands(), name):
+		return "/" + name + " is a scripting command trout runs."
+	}
+	return "/" + name + " isn't a scripting command: trout runs it as if you typed it (its own commands, or sent to the server)."
 }
 
 // signal is a /signal waiting for the scripts running now to finish.

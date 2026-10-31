@@ -359,7 +359,11 @@ func (r *run) scidIdent(fr *frame, c *call, byID bool) (string, error) {
 	}
 	other := *fr
 	other.network = net
-	return r.ident(&other, c.prop, &call{})
+	v, err := r.ident(&other, c.prop, &call{})
+	if err == errNoIdent {
+		return "", nil
+	}
+	return v, err
 }
 
 // cmdScid is /scid and /scon: [-a] [-tM] [-r] <N> [command] runs the
