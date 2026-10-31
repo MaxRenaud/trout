@@ -30,14 +30,36 @@ type phoneSHA1Msg struct {
 	err  error
 }
 
-// phoneOK says whether a phone could reach the bouncer in use: not This
-// Computer, and over TLS.
-func (a *App) phoneOK() bool {
+// phoneProblem says why a phone couldn't use the bouncer in use, one line
+// a message, or nil when it could: not This Computer, and over TLS. The
+// menu item stays enabled and says this, rather than greying out with no
+// reason given (Connect a Phone isn't mIRC's).
+func (a *App) phoneProblem() []string {
 	_, useTLS, err := irc.ParseAddress(a.bnc.Address)
-	return !a.bnc.Local && err == nil && useTLS && a.bnc.User != ""
+	switch {
+	case a.bnc.Local:
+		return []string{"The This Computer bouncer runs only while trout is open,",
+			"on this computer: a phone can't reach it.",
+			"", "Put a bouncer on a server with Tools > Set Up Bouncer."}
+	case err != nil:
+		return []string{"The bouncer's address doesn't work: " + err.Error()}
+	case !useTLS:
+		return []string{"The bouncer doesn't use TLS (its address is " + a.bnc.Address + "),",
+			"so your password would cross the internet unencrypted.",
+			"", "A phone needs an ircs:// bouncer."}
+	case a.bnc.User == "":
+		return []string{"The bouncer has no user name to put in the code."}
+	}
+	return nil
 }
 
 func (a *App) openPhone() tea.Cmd {
+	if lines := a.phoneProblem(); lines != nil {
+		m := message(lines...)
+		m.Title = "Connect a Phone"
+		a.openDialog(m)
+		return nil
+	}
 	d := &phoneBox{withPassword: true}
 	a.openDialog(d)
 	if a.bnc.Pin == "" {

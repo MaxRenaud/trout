@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,8 +17,8 @@ func TestPhoneQR(t *testing.T) {
 	a := New(Options{Bouncer: config.Bouncer{Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x"},
 		Password: "abcdefghijkmnpqrstuvwxyz"})
 	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
-	if !a.phoneOK() {
-		t.Fatal("a TLS bouncer isn't phone-ready")
+	if p := a.phoneProblem(); p != nil {
+		t.Fatalf("a TLS bouncer isn't phone-ready: %q", p)
 	}
 	d := &phoneBox{withPassword: true, sha1: "0123456789abcdef0123456789abcdef01234567"}
 	if got := d.link(a); got != "ircs://max:abcdefghijkmnpqrstuvwxyz@203.0.113.40:6697" {
@@ -52,12 +53,21 @@ func TestPhoneQR(t *testing.T) {
 	if got := d.link(a); got != "ircs://max@203.0.113.40:6697" {
 		t.Fatalf("without the password: %q", got)
 	}
-	a.bnc = config.Bouncer{Name: localName, Local: true, User: "max"}
-	if a.phoneOK() {
-		t.Fatal("This Computer offered to a phone")
-	}
-	a.bnc = config.Bouncer{Address: "irc+insecure://192.0.2.1:6667", User: "max"}
-	if a.phoneOK() {
-		t.Fatal("a plain-text bouncer offered to a phone")
+	// The rest say why instead of showing a code.
+	for _, tc := range []struct {
+		bnc  config.Bouncer
+		want string
+	}{
+		{config.Bouncer{Name: localName, Local: true, User: "max"}, "a phone can't reach it"},
+		{config.Bouncer{Address: "irc+insecure://192.0.2.1:6667", User: "max"}, "doesn't use TLS"},
+		{config.Bouncer{Address: "ircs://192.0.2.1:6697"}, "no user name"},
+	} {
+		a.bnc = tc.bnc
+		a.dlg = nil
+		a.openPhone()
+		m, ok := a.dlg.(*msgBox)
+		if !ok || !strings.Contains(strings.Join(m.Lines, " "), tc.want) {
+			t.Errorf("%s: dialog %#v, want a message saying %q", tc.bnc.Address, a.dlg, tc.want)
+		}
 	}
 }
