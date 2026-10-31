@@ -151,8 +151,14 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   socket paths can't be long.
 - Tests never touch the real config: demo mode and `Options{}` without `Config` save nothing.
 
+## Releasing
+
+Push an annotated `v*` tag (`git tag -a v0.2.0 -m "trout 0.2.0"`): `.github/workflows/release.yml`
+runs goreleaser, which publishes the GitHub release and pushes the cask to
+`MaxRenaud/homebrew-tap` with the `TAP_DEPLOY_KEY` secret. Try the snapshot first; locally it
+needs `TAP_DEPLOY_KEY=dummy` to get past the cask step.
+
 ## Not built yet
 
-Publishing releases (GitHub
-releases and the Homebrew tap wait until trout is public; `.goreleaser.yaml` has release
-disabled). Lock was skipped. See `docs/architecture.md` and `tmp/plan.md`.
+macOS notarization and Windows code signing. Lock was skipped. See `docs/architecture.md`
+and `tmp/plan.md`.
