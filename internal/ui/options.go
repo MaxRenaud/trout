@@ -471,6 +471,7 @@ func shortcutsBox() *msgBox {
 		"Shift+Tab            Nicklist focus: arrows, Enter query, Space menu",
 		"Alt+O Alt+L Alt+J    Options, Channels List, Favorites",
 		"Alt+B Alt+N Alt+U    Address Book, Notify, URLs List   Alt+K  Colors",
+		"Alt+R Alt+P          Scripts Editor: Remote, Popups",
 		"Ctrl+F  F3 Shift+F3  Find text: newest first, older, newer",
 		"F2                   Classic / Dark      /exit   Quit",
 		"",

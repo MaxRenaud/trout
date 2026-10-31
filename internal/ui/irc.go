@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/ergochat/irc-go/ircmsg"
 
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -152,6 +154,9 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 				w.Joined, w.Nicks = false, nil
 			}
 		}
+		if n != a.home {
+			a.queueScript(a.scriptEvent(script.Event{Kind: "DISCONNECT", Network: n.Name}))
+		}
 		if n == a.home && a.stopOn(msg.err) {
 			return nil
 		}
@@ -170,8 +175,9 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// handleIRC applies one message from network n to the UI state.
-func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
+// handleLine applies one message from network n to the UI state; see
+// handleIRC, which wraps it with scripts' events.
+func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 	t := time.Now()
 	if ok, v := m.GetTag("time"); ok {
 		if pt, err := time.Parse(time.RFC3339Nano, v); err == nil {
@@ -264,7 +270,7 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 				w.Latest = t
 			}
 			a.beepFor(w, l)
-			if w.Kind == state.KQuery && l.Role != state.RoleOwn {
+			if w.Kind == state.KQuery && l.Role != state.RoleOwn && !a.hideLines {
 				a.lastQuery = w
 			}
 		}
@@ -273,6 +279,13 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		line(status, state.RoleNormal, arg(1))
 	case "005":
 		is := irc.ISupport(m)
+		if a.isupport == nil {
+			a.isupport = map[*state.Network]map[string]string{}
+		}
+		if a.isupport[n] == nil {
+			a.isupport[n] = map[string]string{}
+		}
+		maps.Copy(a.isupport[n], is)
 		if modes, prefixes, ok := irc.ParsePrefix(is["PREFIX"]); ok {
 			n.PrefixModes, n.Prefixes = modes, prefixes
 		}

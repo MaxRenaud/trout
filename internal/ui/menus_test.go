@@ -320,7 +320,7 @@ func TestDCCOfferSafety(t *testing.T) {
 	a.dlg.key(a, "esc")
 
 	// An offer while you're in a dialog waits for it to close.
-	a.openSetAway()
+	a.openDialog(&formBox{Title: "Typing", Buttons: []string{"OK", "Cancel"}, Fields: []*formField{newField("Text:", "", false)}})
 	open := a.dlg
 	feed(":bot!b@h PRIVMSG max :\x01DCC SEND other.bin 134744072 6800 1024\x01")
 	if open == nil || a.dlg != open {

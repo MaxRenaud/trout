@@ -1,0 +1,29 @@
+A kick counter: global variables, one per kicker built with evaluation
+brackets, saved and still there after a restart.
+
+-- kickcount.mrc --
+on *:START:set -i %kicks 0
+on *:KICK:#:{
+  inc %kicks
+  inc %kicks. [ $+ [ $nick ] ]
+  if ($knick == $me) msg $chan Ouch. That's %kicks kicks so far.
+  else msg $chan $nick has kicked %kicks. [ $+ [ $nick ] ] $iif(%kicks. [ $+ [ $nick ] ] == 1,time,times)
+}
+alias kicks echo -a %kicks kicks, %kicks.alice by alice
+-- transcript --
+me trout
+chan #trout @trout alice bob carol
+active #trout
+? %kicks 0
+< :alice!a@host KICK #trout bob :out
+> /msg #trout alice has kicked 1 time
+< :alice!a@host KICK #trout carol :you too
+> /msg #trout alice has kicked 2 times
+< :bob!b@host KICK #trout trout :ha
+> /msg #trout Ouch. That's 3 kicks so far.
+? %kicks.alice 2
+/kicks
+= #trout: 3 kicks, 2 by alice
+reload
+/kicks
+= #trout: 3 kicks, 2 by alice

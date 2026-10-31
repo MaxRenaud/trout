@@ -54,6 +54,16 @@ type Config struct {
 	NickColors []NickColorRule `toml:"nick-color,omitempty"`
 	Highlights []HighlightRule `toml:"highlight-rule,omitempty"`
 
+	// Scripts are the loaded scripts, in the order they load: file names
+	// in the scripts folder next to config.toml, or full paths. ScriptsOff
+	// is /remote off; ScriptLevel the Users list's default level (0 is 1).
+	// Their variables and Users list are vars.ini and users.ini in that
+	// folder, like mIRC's.
+	Scripts     []string   `toml:"scripts,omitempty"`
+	ScriptsOff  bool       `toml:"scripts-off,omitempty"`
+	ScriptLevel int        `toml:"script-level,omitempty"`
+	ScriptOpts  ScriptOpts `toml:"script-options,omitempty"`
+
 	// Windows are a window's own options from its popup, like mIRC's
 	// system menu, by "network/window" in lowercase.
 	Windows map[string]WindowOpts `toml:"window,omitempty"`
@@ -190,6 +200,22 @@ type Bouncer struct {
 	// server trout created for this bouncer, for Remove > Delete Server.
 	Cloud    string `toml:"cloud,omitempty"`
 	ServerID string `toml:"server-id,omitempty"`
+}
+
+// ScriptOpts are the Scripts Editor's Listen and Options menus, like
+// mIRC's, each named so that false is mIRC's default.
+type ScriptOpts struct {
+	CTCPsOff  bool `toml:"ctcps-off,omitempty"` // /ctcps off
+	EventsOff bool `toml:"events-off,omitempty"`
+	RawOff    bool `toml:"raw-off,omitempty"`
+
+	NoInitWarning bool `toml:"no-init-warning,omitempty"` // run a new script's on LOAD without asking
+	NoAskSave     bool `toml:"no-ask-save,omitempty"`     // Cancel discards without asking
+	NoMonitor     bool `toml:"no-monitor,omitempty"`      // don't reload files changed elsewhere
+	Backup        bool `toml:"backup,omitempty"`          // keep file.bak when saving
+	NoFindSel     bool `toml:"no-find-selection,omitempty"`
+	NoLineNumbers bool `toml:"no-line-numbers,omitempty"`
+	IdentWarning  bool `toml:"identifier-warning,omitempty"`
 }
 
 // Settings are the View menu and Options dialog choices.

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,46 +42,6 @@ func (a *App) commandPrompt(title, label, cmd, value string) func(*App) tea.Cmd 
 	}
 }
 
-// selectedNick is the nick a prompt starts with: the query's, or the one
-// selected in the nicklist.
-func (a *App) selectedNick() string {
-	w := a.active
-	switch {
-	case w.Kind == state.KQuery:
-		return w.Name
-	case w.Kind == state.KChannel:
-		return w.NickSel
-	}
-	return ""
-}
-
-// openSendNotice and openSendCTCP ask for two things, so they're forms.
-func (a *App) openSendNotice() {
-	a.openDialog(&formBox{Title: "Send Notice", Buttons: []string{"Send", "Cancel"},
-		Fields: []*formField{newField("To:", a.selectedNick(), false), newField("Message:", "", false)},
-		OnOK: func(a *App, v []string) (tea.Cmd, error) {
-			to, msg := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
-			if to == "" || msg == "" {
-				return nil, errors.New("give a nick or channel and a message")
-			}
-			return a.run("notice " + to + " " + msg), nil
-		}})
-}
-
-func (a *App) openSendCTCP() {
-	f := &formBox{Title: "Send CTCP", Lines: []string{"Ask a client something: VERSION, PING, TIME or CLIENTINFO."},
-		Buttons: []string{"Send", "Cancel"},
-		Fields:  []*formField{newField("Nick:", a.selectedNick(), false), newField("Request:", "VERSION", false)},
-		OnOK: func(a *App, v []string) (tea.Cmd, error) {
-			nick, req := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
-			if nick == "" || req == "" {
-				return nil, errors.New("give a nick and a request")
-			}
-			return a.run("ctcp " + nick + " " + req), nil
-		}}
-	a.openDialog(f)
-}
-
 // commandsBox is Help > Help Topics: the slash commands trout knows.
 func commandsBox() *msgBox {
 	d := message(
@@ -104,6 +63,8 @@ func commandsBox() *msgBox {
 		"/server [host]          Switch to or add a network",
 		"/quote line             Send a raw line",
 		"/clear                  Clear the window",
+		"/load -rs file          Load a mIRC script (Tools > Scripts Editor)",
+		"//command               Evaluate $identifiers and %variables first",
 		"",
 		"Anything else goes to the server as it is, like /list.",
 	)
@@ -144,7 +105,7 @@ var urlRe = regexp.MustCompile(`(?i)\bhttps?://[^\s<>"]+`)
 // noteURLs remembers the links in a message for Tools > URLs List,
 // newest first, at most 200.
 func (a *App) noteURLs(w *state.Window, nick, text string, at time.Time) {
-	if a.winOpts(w).TrackURLs == "off" { // the window's Track URLs
+	if a.winOpts(w).TrackURLs == "off" || a.hideLines { // the window's Track URLs, or a script hid it
 		return
 	}
 	for _, u := range urlRe.FindAllString(stripCodes(text), -1) {

@@ -21,6 +21,8 @@ go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on rea
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
 dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
+dev/windows/mirc-run script.mrc                    # run a script in real mIRC on that VM, print its out.txt
+go test -tags mirc ./internal/script -run TestMIRC -v   # check internal/script against real mIRC
 dev/vhs/record                                     # the README's GIFs (docs/gifs) from dev/vhs/*.tape
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
@@ -49,7 +51,11 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `upload.go` (Send File through the bouncer's file host); `winopts.go` a window's own
   options and Window > Order; `editwin.go` the multi-line and second editboxes;
   `proxy.go` Options > Connect > Proxy; `form.go` is the text-field dialog they and Kick
-  (why) use; `phone.go` Tools > Connect a Phone (a QR code for Goguma).
+  (why) use; `phone.go` Tools > Connect a Phone (a QR code for Goguma); `scripts.go`
+  scripts: the engine's hooks, its Host and `/load`; `scripteditor.go` the Scripts Editor
+  (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files);
+  `popups.go` the right-click menus and Commands, from popups.ini like mIRC's, and the
+  `$?` input boxes.
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
@@ -63,6 +69,14 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/termkeys`: which terminal this is, whether its Option key sends Alt, and the
   fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `optionkey.go`
   asks at startup.
+- `internal/script`: mIRC scripting (aliases, events, variables, identifiers, hash
+  tables, timers, regex, popups, files, the Users list), pure: events in, actions out;
+  `ui/scripts.go` hooks it into the client (`docs/scripting.md` is what users get,
+  `tmp/scripting.md` the design). Its tests are
+  user-journey transcripts in `testdata/journeys/`, `spec_test.go` (from the help file),
+  `mirc_test.go` (against real mIRC, `-tags mirc`) and `corpus_test.go` (real scripts in
+  `tmp/msl-corpus`). When mIRC's behavior is unclear, check it with mirc-run rather than
+  guessing, and say "checked" in the comment.
 - `internal/demo`: the fake world for `--demo`; the dev bot reuses its chatter.
 - `dev/`: Docker setup (two ergo networks, soju, a chatter bot); `build-soju`; `proxmox/`,
   throwaway test VMs for bouncer setup (credentials and their SSH key in `tmp/`);
@@ -114,6 +128,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   protect, and logs in through a small SOCKS5 proxy.
 - Anything trout tells soju goes through BouncerServ with `serv`; check soju's syntax with
   `sojuctl ... user run trout help <command>` (see the dev-env skill) rather than guessing.
+- `scripts_test.go` drives each scripting hook against a fake bouncer and a temp config;
+  `scripts_live_test.go` runs a script on the dev network with tester2 and tester3.
 - `internal/irc/conn_test.go` scripts a fake server for registration; `tls_test.go` pins
   a self-signed one.
 - `ui/install_test.go` walks the setup wizard against a fake server (`installHooks`):

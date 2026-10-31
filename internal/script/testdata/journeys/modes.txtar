@@ -1,0 +1,95 @@
+Mode events and the connection: a channel MODE line is on RAWMODE, then an
+event for each change (OP, DEOP, BAN...) and MODE for the rest. Events
+only the client makes (on OPEN, on NOTIFY) and server lines (SNOTICE,
+WALLOPS, PING...) too.
+
+-- protect.mrc --
+on *:RAWMODE:#:echo $chan raw: $nick sets $1- ( $+ $mode(0) affected, $mode(0).op opped $+ )
+on *:OP:#:{
+  if ($opnick == $me) msg $chan thanks $nick
+  else echo $chan $opnick was opped by $nick $iif($modefirst,first) $iif($modelast,last)
+}
+on *:DEOP:#:if ($opnick == $me) msg $chan hey!
+on *:SERVEROP:#:echo $chan the server opped $opnick
+on *:VOICE:#:echo $chan voice for $vnick
+on *:BAN:#:{
+  if ($bnick == $me) || ($banmask iswm $address($me,5)) mode $chan -b $banmask
+  else echo $chan ban $banmask nick: $iif($bnick,$bnick,none)
+}
+on *:UNBAN:#:echo $chan unban $banmask
+on *:MODE:#:echo $chan modes $1-
+on *:SERVERMODE:#:echo $chan server modes $1-
+on *:USERMODE:echo -s usermode $1-
+on *:SNOTICE:*connecting*:echo -s connection: $1-
+on *:WALLOPS:*:echo -s wallops from $nick $+ : $1-
+on *:ERROR:*:echo -s error: $1-
+on *:PING:echo -s ping $1-
+on *:CTCPREPLY:VERSION*:echo -s $nick uses $2-
+on *:OPEN:?:*hello*:msg $nick hi! I'm away, back soon.
+on *:CLOSE:?:echo -s closed $target
+on *:NOTIFY:echo -s $nick is on IRC
+on *:UNOTIFY:echo -s $nick left IRC
+alias info {
+  echo -a $server $port $ssl $status $cid $scid(1) $scon(0) $scid(1).network
+  echo -a $prefix $nickmode $chantypes $chanmodes $modespl $usermode $away $awaymsg
+  echo -a $query(0) $query(1) $ial(*!*@h.example,0) $ial(alice).host $ialchan(*,#trout,0) $address(alice,2)
+  scid 1 echo -a on $!network
+}
+-- transcript --
+me trout
+chan #trout @trout alice bob
+active #trout
+info server=irc.test port=6697 ssl connected PREFIX=(ohv)@%+ CHANMODES=beI,k,l,imnpst CHANTYPES=# MODES=4 usermodes=+iw away=lunch
+query carol
+< :alice!a@h.example PRIVMSG #trout :hi
+< :bob!b@other.example PRIVMSG #trout :hello
+/info
+= #trout: irc.test 6697 $true connected 1 1 1 TestNet
+= #trout: @%+ ohv # beI,k,l,imnpst 4 +iw $true lunch
+= #trout: 1 carol 1 h.example 2 *!*@h.example
+= #trout: on TestNet
+< :alice!a@h.example MODE #trout +ov-o+l bob bob trout 10
+= #trout: raw: alice sets +ov-o+l bob bob trout 10 (3 affected, 1 opped)
+= #trout: bob was opped by alice first
+= #trout: voice for bob
+> /msg #trout hey!
+= #trout: modes +ov-o+l bob bob trout 10
+< :alice!a@h.example MODE #trout +o trout
+= #trout: raw: alice sets +o trout (1 affected, 1 opped)
+> /msg #trout thanks alice
+< :irc.test MODE #trout +o alice
+= #trout: raw: irc.test sets +o alice (1 affected, 1 opped)
+= #trout: the server opped alice
+< :irc.test MODE #trout +m
+= #trout: raw: irc.test sets +m (0 affected, 0 opped)
+= #trout: server modes +m
+< :alice!a@h.example MODE #trout +b-b *!*@spam.example bad!*@*
+= #trout: raw: alice sets +b-b *!*@spam.example bad!*@* (2 affected, 0 opped)
+= #trout: ban *!*@spam.example nick: none
+= #trout: unban bad!*@*
+< :trout!t@my.host JOIN #trout
+< :alice!a@h.example MODE #trout +b trout!*@*
+= #trout: raw: alice sets +b trout!*@* (1 affected, 0 opped)
+> /mode #trout -b trout!*@*
+< :trout MODE trout +x
+= status: usermode +x
+< :irc.test NOTICE * :*** Client connecting: someone
+= status: connection: *** Client connecting: someone
+< :irc.test NOTICE * :*** something else
+< :oper!o@h WALLOPS :maintenance at noon
+= status: wallops from oper: maintenance at noon
+< ERROR :Closing link: banned
+= status: error: Closing link: banned
+< PING :irc.test
+= status: ping irc.test
+< :bob!b@other.example NOTICE trout :\x01VERSION mIRC v7.86\x01
+= status: bob uses mIRC v7.86
+event OPEN bob bob :hello trout
+> /msg bob hi! I'm away, back soon.
+event OPEN bob bob :what's up
+event CLOSE bob bob
+= status: closed bob
+event NOTIFY dave
+= status: dave is on IRC
+event UNOTIFY dave
+= status: dave left IRC

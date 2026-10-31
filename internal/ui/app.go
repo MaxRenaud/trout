@@ -19,6 +19,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/demo"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/local"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
 
@@ -229,6 +230,9 @@ type App struct {
 
 	menus   []openMenu // open popups, innermost last
 	menuBar int        // menubar entry that opened menus[0], or -1
+	dlgMenu bool       // menus[0] is from the dialog's own menubar
+	downX   int        // where the mouse button last went down
+	downY   int
 	dlg     modal      // drawn over everything and takes all input
 	pal     *palette   // Ctrl+K color picker
 	sel     *selection // text being selected in the message pane
@@ -249,6 +253,23 @@ type App struct {
 	lastY       int           // window, so a double-click in a window's text
 	lastWin     *state.Window // is on the same spot of the same window
 	title       string
+
+	// Scripts (scripts.go): the engine, each loaded script's problems, its
+	// files without a scripts folder (tests), when the engine is next
+	// woken, everyone's address and each network's ISUPPORT for it, and
+	// when you last typed ($idle). hideLines is a ^ event halting trout's
+	// text for a line; ctcpHalted a CTCP handler's /halt, for no reply.
+	scripts        *script.Engine
+	scriptProblems map[string][]script.Problem
+	scriptMem      map[string]string
+	scriptTickAt   time.Time
+	ial            map[*state.Network]map[string]string
+	isupport       map[*state.Network]map[string]string
+	scriptCmds     []tea.Cmd // from script events in places that can't return a command
+	hideLines      bool
+	ctcpHalted     bool
+	lastTyped      time.Time
+	scriptTab      edTab // the Scripts Editor's, when it was last open
 }
 
 // Run starts the UI and blocks until the user quits.
@@ -300,6 +321,10 @@ func New(opts Options) *App {
 		a.applySettings(a.cfg.Settings)
 	}
 	a.saved = a.settings()
+	a.scripts, a.scriptProblems = script.New(script.Options{}), map[string][]script.Problem{}
+	a.loadPopups()           // the menus, before anything else loads
+	a.lastTyped = time.Now() // $idle counts from the start
+	a.scriptTab = edRemote
 	if !opts.Demo {
 		a.setBouncer(opts.Bouncer, opts.Password)
 		return a
@@ -318,14 +343,14 @@ func New(opts Options) *App {
 
 func (a *App) Init() tea.Cmd {
 	if a.opts.Demo {
-		return tick()
+		return tea.Batch(tick(), a.startScripts())
 	}
 	if !a.bouncerSet() {
 		a.stopped = true
 		a.openConnect("")
-		return nil
+		return a.startScripts()
 	}
-	return tea.Batch(a.connectBouncer(), a.optionKeyStart())
+	return tea.Batch(a.connectBouncer(), a.optionKeyStart(), a.startScripts())
 }
 
 type tickMsg struct{}
@@ -340,6 +365,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.w, a.h = msg.Width, msg.Height
+	case scriptTickMsg:
+		cmd = a.scriptTick()
 	case tickMsg:
 		if ev, ok := demo.Traffic(a.nets); ok {
 			a.addLine(ev.Win, ev.Role, ev.Text)
@@ -376,6 +403,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.phoneSHA1(msg)
 	case tea.FocusMsg:
 		a.focused = true
+		if ed, ok := a.dlg.(*scriptEditor); ok && !a.book().ScriptOpts.NoMonitor {
+			ed.reloadChanged(a)
+		}
 	case tea.BlurMsg:
 		a.focused = false
 	case readTickMsg:
@@ -406,7 +436,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		cmd = a.mouse(msg)
 	}
-	cmd = tea.Batch(cmd, a.openWaiting())
+	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds())
 	if t := "trout - [" + a.winTitle(a.active) + "]"; t != a.title {
 		a.title = t
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
@@ -422,6 +452,9 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		// Like mIRC, Ctrl+C copies the editbox's selection and never
 		// quits: File > Exit and /exit do. Text selected in the message
 		// pane was copied when the mouse let go.
+		if a.dlg != nil && len(a.menus) == 0 {
+			return a.dlg.key(a, s) // the Scripts Editor's selection
+		}
 		if a.dlg != nil || len(a.menus) > 0 || a.active == nil {
 			return nil
 		}
@@ -436,16 +469,19 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		a.themeIdx = (a.themeIdx + 1) % len(themes)
 		return nil
 	}
+	if len(a.menus) > 0 { // over a dialog too: the Scripts Editor's
+		return a.menuKey(s)
+	}
 	if a.dlg != nil {
+		if ed, ok := a.dlg.(*scriptEditor); ok && (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) && !k.Alt {
+			return ed.typed(a, k.Runes) // line breaks and all
+		}
 		if f, ok := a.dlg.(*formBox); ok {
 			if rs, ok := typedRunes(k); ok {
 				return f.typed(a, rs)
 			}
 		}
 		return a.dlg.key(a, s)
-	}
-	if len(a.menus) > 0 {
-		return a.menuKey(s)
 	}
 	if a.pal != nil && a.paletteKey(s) {
 		return nil
@@ -476,6 +512,12 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 			return nil
 		case ch == 'u':
 			a.openURLsList()
+			return nil
+		case ch == 'r': // the Scripts Editor's tabs, like mIRC (its Alt+A is Favorites here)
+			a.openScriptsTab(edRemote)
+			return nil
+		case ch == 'p':
+			a.openScriptsTab(edPopups)
 			return nil
 		case ch == 'q': // the second editbox, like mIRC
 			if a.active.Kind != state.KTransfer {
@@ -718,6 +760,9 @@ func (a *App) nickKey(s string) (tea.Cmd, bool) {
 
 func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 	a.mx, a.my = m.X, m.Y
+	if m.Action == tea.MouseActionPress {
+		a.downX, a.downY = m.X, m.Y
+	}
 	if a.drag != dragNone {
 		switch {
 		case m.Action == tea.MouseActionRelease:
@@ -747,6 +792,22 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			a.drag, a.thumbKind, a.thumbGrab = dragThumb, r.Kind, m.Y-r.Y
 			return nil
 		}
+	}
+	if len(a.menus) > 0 { // over a dialog too: the Scripts Editor's
+		switch {
+		case m.Action == tea.MouseActionMotion:
+			a.menuMotion(m.X, m.Y)
+		case m.Action == tea.MouseActionRelease:
+			// A click leaves the menu open; letting go on an item after
+			// dragging to it chooses it, like Windows.
+			a.pressedTool, a.hold = -1, nil
+			if m.X != a.downX || m.Y != a.downY {
+				return a.menuRelease(m.X, m.Y)
+			}
+		case m.Button == tea.MouseButtonLeft || m.Button == tea.MouseButtonRight:
+			return a.menuClick(m.X, m.Y)
+		}
+		return nil
 	}
 	if a.dlg != nil {
 		r, ok := a.hit(m.X, m.Y)
@@ -782,15 +843,6 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			a.pickColor(r.I)
 		case m.Action == tea.MouseActionPress:
 			a.pal = nil
-		}
-		return nil
-	}
-	if len(a.menus) > 0 {
-		switch {
-		case m.Action == tea.MouseActionMotion:
-			a.menuMotion(m.X, m.Y)
-		case m.Button == tea.MouseButtonLeft || m.Button == tea.MouseButtonRight:
-			return a.menuClick(m.X, m.Y)
 		}
 		return nil
 	}
@@ -866,7 +918,8 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		case m.Ctrl && m.Button == tea.MouseButtonLeft: // copy with codes, like mIRC
 			a.startSelection(w, m.X, m.Y)
 			a.sel.codes = true
-		case right:
+		case right: // the scripts' popup for this kind of window, like mIRC's
+			a.textMenu(w, m.X, m.Y)
 		case double && r.Kind == HitNickText:
 			a.openQuery(w.Net, r.S)
 		case double && r.Kind == HitURL && w.Net.IsChannel(r.S):
@@ -948,8 +1001,11 @@ func (a *App) dragThumbTo(y int) {
 	case HitNickScroll:
 		a.active.NickTop = top
 	case HitDlg:
-		if l, ok := a.dlg.(*listBox); ok {
-			l.Top = top
+		switch d := a.dlg.(type) {
+		case *listBox:
+			d.Top = top
+		case *scriptEditor:
+			d.scrollTop(top)
 		}
 	}
 }
@@ -984,6 +1040,8 @@ func (a *App) toolAction(label string) tea.Cmd {
 		a.openFavorites()
 	case "Channels":
 		return a.openChannelsList(false)
+	case "Scripts": // mIRC's Scripts Editor
+		a.openScripts()
 	case "Address Book":
 		a.openAddressBook()
 	case "Notify":
@@ -1039,13 +1097,52 @@ func (a *App) submit(w *state.Window) tea.Cmd {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		a.lastTyped = time.Now() // $idle
+		c, stop := a.scriptInput(w, line)
+		cmds = append(cmds, c)
+		if stop {
+			continue
+		}
 		if cmd, ok := strings.CutPrefix(line, cmp.Or(a.cmdPrefix, "/")); ok { // Options > Other
-			cmds = append(cmds, a.command(w, cmd))
+			cmds = append(cmds, a.typedCommand(w, cmd))
 			continue
 		}
 		a.say(w, line)
 	}
 	return tea.Batch(cmds...)
+}
+
+// typedCommand runs a typed command (without its first slash): a script's
+// alias or command, or with a second slash (//) any line evaluated like
+// mIRC's, or else trout's.
+func (a *App) typedCommand(w *state.Window, cmd string) tea.Cmd {
+	if c, ok := a.scriptAdmin(cmd, false); ok {
+		return c
+	}
+	if a.scriptsOn() {
+		eval := strings.HasPrefix(cmd, "/")
+		window := w.Name
+		if w.Kind == state.KStatus {
+			window = ""
+		}
+		line := strings.TrimPrefix(cmd, "/")
+		if ps := a.scripts.CommandPrompts(line, eval); len(ps) > 0 {
+			// Its input boxes first: $?="question".
+			return a.askInputs(ps, func(a *App, answers []string) tea.Cmd {
+				a.scripts.Answer(answers)
+				if actions, ok := a.scripts.Command(w.Net.Name, window, line, eval, a.scriptHost()); ok {
+					return a.runScript(actions)
+				}
+				return a.command(w, strings.TrimLeft(cmd, "/.!"))
+			})
+		}
+		if actions, ok := a.scripts.Command(w.Net.Name, window, line, eval, a.scriptHost()); ok {
+			return a.runScript(actions)
+		}
+	}
+	// ! skips aliases and . is quiet, in a script's terms: trout's own
+	// commands take neither.
+	return a.command(w, strings.TrimLeft(cmd, "/.!"))
 }
 
 func (a *App) say(w *state.Window, text string) {
@@ -1206,6 +1303,10 @@ func (a *App) closeWindow(w *state.Window) {
 		a.chatClose(w)
 	}
 	a.removeWindow(w)
+	if w.Kind == state.KQuery || w.Kind == state.KChat { // on CLOSE:?: and on CLOSE:=:
+		a.queueScript(a.scriptEvent(script.Event{Kind: "CLOSE", Network: w.Net.Name,
+			Nick: strings.TrimPrefix(w.Name, "="), Target: w.Name}))
+	}
 }
 
 func (a *App) removeWindow(w *state.Window) {
@@ -1255,6 +1356,9 @@ func (a *App) addLineAt(w *state.Window, role state.Role, text string, t time.Ti
 
 // addLineL adds a whole line, a highlight rule's color and all.
 func (a *App) addLineL(w *state.Window, l state.Line) {
+	if a.hideLines { // a script's ^ event halted trout's text for this line
+		return
+	}
 	w.Lines = append(w.Lines, l)
 	if n := len(w.Lines) - state.MaxLines; n > 0 {
 		w.Lines = slices.Delete(w.Lines, 0, n)
@@ -1301,6 +1405,7 @@ func clamp(v, lo, hi int) int {
 // "Confirm exit". The bouncer stays on IRC either way.
 func (a *App) quit() tea.Cmd {
 	if !a.confirmExit || a.opts.Demo {
+		a.scriptsExit()
 		return tea.Quit
 	}
 	d := message("Quit trout?", "", "The bouncer keeps you on your networks.")
@@ -1308,6 +1413,7 @@ func (a *App) quit() tea.Cmd {
 	d.Buttons, d.Cancel = []string{"Yes", "No"}, 1
 	d.OnClose = func(a *App, button int) tea.Cmd {
 		if button == 0 {
+			a.scriptsExit()
 			return tea.Quit
 		}
 		return nil

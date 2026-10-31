@@ -52,9 +52,43 @@ func (a *App) pushMenu(items []MenuItem, x, y int) {
 	a.menus = append(a.menus, m)
 }
 
-func (a *App) closeMenus() { a.menus, a.menuBar = nil, -1 }
+func (a *App) closeMenus() { a.menus, a.menuBar, a.dlgMenu = nil, -1, false }
+
+// menuStrip is a dialog with its own menubar, the Scripts Editor: its
+// menus open, and slide from one to the next, like the main menubar's.
+type menuStrip interface {
+	stripLen() int
+	stripMenu(a *App, i int) (items []MenuItem, x, y int)
+}
+
+func (a *App) openStripMenu(s menuStrip, i int) {
+	a.closeMenus()
+	a.menuBar, a.dlgMenu = i, true
+	items, x, y := s.stripMenu(a, i)
+	a.pushMenu(items, x, y)
+}
+
+// barLen is how many menus the open menubar has.
+func (a *App) barLen() int {
+	if s, ok := a.dlg.(menuStrip); ok && a.dlgMenu {
+		return s.stripLen()
+	}
+	return len(menuBarNames)
+}
+
+// onBar reports whether r is an entry of the open menubar.
+func (a *App) onBar(r Region) bool {
+	if a.dlgMenu {
+		return r.Kind == HitDlg && r.S == "strip"
+	}
+	return r.Kind == HitMenuBar && a.dlg == nil
+}
 
 func (a *App) openMenuBar(i int) {
+	if s, ok := a.dlg.(menuStrip); ok && a.dlgMenu {
+		a.openStripMenu(s, i)
+		return
+	}
 	a.closeMenus()
 	a.menuBar = i
 	a.pushMenu(a.menuBarItems(i), a.menuBarX[i], 2)
@@ -107,7 +141,7 @@ func (a *App) menuMotion(x, y int) {
 		}
 		return
 	}
-	if r, ok := a.hit(x, y); ok && r.Kind == HitMenuBar && a.menuBar >= 0 && r.I != a.menuBar {
+	if r, ok := a.hit(x, y); ok && a.onBar(r) && a.menuBar >= 0 && r.I != a.menuBar {
 		a.openMenuBar(r.I)
 	}
 }
@@ -123,11 +157,27 @@ func (a *App) menuClick(x, y int) tea.Cmd {
 		}
 		return nil
 	}
-	if r, ok := a.hit(x, y); ok && r.Kind == HitMenuBar && r.I != a.menuBar {
+	if r, ok := a.hit(x, y); ok && a.onBar(r) && r.I != a.menuBar {
 		a.openMenuBar(r.I)
 		return nil
 	}
 	a.closeMenus()
+	return nil
+}
+
+// menuRelease chooses the item under the pointer, if it's one (not a
+// submenu, which is open already).
+func (a *App) menuRelease(x, y int) tea.Cmd {
+	for l := len(a.menus) - 1; l >= 0; l-- {
+		m := &a.menus[l]
+		if !m.contains(x, y) {
+			continue
+		}
+		if i, ok := m.itemAt(x, y); ok && m.Items[i].Sub == nil {
+			return a.activateItem(l, i)
+		}
+		return nil
+	}
 	return nil
 }
 
@@ -162,14 +212,14 @@ func (a *App) menuKey(k string) tea.Cmd {
 			return a.activateItem(l, m.Sel)
 		}
 		if a.menuBar >= 0 {
-			a.openMenuBar((a.menuBar + 1) % len(menuBarNames))
+			a.openMenuBar((a.menuBar + 1) % a.barLen())
 			a.menus[0].Sel = 0
 		}
 	case "left":
 		if l > 0 {
 			a.menus = a.menus[:l]
 		} else if a.menuBar >= 0 {
-			a.openMenuBar((a.menuBar + len(menuBarNames) - 1) % len(menuBarNames))
+			a.openMenuBar((a.menuBar + a.barLen() - 1) % a.barLen())
 			a.menus[0].Sel = 0
 		}
 	case "enter", " ":
@@ -281,10 +331,10 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		}
 		return items
 	case 3:
-		// mIRC's Aliases, Popups and Scripts Editor wait for scripting.
 		items := []MenuItem{{Label: "Address Book...", Action: func(a *App) tea.Cmd { a.openAddressBook(); return nil }}, sep,
 			{Label: "Channels List...", Key: "Alt+L", Action: func(a *App) tea.Cmd { return a.openChannelsList(false) }},
-			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }}, sep}
+			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }},
+			{Label: "Scripts Editor...", Key: "Alt+R", Action: func(a *App) tea.Cmd { a.openScripts(); return nil }}, sep}
 		if a.opts.Demo { // bouncer setup is a mock-up so far
 			items = append(items,
 				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openSetup(); return nil }},
@@ -298,24 +348,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		return append(items,
 			MenuItem{Label: "Options...", Key: "Alt+O", Action: func(a *App) tea.Cmd { a.openOptions(optDisplay); return nil }})
 	case 4:
-		ch := ""
-		if a.active.Kind == state.KChannel {
-			ch = a.active.Name
-		}
-		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
-		return []MenuItem{
-			{Label: "Join Channel...", Action: a.commandPrompt("Join Channel", "Channel:", "join", "#")},
-			{Label: "Part Channel...", Action: a.commandPrompt("Part Channel", "Channel:", "part", ch)},
-			{Label: "Query User...", Action: a.commandPrompt("Query User", "Nick:", "query", a.selectedNick())},
-			{Label: "Send Notice...", Action: do(a.openSendNotice)},
-			{Label: "Whois User...", Action: a.commandPrompt("Whois User", "Nick:", "whois", a.selectedNick())},
-			{Label: "Send CTCP...", Action: do(a.openSendCTCP)},
-			{Label: "Send File...", Action: do(func() { a.openSendFile("") })}, sep,
-			{Label: "Set Away...", Action: do(a.openSetAway)},
-			{Label: "Change Nick...", Action: a.commandPrompt("Change Nick", "Nick:", "nick", a.active.Net.Nick)}, sep,
-			{Label: "Ignore User...", Action: a.commandPrompt("Ignore User", "Nick or mask:", "ignore", a.selectedNick())},
-			{Label: "Invite User...", Disabled: ch == "", Action: a.commandPrompt("Invite User", "Nick:", "invite", "")},
-		}
+		return a.commandsMenu()
 	case 5:
 		items := []MenuItem{{Label: "Order...", Action: func(a *App) tea.Cmd { a.openOrder(); return nil }}, sep}
 		for n, w := range a.order() {
@@ -379,56 +412,4 @@ func (a *App) windowMenu(w *state.Window, x, y int) {
 	}
 	a.closeMenus()
 	a.pushMenu(items, x, y)
-}
-
-// nickMenu is mIRC's default nicklist popup. (DCC Chat isn't there: it
-// would need an open port here. Send File goes through the bouncer.)
-func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
-	sub := func(labels ...string) []MenuItem {
-		items := make([]MenuItem, len(labels))
-		for i, l := range labels {
-			items[i] = MenuItem{Label: l}
-		}
-		return items
-	}
-	query := func(a *App) tea.Cmd { a.openQuery(win.Net, nick); return nil }
-	control := sub("Ignore", "Unignore", "Op", "Deop", "Voice", "Devoice",
-		"Kick", "Kick (why)", "Ban", "Ban, Kick", "Ban, Kick (why)")
-	whois, slap := MenuItem{Label: "Whois"}, MenuItem{Label: "Slap!"}
-	info := MenuItem{Label: "Info", Action: func(a *App) tea.Cmd { a.openNickInfo(win.Net, nick); return nil }}
-	ctcp := sub("Ping", "Time", "Version")
-	sendFile := MenuItem{Label: "Send File...", Action: func(a *App) tea.Cmd { a.openSendFile(nick); return nil }}
-	if !a.opts.Demo {
-		// The channel operator actions are real; the "(why)" variants ask
-		// for a reason.
-		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
-		mode := func(m, arg string) func(*App) tea.Cmd {
-			return do(func() { a.sendTo(win, "MODE", win.Name, m, arg) })
-		}
-		kick := do(func() { a.sendTo(win, "KICK", win.Name, nick, "trout") })
-		ban := mode("+b", nick+"!*@*")
-		why := func(ban bool) func(*App) tea.Cmd {
-			return do(func() { a.openDialog(a.kickWhy(win, nick, ban)) })
-		}
-		ignore := func(on bool) func(*App) tea.Cmd { return do(func() { a.setIgnore(win, nick, on) }) }
-		for i, act := range []func(*App) tea.Cmd{ignore(true), ignore(false), mode("+o", nick), mode("-o", nick),
-			mode("+v", nick), mode("-v", nick), kick, why(false), ban,
-			do(func() { ban(a); kick(a) }), why(true)} {
-			control[i].Action = act
-		}
-		whois.Action = do(func() { a.sendTo(win, "WHOIS", nick) })
-		for i, req := range []string{"PING", "TIME", "VERSION"} {
-			ctcp[i].Action = do(func() { a.sendCTCP(win, nick, req) })
-		}
-		slap.Action = do(func() { a.action(win, slapText(nick)) })
-	}
-	a.closeMenus()
-	a.pushMenu([]MenuItem{
-		info, whois, {Label: "Query", Action: query}, {Sep: true},
-		{Label: "Control", Sub: control},
-		{Label: "CTCP", Sub: ctcp},
-		sendFile,
-		{Sep: true},
-		slap,
-	}, x, y)
 }

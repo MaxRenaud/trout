@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
 
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -101,8 +102,13 @@ func (a *App) ignoreCommand(w *state.Window, on bool, rest string) {
 			if secs, err := strconv.Atoi(f[2:]); err == nil {
 				e.until = time.Now().Add(time.Duration(secs) * time.Second)
 			}
+		case f == "-r": // like mIRC, /ignore -r removes
+			on = false
 		case strings.HasPrefix(f, "-"):
 			e.flags = strings.Trim(f[1:], "u0123456789")
+		case arg != "" && isDigits(f):
+			// mIRC's mask type after the nick (/ignore nick 1): trout
+			// ignores by nick!*@*, so it's left out.
 		default:
 			arg = f
 		}
@@ -238,8 +244,17 @@ func (a *App) notifySeen(n *state.Network, nick string, online bool, addr string
 	if a.notifyActive {
 		where = a.whoisWin(n)
 	}
-	a.addLine(where, state.RoleHighlight, text)
-	a.beepFor(where, state.Line{Role: state.RoleHighlight})
+	_, address, _ := strings.Cut(addr, "!")
+	ev := script.Event{Kind: map[bool]string{true: "NOTIFY", false: "UNOTIFY"}[online], Network: n.Name,
+		Nick: nick, Address: address}
+	cmd, halted := a.scriptBefore(ev) // a ^ handler can say it its own way
+	a.queueScript(cmd)
+	if !halted {
+		a.addLine(where, state.RoleHighlight, text)
+		a.beepFor(where, state.Line{Role: state.RoleHighlight})
+	}
+	ev.Halted = halted
+	a.queueScript(a.scriptAfter(ev))
 	if online && e.whois {
 		a.sendNet(n, "WHOIS", nick)
 	}

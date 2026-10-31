@@ -1,0 +1,39 @@
+Scripts trout can't run. Dialogs and DLLs stop a script from loading at
+all, so it never half-runs; other unsupported things are listed, and the
+rest of the script works.
+
+-- bad.mrc --
+dialog settings {
+  title "Settings"
+  size -1 -1 100 50
+}
+alias opts dialog -m settings settings
+on *:TEXT:!sys:#:msg # $dll(sysinfo.dll,cpu,_)
+-- good.mrc --
+on *:NOSUCHEVENT:#:echo never
+on *:TEXT:hi:#:msg # $window(@greet)
+on *:SOCKREAD:sock:noop
+menu nicklist {
+  Whois:whois $$1
+}
+on *:TEXT:!q:#:msg # $?="Question?"
+on *:TEXT:!ok:#:msg # still here
+-- transcript --
+! bad.mrc: line 1: dialogs aren't supported: they need Windows [fatal]
+! bad.mrc: line 5: /dialog: dialogs aren't supported [fatal]
+! bad.mrc: line 6: $dll: DLLs aren't supported [fatal]
+! good.mrc: line 1: on NOSUCHEVENT isn't supported
+! good.mrc: line 2: $window isn't supported yet
+! good.mrc: line 3: on SOCKREAD isn't supported
+me trout
+chan #trout trout bob
+active #trout
+/opts
+> /opts
+< :carol!c@h JOIN #trout
+< :bob!b@h PRIVMSG #trout :hi
+= status: * $window isn't supported yet (line 2, good.mrc)
+< :bob!b@h PRIVMSG #trout :!q
+= status: * $?: input boxes only work in popups and typed commands (line 7, good.mrc)
+< :bob!b@h PRIVMSG #trout :!ok
+> /msg #trout still here

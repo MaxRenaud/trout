@@ -1,0 +1,44 @@
+^ events run before the client shows an event and can halt its text,
+like mIRC's; the other events still run, with $halted. on INPUT sees what
+was typed, and can stop it.
+
+-- theme.mrc --
+on ^*:JOIN:#:{
+  echo $chan -->> $nick joined
+  haltdef
+}
+on ^*:TEXT:*:#:if ($nick == spam) halt
+on *:JOIN:#:if ($halted) echo $chan (joined quietly)
+on &*:JOIN:#:echo $chan never: the text was halted
+on *:TEXT:*:#:echo $chan text event, halted: $halted
+on *:INPUT:#:{
+  if ($1 == !secret) {
+    echo $chan not sending that
+    halt
+  }
+  if (/shout iswm $1) {
+    say $upper($2-)
+    haltdef
+  }
+}
+-- transcript --
+me trout
+chan #trout @trout bob
+active #trout
+< :bob!b@h JOIN #trout
+= #trout: -->> bob joined
+* hidden
+= #trout: (joined quietly)
+< :bob!b@h PRIVMSG #trout :hello
+= #trout: text event, halted: $false
+< :spam!s@h PRIVMSG #trout :buy now
+* hidden
+= #trout: text event, halted: $true
+type hi all
+> /say hi all
+type !secret plans
+= #trout: not sending that
+* input stopped
+/shout hello
+> /say HELLO
+* input stopped

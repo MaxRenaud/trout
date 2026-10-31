@@ -105,6 +105,11 @@ func (a *App) ctcp(n *state.Network, m ircmsg.Message, t time.Time) bool {
 		where = a.whoisWin(n)
 	}
 	a.addLineAt(where, state.RoleNotice, "["+nick+" "+cmd+"]", t)
+	if a.ctcpHalted && cmd != "VERSION" {
+		// A script's ctcp event answered it and /halted; mIRC still sends
+		// its VERSION reply.
+		return true
+	}
 	reply := ""
 	switch cmd {
 	case "VERSION":

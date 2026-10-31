@@ -1,0 +1,29 @@
+Greeting people as they join. Our own join triggers on JOIN too, like
+mIRC; the me prefix makes an event only for our own.
+
+-- greet.mrc --
+on *:JOIN:#:{
+  if ($nick == $me) {
+    echo $chan Now talking in $chan
+    return
+  }
+  msg $chan Welcome to $chan $+ , $nick $+ !
+}
+on me:*:PART:#:echo -s Left $chan
+on !*:PART:#:echo $chan $nick left ( $+ $1- $+ )
+; With no window, an event's /echo goes to the network's status window, like
+; mIRC (checked in mIRC: the help doesn't say).
+on *:TEXT:!echotest:#:echo from the event
+-- transcript --
+me trout
+active #elsewhere
+< :trout!t@host JOIN #trout
+= #trout: Now talking in #trout
+< :bob!b@host JOIN #trout
+> /msg #trout Welcome to #trout, bob!
+< :bob!b@host PART #trout :see you
+= #trout: bob left (see you)
+< :trout!t@host PART #trout
+= status: Left #trout
+< :bob!b@host PRIVMSG #trout :!echotest
+= status: from the event

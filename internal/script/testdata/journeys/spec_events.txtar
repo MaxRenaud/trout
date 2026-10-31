@@ -1,0 +1,30 @@
+Event examples from the TEXT, JOIN, KICK, QUIT, NICK and Ctcp Events pages
+of mIRC's help.
+
+-- events.mrc --
+on 1:TEXT:*help*:#mirc,#irchelp:/msg $nick what is the problem?
+on 1:JOIN:#:/msg $chan Welcome $nick
+on 1:KICK:#:/invite $knick $chan | /msg $nick Hey, $knick is my friend!
+on 1:QUIT:/notice $me $nick just quit IRC with the message $1-
+on 1:NICK:/describe $newnick thinks $nick was a nicer nickname!
+ctcp 1:ping:?:/notice $nick Ouch! | /halt
+-- transcript --
+me trout
+chan #trout @trout bob alice
+active #trout
+< :bob!u@h PRIVMSG #mirc :I need help
+> /msg bob what is the problem?
+< :bob!u@h PRIVMSG #trout :I need help
+< :dave!u@h JOIN #trout
+> /msg #trout Welcome dave
+< :alice!u@h KICK #trout bob :bye
+> /invite bob #trout
+> /msg alice Hey, bob is my friend!
+< :dave!u@h NICK :davey
+> /describe davey thinks dave was a nicer nickname!
+< :davey!u@h QUIT :Gone fishing
+> /notice trout davey just quit IRC with the message Gone fishing
+< :bob!u@h PRIVMSG trout :\x01PING 123\x01
+> /notice bob Ouch!
+* halted
+< :bob!u@h PRIVMSG #trout :\x01PING 123\x01

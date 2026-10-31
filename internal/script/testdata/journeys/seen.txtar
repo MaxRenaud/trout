@@ -1,0 +1,55 @@
+!seen: who was here, and when. A hash table of what everyone last did,
+saved to a file by a timer and loaded again after a restart.
+
+-- seen.mrc --
+on *:START:{
+  hmake seen 100
+  if ($exists(seen.hsh)) hload seen seen.hsh
+  .timerseen 0 60 hsave seen seen.hsh
+}
+on *:JOIN:#:hadd seen $nick $ctime joining $chan
+on *:PART:#:hadd seen $nick $ctime leaving $chan
+on *:QUIT:hadd seen $nick $ctime quitting ( $+ $1- $+ )
+on *:NICK:hadd seen $nick $ctime changing their nick to $newnick
+on $*:TEXT:/^!seen (\S+)/i:#:{
+  var %who = $regml(1)
+  hadd seen $nick $ctime saying $1- in $chan
+  if (%who == $nick) msg $chan $nick $+ , that's you.
+  elseif (%who ison $chan) msg $chan %who is right here.
+  elseif ($hget(seen,%who)) {
+    tokenize 32 $v1
+    msg $chan %who was last seen $duration($calc($ctime - $1)) ago, $2-
+  }
+  else msg $chan I haven't seen %who $+ .
+}
+on *:TEXT:*:#:hadd seen $nick $ctime saying $1- in $chan
+-- transcript --
+me trout
+chan #trout @trout alice
+active #trout
+clock 2026-10-29T15:00:00Z
+< :bob!b@host JOIN #trout
+< :bob!b@host PRIVMSG #trout :hello all
+< :bob!b@host PART #trout :lunch
+@ +3h
+< :alice!a@host PRIVMSG #trout :!seen bob
+> /msg #trout bob was last seen 3hrs ago, leaving #trout
+< :alice!a@host PRIVMSG #trout :!seen alice
+> /msg #trout alice, that's you.
+< :alice!a@host PRIVMSG #trout :!SEEN trout
+> /msg #trout trout is right here.
+< :alice!a@host PRIVMSG #trout :!seen zed
+> /msg #trout I haven't seen zed.
+< :carol!c@host JOIN #trout
+< :carol!c@host NICK carla
+< :alice!a@host PRIVMSG #trout :!seen carol
+> /msg #trout carol was last seen 0secs ago, changing their nick to carla
+< :carla!c@host QUIT :gone fishing
+@ +90s
+< :alice!a@host PRIVMSG #trout :!seen carla
+> /msg #trout carla was last seen 1min 30secs ago, quitting (gone fishing)
+# The timer has saved the table; after a restart it's loaded again.
+@ +1m
+reload
+< :alice!a@host PRIVMSG #trout :!seen bob
+> /msg #trout bob was last seen 3hrs 2mins 30secs ago, leaving #trout

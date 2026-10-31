@@ -365,6 +365,23 @@ entry has `local = true` and no address. Its config names the admin socket and d
 that folder (soju runs there, and so does `sojuctl`): a Windows path in a listen URL loses
 its backslashes. Tested on Windows 11 (`dev/windows/run-tests`). The About box links soju's source.
 
+## Scripts
+
+mIRC scripting is its own package, `internal/script`, kept apart from the client: no I/O
+and no imports of `ui`, `irc` or `state`. Events go in (built from IRC lines by
+`EventFromMessage`, or from the client: INPUT, OPEN, EXIT...), actions come out (commands
+to run as if typed, echoes, files to write, variables to keep), and it asks the client
+read-only questions through a `Host` (nicklists, the address list, the time). A script
+never sends IRC itself: its `/msg` goes through the same path as a typed one.
+
+`ui/scripts.go` is the only place they meet: one wrapper around the IRC handler (`^`
+handlers before trout shows a line, the rest after), typed lines (on INPUT, aliases,
+`//`), timers (the engine says when it next needs waking), and the commands that load and
+unload scripts. The JOIN, PRIVMSG and other handlers don't know scripts exist.
+`ui/scripteditor.go` is the Scripts Editor and `ui/popups.go` the right-click menus,
+which all come from popups.ini. Each handler has a step budget, so a script that never
+ends can't freeze trout. What users can do is in [scripting.md](scripting.md).
+
 ## Later
 
 - **Clipboard over SSH** via OSC 52 (copying uses pbcopy/xclip/clip locally).

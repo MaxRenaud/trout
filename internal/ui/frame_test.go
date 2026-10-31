@@ -11,6 +11,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
 
@@ -105,9 +106,9 @@ func TestFrames(t *testing.T) {
 	a.openConnect("Login failed. Check the user name and password.")
 	frame("connect")
 	a.dlg.key(a, "esc")
-	a.openDialog(a.kickWhy(a.nets[0].Wins[1], "bob", true))
+	a.askInputs([]script.Prompt{{Text: "Reason:", Required: true}}, func(*App, []string) tea.Cmd { return nil })
 	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("flooding")})
-	frame("kick (why)")
+	frame("input request")
 	a.dlg.key(a, "esc")
 	a.openDialog(a.trustBox(&irc.CertError{Addr: "bnc.example.net:6697",
 		Fingerprint: "SHA256:9f2cXq1v0b0lZ0Yw3o8m7Jm9uEo0qkqH3H3cS0kR3hE"}))
@@ -133,9 +134,6 @@ func TestFrames(t *testing.T) {
 	}
 	frame("found")
 	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	a.openSetAway()
-	frame("set away")
-	a.dlg = nil
 	for _, d := range []struct {
 		name string
 		open func()
@@ -178,6 +176,36 @@ func TestFrames(t *testing.T) {
 			a.openOptionKey()
 		}},
 		{"channel modes", func() { a.openChannelModes(a.nets[0].Wins[1]) }},
+		{"scripts editor", func() {
+			a.scriptMem = map[string]string{"remote.ini": "[script]\r\nn0=on *:JOIN:#:{\r\nn1=  if ($nick != $me) msg $chan welcome $nick\r\nn2=}\r\n",
+				"seen.mrc": "alias seen echo -a $1\non *:FOO:#:echo"}
+			a.loadScript("remote.ini", true)
+			a.loadScript("seen.mrc", true)
+			a.dlg = nil
+			a.openScriptsTab(edRemote)
+		}},
+		{"scripts editor popups", func() {
+			a.scriptMem = map[string]string{"popups.ini": "[lpopup]\r\nn0=Whois:/whois $$1\r\nn1=-\r\nn2=Slap:/me slaps $$1 around a bit with a large trout\r\n"}
+			a.openScriptsTab(edPopups)
+			ed := a.dlg.(*scriptEditor)
+			ed.cur[edPopups] = ed.docs[3] // Nickname List
+		}},
+		{"scripts editor file menu", func() {
+			a.openScriptsTab(edAliases)
+			a.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f"), Alt: true})
+		}},
+		{"scripts editor options menu", func() {
+			a.openScriptsTab(edRemote)
+			a.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o"), Alt: true})
+		}},
+		{"scripts editor users", func() {
+			a.scripts.Command(a.nets[0].Name, "", "auser 10,friend boss!*@boss.example the boss", false, a.scriptHost())
+			a.openScriptsTab(edUsers)
+		}},
+		{"scripts editor variables", func() {
+			a.scripts.Command(a.nets[0].Name, "", "set %kicks 3", false, a.scriptHost())
+			a.openScriptsTab(edVars)
+		}},
 		{"send file", func() { a.openSendFile("") }},
 		{"nick info", func() { a.openNickInfo(a.nets[0], "bob") }},
 		{"dcc get window", func() {

@@ -56,7 +56,7 @@ var menuBarNames = [...]string{"File", "View", "Favorites", "Tools", "Commands",
 const menuMnemonics = "fvatcwh"
 
 // An empty label is a separator.
-var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "",
+var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "Scripts", "",
 	"Address Book", "Notify", "", "Send File", "Received", "", "Colors"}
 
 type textRow struct {
@@ -107,9 +107,9 @@ func (a *App) View() string {
 		x = a.treeW + 1
 	}
 	a.drawWindow(c, a.active, x, y, a.w-x, a.h-y)
-	a.drawMenus(c)
 	a.drawPalette(c)
 	a.drawModal(c)
+	a.drawMenus(c) // over the dialog: the Scripts Editor has its own menubar
 	return c.String()
 }
 
@@ -131,9 +131,10 @@ func (a *App) drawMenuBar(c *Canvas, y int) {
 	face := Style{FG: t.FaceText, BG: t.Face}
 	c.Fill(0, y, a.w, 1, face)
 	x := 1
-	for i, name := range menuBarNames {
+	for i := range menuBarNames {
+		name := a.menuBarName(i)
 		st := face
-		if a.menuBar == i && len(a.menus) > 0 {
+		if a.menuBar == i && len(a.menus) > 0 && !a.dlgMenu {
 			st = Style{FG: t.MenuSelText, BG: t.MenuSel}
 		}
 		w := len(name) + 2
