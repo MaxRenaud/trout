@@ -275,7 +275,7 @@ type App struct {
 // Run starts the UI and blocks until the user quits.
 func Run(opts Options) error {
 	a := New(opts)
-	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus())
+	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus(), inputOption())
 	a.send = p.Send
 	a.bellOut = os.Stdout
 	env := termkeys.SystemEnv()
