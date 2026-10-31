@@ -1,6 +1,7 @@
 package script
 
 import (
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ type popupItem struct {
 	label string // not evaluated: that happens each time it's shown
 	sep   bool
 	body  []stmt // nil for a submenu's title
+	src   string // its commands as written, for the input boxes they ask for
 }
 
 // menuDef parses a menu section's lines.
@@ -72,14 +74,14 @@ func (p *parser) popupItems(kinds []string, lines []srcLine) {
 				}
 				block = append(block, lines[i])
 			}
-			pop.items = append(pop.items, popupItem{depth: depth, label: label, body: p.stmts(block)})
+			pop.items = append(pop.items, popupItem{depth: depth, label: label, body: p.stmts(block), src: srcText(block)})
 			continue
 		}
 		f := splitFields(t, 2)
 		item := popupItem{depth: depth, label: strings.TrimSpace(f[0])}
 		if len(f) == 2 {
 			cmds := strings.TrimSpace(f[1])
-			item.body = p.stmts([]srcLine{{lines[i].n, cmds}})
+			item.body, item.src = p.stmts([]srcLine{{lines[i].n, cmds}}), cmds
 			if item.body == nil {
 				item.body = []stmt{}
 			}
@@ -227,6 +229,7 @@ func (r *run) submenu(fr *frame, inner, id string) []MenuItem {
 // RunMenu runs the popup item with this ID, from Popups, with the same
 // $1- the popup had.
 func (e *Engine) RunMenu(id, kind, network, window string, params []string, h Host) []Action {
+	defer e.Answer(nil)
 	r := e.newRun(h)
 	parts := strings.SplitN(id, "/", 3)
 	if len(parts) < 3 {
@@ -252,6 +255,80 @@ func (e *Engine) RunMenu(id, kind, network, window string, params []string, h Ho
 	}
 	r.report(fr, r.block(fr, items[ii].body))
 	return r.finish()
+}
+
+// Prompt is an input box a command asks for with $?="question" (or $$?,
+// which stops the command when it's left empty). The client asks before
+// running the command, then gives the answers with Answer, like mIRC's
+// input boxes, which wait for you in the middle of it.
+type Prompt struct {
+	Text     string
+	Required bool
+}
+
+var promptRe = regexp.MustCompile(`(\$\$?)\?\*?(?:="([^"]*)")?`)
+
+func prompts(src string) []Prompt {
+	var out []Prompt
+	for _, m := range promptRe.FindAllStringSubmatch(src, -1) {
+		out = append(out, Prompt{Text: m[2], Required: m[1] == "$$"})
+	}
+	return out
+}
+
+// MenuPrompts is the input boxes a popup item, from Popups, asks for.
+func (e *Engine) MenuPrompts(id string) []Prompt {
+	parts := strings.SplitN(id, "/", 3)
+	if len(parts) < 3 {
+		return nil
+	}
+	if _, cmds, dynamic := strings.Cut(parts[2], ":"); dynamic {
+		return prompts(cmds)
+	}
+	si, err1 := strconv.Atoi(parts[0])
+	pi, err2 := strconv.Atoi(parts[1])
+	ii, err3 := strconv.Atoi(parts[2])
+	if err1 != nil || err2 != nil || err3 != nil || si >= len(e.scripts) || pi >= len(e.scripts[si].popups) ||
+		ii >= len(e.scripts[si].popups[pi].items) {
+		return nil
+	}
+	return e.calledPrompts(e.scripts[si], e.scripts[si].popups[pi].items[ii].src)
+}
+
+// CommandPrompts is the input boxes a line typed in the editbox asks for:
+// its own (with eval, typed with //) and the alias it calls.
+func (e *Engine) CommandPrompts(line string, eval bool) []Prompt {
+	if eval {
+		return e.calledPrompts(nil, line)
+	}
+	return e.calledPrompts(nil, strings.Fields(line + " x")[0])
+}
+
+// calledPrompts is src's input boxes, and those of the aliases its
+// commands call.
+func (e *Engine) calledPrompts(from *file, src string) []Prompt {
+	out := prompts(src)
+	for cmd := range strings.SplitSeq(src, "|") {
+		name := strings.TrimLeft(strings.Fields(cmd + " x")[0], "/.")
+		if a := e.alias(from, name); a != nil {
+			out = append(out, prompts(a.src)...)
+		}
+	}
+	return out
+}
+
+// Answer gives the next command run the answers to its input boxes.
+func (e *Engine) Answer(answers []string) { e.answers = answers }
+
+// MenubarTitle is the menubar popup's name in the menubar, from
+// popups.ini, or "".
+func (e *Engine) MenubarTitle() string {
+	for _, f := range e.scripts {
+		if f.title != "" {
+			return f.title
+		}
+	}
+	return ""
 }
 
 var menuIdents = map[string]builtin{

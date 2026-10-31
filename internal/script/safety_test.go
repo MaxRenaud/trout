@@ -487,3 +487,57 @@ func TestLookup(t *testing.T) {
 		t.Error("lists")
 	}
 }
+
+// TestInputBoxes: $?="question" in a popup item or a typed line is asked
+// before it runs; the answers fill them in, $! is the last one, and $$?
+// left empty stops the command.
+func TestInputBoxes(t *testing.T) {
+	e := New(Options{})
+	src := "[lpopup]\r\nn0=Kick (why):/echo -a kick # $$1 $$?=\"Reason:\"\r\n[bpopup]\r\nn0=Commands\r\nn1=Join channel:/echo -a join #$$?=\"Enter channel name:\" $!\r\nn2=Aw:/aw\r\n"
+	if ps := e.LoadAs("popups.ini", src, "popups"); len(ps) != 0 {
+		t.Fatal(ps)
+	}
+	load(t, e, "a.mrc", "alias aw echo -a away $?=\"Away message:\"")
+	if got := e.MenubarTitle(); got != "Commands" {
+		t.Errorf("title = %q", got)
+	}
+	items, _ := e.Popups("menubar", "TestNet", "#trout", nil, evalHost())
+	if len(items) != 2 || items[0].Label != "Join channel" {
+		t.Fatalf("menubar = %+v", items)
+	}
+	if got := e.MenuPrompts(items[0].ID); !slices.Equal(got, []Prompt{{"Enter channel name:", true}}) {
+		t.Errorf("prompts = %+v", got)
+	}
+	e.Answer([]string{"trout"})
+	if a := e.RunMenu(items[0].ID, "menubar", "TestNet", "#trout", nil, evalHost()); len(a) != 1 || a[0].Echo.Text != "join #trout trout" {
+		t.Errorf("join: %+v", a)
+	}
+	if got := e.MenuPrompts(items[1].ID); !slices.Equal(got, []Prompt{{"Away message:", false}}) {
+		t.Errorf("an alias's prompts = %+v", got)
+	}
+
+	nick, _ := e.Popups("nicklist", "TestNet", "#trout", []string{"bob"}, evalHost())
+	e.Answer([]string{""})
+	if a := e.RunMenu(nick[0].ID, "nicklist", "TestNet", "#trout", []string{"bob"}, evalHost()); len(a) != 0 {
+		t.Errorf("an empty $$? ran it: %+v", a)
+	}
+	e.Answer([]string{"too loud"})
+	if a := e.RunMenu(nick[0].ID, "nicklist", "TestNet", "#trout", []string{"bob"}, evalHost()); len(a) != 1 || a[0].Echo.Text != "kick #trout bob too loud" {
+		t.Errorf("kick: %+v", a)
+	}
+
+	// Typed: the line's own with //, and its alias's either way.
+	if got := e.CommandPrompts(`echo -a $?="Name?"`, true); len(got) != 1 || got[0].Text != "Name?" {
+		t.Errorf("typed = %+v", got)
+	}
+	if got := e.CommandPrompts(`echo -a $?="Name?"`, false); len(got) != 0 {
+		t.Errorf("typed with one / = %+v", got)
+	}
+	if got := e.CommandPrompts("aw", false); len(got) != 1 {
+		t.Errorf("typed alias = %+v", got)
+	}
+	// Without answers (in an event, say), it's an error.
+	if a, _ := e.Command("TestNet", "", "aw", false, evalHost()); len(a) != 1 || !strings.Contains(a[0].Echo.Text, "input boxes only work") {
+		t.Errorf("unanswered: %+v", a)
+	}
+}

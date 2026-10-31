@@ -12,6 +12,7 @@ type file struct {
 	events  []*event
 	groups  []group
 	popups  []*popup
+	title   string // a popups.ini's menubar title, its [bpopup]'s first line
 }
 
 type alias struct {
@@ -19,6 +20,7 @@ type alias struct {
 	local bool // alias -l: only this script can call it
 	file  *file
 	body  []stmt
+	src   string // its commands as written, for the input boxes they ask for
 }
 
 // event is an on or ctcp definition.
@@ -186,6 +188,11 @@ func (p *parser) popupsIni() {
 	kind := ""
 	var lines []srcLine
 	flush := func() {
+		if kind == "menubar" && len(lines) > 0 {
+			// The menubar popup's first line is its name in the menubar,
+			// like mIRC's Commands.
+			p.f.title, lines = strings.TrimLeft(lines[0].text, "."), lines[1:]
+		}
 		if kind != "" && len(lines) > 0 {
 			p.popupItems([]string{kind}, lines)
 		}
@@ -202,6 +209,14 @@ func (p *parser) popupsIni() {
 		}
 	}
 	flush()
+}
+
+func srcText(lines []srcLine) string {
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(l.text + "\n")
+	}
+	return b.String()
 }
 
 // skipIni skips the rest of an unsupported ini section.
@@ -294,14 +309,15 @@ func (p *parser) aliasDef(l srcLine, rest string) {
 		return
 	}
 	name := strings.TrimLeft(w[0], "/")
-	body := p.stmts(p.body(l, strings.Join(w[1:], " ")))
+	lines := p.body(l, strings.Join(w[1:], " "))
+	body := p.stmts(lines)
 	key := strings.ToLower(name)
 	if p.f.aliases[key] != nil {
 		// Like mIRC, the first definition wins.
 		p.problem(l.n, false, "alias "+name+" is defined twice; the first one is used")
 		return
 	}
-	p.f.aliases[key] = &alias{name: name, local: local, file: p.f, body: body}
+	p.f.aliases[key] = &alias{name: name, local: local, file: p.f, body: body, src: srcText(lines)}
 }
 
 func (p *parser) onDef(l srcLine, rest string) {

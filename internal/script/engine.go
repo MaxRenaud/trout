@@ -139,6 +139,8 @@ type Engine struct {
 	ltimer     string             // the last timer started
 	deaf       int                // the events not listened to: $remote's bits (1 ctcp, 2 named, 4 raw)
 	identWarn  bool               // an identifier that doesn't exist is an error
+	answers    []string           // input box answers for $?, from Answer
+	lastAnswer string             // $!
 }
 
 // Listen turns the three kinds of event on and off, like mIRC's /ctcps,
@@ -367,6 +369,7 @@ func (e *Engine) Alias(network, window, name, args string, h Host) (actions []Ac
 // it, nothing is evaluated. ok is false if the client should run the line
 // itself.
 func (e *Engine) Command(network, window, line string, eval bool, h Host) (actions []Action, ok bool) {
+	defer e.Answer(nil)
 	word, args, _ := strings.Cut(strings.TrimSpace(line), " ")
 	name := strings.TrimLeft(word, ".!")
 	r := e.newRun(h)

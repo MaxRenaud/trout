@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -63,18 +62,6 @@ func (a *App) awayUpstream(n *state.Network) {
 		line = "AWAY :" + a.away
 	}
 	a.serv(a.home, n.Status(), true, "network", "quote", n.Name, line)
-}
-
-// openSetAway is Commands > Set Away.
-func (a *App) openSetAway() {
-	a.openDialog(&formBox{Title: "Set Away", Lines: []string{"You're away on every network until you come back.",
-		"An empty message means you're back."},
-		Fields:  []*formField{newField("Message:", cmp.Or(a.away, "Gone fishing"), false)},
-		Buttons: []string{"OK", "Cancel"},
-		OnOK: func(a *App, vals []string) (tea.Cmd, error) {
-			a.setAway(strings.TrimSpace(vals[0]))
-			return nil, nil
-		}})
 }
 
 // whoKey names a WHO trout asked for itself (on joining a channel, for the

@@ -323,29 +323,6 @@ func (a *App) gotPassword(msg passwordMsg) tea.Cmd {
 	return a.switchBouncer(msg.b, msg.password)
 }
 
-// kickWhy is the Kick (why) prompt, which asks for a reason, like mIRC's
-// popup with $$?="Reason:". As there, an empty reason cancels.
-func (a *App) kickWhy(win *state.Window, nick string, ban bool) *formBox {
-	title, verb := "Kick (why)", "Kick"
-	if ban {
-		title, verb = "Ban, Kick (why)", "Ban and kick"
-	}
-	return &formBox{Title: title, Lines: []string{verb + " " + nick + " from " + win.Name + "."},
-		Fields:  []*formField{newField("Reason:", "", false)},
-		Buttons: []string{"OK", "Cancel"},
-		OnOK: func(a *App, vals []string) (tea.Cmd, error) {
-			reason := strings.TrimSpace(vals[0])
-			if reason == "" {
-				return nil, nil
-			}
-			if ban {
-				a.sendTo(win, "MODE", win.Name, "+b", nick+"!*@*")
-			}
-			a.sendTo(win, "KICK", win.Name, nick, reason)
-			return nil, nil
-		}}
-}
-
 // settings and applySettings move the View menu and Options choices to
 // and from config.toml.
 func (a *App) settings() config.Settings {

@@ -378,17 +378,28 @@ func TestScriptsEditor(t *testing.T) {
 	if want := []string{"1 Status", "2 Channel", "3 Query", "4 Nickname List", "5 Menu Bar"}; !slices.Equal(labels, want) {
 		t.Errorf("View = %q", labels)
 	}
+	// The Nickname List is trout's nick menu: replacing it replaces that.
 	items[3].Action(a)
-	paste("Info:/whois $$1")
+	if got := ed.doc().text(); !strings.HasPrefix(got, "Info:/uwho $1\nWhois:/whois $$1") {
+		t.Errorf("Nickname List starts %q", got[:min(len(got), 40)])
+	}
+	a.key(tea.KeyMsg{Type: tea.KeyCtrlA})
+	paste("Hello:/echo -a hi $$1")
 	ed.press(a, "OK")
-	if got := a.scriptMem["popups.ini"]; got != "[lpopup]\r\nn0=Info:/whois $$1\r\n" {
+	if got := a.scriptMem["popups.ini"]; !strings.Contains(got, "[lpopup]\r\nn0=Hello:/echo -a hi $$1\r\n[") ||
+		!strings.Contains(got, "[bpopup]\r\nn0=Commands\r\n") {
 		t.Errorf("popups.ini = %q", got)
 	}
-	if !slices.Contains(a.book().Scripts, "-p popups.ini") {
-		t.Errorf("scripts = %q", a.book().Scripts)
+	if slices.ContainsFunc(a.book().Scripts, func(s string) bool { return strings.Contains(s, "popups.ini") }) {
+		t.Errorf("popups.ini in the scripts: %q", a.book().Scripts)
 	}
-	if got := a.scriptMenu("nicklist", w, []string{"bob"}); len(got) != 1 || got[0].Label != "Info" {
+	if got := a.scriptMenu("nicklist", w, []string{"bob"}); len(got) != 1 || got[0].Label != "Hello" {
 		t.Errorf("nicklist popup = %+v", got)
+	}
+	got := a.scriptMenu("nicklist", w, []string{"bob"})
+	got[0].Action(a)
+	if l := w.Lines[len(w.Lines)-1].Text; l != "hi bob" {
+		t.Errorf("Hello: %q", l)
 	}
 
 	// Users and Variables replace the lists; a line that isn't right
@@ -538,16 +549,17 @@ func TestScriptsEditorFiles(t *testing.T) {
 		t.Error("new1 went with script1.mrc")
 	}
 
-	// popups.ini is loaded when a menu has items, whichever changed first.
+	// popups.ini is loaded again whichever of its menus changed first.
 	a.openScriptsTab(edPopups)
 	ed = a.dlg.(*scriptEditor)
 	ed.typed(a, []rune("x"))
-	ed.key(a, "backspace") // Status: changed, and empty
+	ed.key(a, "backspace") // Status: changed back
 	ed.cur[edPopups] = ed.docs[1]
+	ed.key(a, "ctrl+a")
 	ed.typed(a, []rune("Hello:/echo -a hello"))
 	ed.press(a, "OK")
-	if !slices.Contains(a.book().Scripts, "-p popups.ini") {
-		t.Errorf("popups.ini not loaded: %q", a.book().Scripts)
+	if got := a.scriptMenu("channel", a.active, nil); len(got) != 1 || got[0].Label != "Hello" {
+		t.Errorf("channel popup = %+v", got)
 	}
 }
 
@@ -831,7 +843,7 @@ func TestScriptsEditorMenus(t *testing.T) {
 	l := a.dlg.(*listBox)
 	l.Sel = 1
 	l.press(a, "Move Up")
-	if want := []string{"bee.mrc", "remote.ini"}; !slices.Equal(a.book().Scripts, want) || !slices.Equal(a.scripts.Scripts(), want) {
+	if want := []string{"bee.mrc", "remote.ini"}; !slices.Equal(a.book().Scripts, want) || !slices.Equal(a.scripts.Scripts(), append([]string{"popups.ini"}, want...)) {
 		t.Errorf("Order: %q, engine %q", a.book().Scripts, a.scripts.Scripts())
 	}
 	l.press(a, "Close")

@@ -131,6 +131,14 @@ func (a *App) startScripts() tea.Cmd {
 	}
 	b := a.book()
 	a.applyScriptOpts()
+	// An early build kept popups.ini in the scripts as "-p popups.ini";
+	// it's always loaded now.
+	if kept := slices.DeleteFunc(slices.Clone(b.Scripts), func(s string) bool {
+		return strings.HasPrefix(strings.ToLower(s), "-p ")
+	}); len(kept) != len(b.Scripts) {
+		b.Scripts = kept
+		a.saveConfig()
+	}
 	vars, _ := a.scriptReadFile("vars.ini")
 	saved := map[string]string{}
 	for _, l := range readIniList(vars, "variables") {
@@ -738,51 +746,6 @@ func (h scriptHost) Info(network string) script.NetInfo {
 func (h scriptHost) ReadFile(name string) (string, bool) { return h.a.scriptReadFile(name) }
 func (h scriptHost) Now() time.Time                      { return time.Now() }
 
-// scriptMenu is the scripts' items for a popup (status, channel, query,
-// nicklist or menubar), as trout's menu items.
-func (a *App) scriptMenu(kind string, w *state.Window, params []string) []MenuItem {
-	if !a.scriptsOn() {
-		return nil
-	}
-	window := w.Name
-	if w.Kind == state.KStatus {
-		window = ""
-	}
-	items, actions := a.scripts.Popups(kind, w.Net.Name, window, params, a.scriptHost())
-	a.queueScript(a.runScript(actions))
-	var conv func([]script.MenuItem) []MenuItem
-	conv = func(items []script.MenuItem) []MenuItem {
-		var out []MenuItem
-		for _, it := range items {
-			m := MenuItem{Label: it.Label, Sep: it.Separator, Disabled: it.Disabled, Check: it.Checked}
-			if len(it.Items) > 0 {
-				m.Sub = conv(it.Items)
-			} else if it.ID != "" {
-				id := it.ID
-				m.Action = func(a *App) tea.Cmd {
-					return a.runScript(a.scripts.RunMenu(id, kind, w.Net.Name, window, params, a.scriptHost()))
-				}
-			}
-			out = append(out, m)
-		}
-		return out
-	}
-	return conv(items)
-}
-
-// textMenu is the popup for right-clicking a window's text: the scripts'
-// status, channel or query popup, like mIRC's.
-func (a *App) textMenu(w *state.Window, x, y int) {
-	kind := map[state.Kind]string{state.KStatus: "status", state.KChannel: "channel", state.KQuery: "query"}[w.Kind]
-	if kind == "" {
-		return
-	}
-	if items := a.scriptMenu(kind, w, nil); len(items) > 0 {
-		a.closeMenus()
-		a.pushMenu(items, x, y)
-	}
-}
-
 // firstStatus is where trout reports on scripts: the bouncer's status
 // window, or the demo's first network's.
 func (a *App) firstStatus() *state.Window {
@@ -835,13 +798,9 @@ var loadKinds = map[string]string{"-a": "aliases", "-ps": "status", "-pc": "chan
 	"-pq": "query", "-pn": "nicklist", "-pm": "menubar"}
 
 // splitLoad reads a loaded script's entry in the config: a file name, or a
-// /load switch and one, like "-a aliases.mrc". "-p popups.ini" is the
-// Scripts Editor's popups.ini, all five popups (there's no /load -p).
+// /load switch and one, like "-a aliases.mrc".
 func splitLoad(entry string) (as, file string) {
 	if sw, f, ok := strings.Cut(entry, " "); ok && strings.HasPrefix(sw, "-") {
-		if strings.EqualFold(sw, "-p") {
-			return "popups", f
-		}
 		return loadKinds[strings.ToLower(sw)], f
 	}
 	return "", entry

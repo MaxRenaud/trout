@@ -322,6 +322,7 @@ func New(opts Options) *App {
 	}
 	a.saved = a.settings()
 	a.scripts, a.scriptProblems = script.New(script.Options{}), map[string][]script.Problem{}
+	a.loadPopups()           // the menus, before anything else loads
 	a.lastTyped = time.Now() // $idle counts from the start
 	a.scriptTab = edRemote
 	if !opts.Demo {
@@ -1124,7 +1125,18 @@ func (a *App) typedCommand(w *state.Window, cmd string) tea.Cmd {
 		if w.Kind == state.KStatus {
 			window = ""
 		}
-		if actions, ok := a.scripts.Command(w.Net.Name, window, strings.TrimPrefix(cmd, "/"), eval, a.scriptHost()); ok {
+		line := strings.TrimPrefix(cmd, "/")
+		if ps := a.scripts.CommandPrompts(line, eval); len(ps) > 0 {
+			// Its input boxes first: $?="question".
+			return a.askInputs(ps, func(a *App, answers []string) tea.Cmd {
+				a.scripts.Answer(answers)
+				if actions, ok := a.scripts.Command(w.Net.Name, window, line, eval, a.scriptHost()); ok {
+					return a.runScript(actions)
+				}
+				return a.command(w, strings.TrimLeft(cmd, "/.!"))
+			})
+		}
+		if actions, ok := a.scripts.Command(w.Net.Name, window, line, eval, a.scriptHost()); ok {
 			return a.runScript(actions)
 		}
 	}

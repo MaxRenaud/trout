@@ -53,8 +53,6 @@ func (e *Engine) check(f *file) []Problem {
 			}
 			seen[name] = true
 			switch {
-			case name == "?":
-				problems = append(problems, Problem{Line: n, Text: "$? asks for input, which isn't supported"})
 			case fatalIdents[name] != "":
 				problems = append(problems, Problem{Line: n, Fatal: true, Text: "$" + name + ": " + fatalIdents[name]})
 			case builtins[name] == nil && mircIdents[name] && e.alias(f, name) == nil:

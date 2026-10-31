@@ -25,7 +25,6 @@ on *:TEXT:!ok:#:msg # still here
 ! good.mrc: line 1: on NOSUCHEVENT isn't supported
 ! good.mrc: line 2: $window isn't supported yet
 ! good.mrc: line 3: on SOCKREAD isn't supported
-! good.mrc: line 7: $? asks for input, which isn't supported
 me trout
 chan #trout trout bob
 active #trout
@@ -35,6 +34,6 @@ active #trout
 < :bob!b@h PRIVMSG #trout :hi
 = status: * $window isn't supported yet (line 2, good.mrc)
 < :bob!b@h PRIVMSG #trout :!q
-= status: * $?: input prompts aren't supported (line 7, good.mrc)
+= status: * $?: input boxes only work in popups and typed commands (line 7, good.mrc)
 < :bob!b@h PRIVMSG #trout :!ok
 > /msg #trout still here

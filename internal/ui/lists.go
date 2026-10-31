@@ -102,8 +102,13 @@ func (a *App) ignoreCommand(w *state.Window, on bool, rest string) {
 			if secs, err := strconv.Atoi(f[2:]); err == nil {
 				e.until = time.Now().Add(time.Duration(secs) * time.Second)
 			}
+		case f == "-r": // like mIRC, /ignore -r removes
+			on = false
 		case strings.HasPrefix(f, "-"):
 			e.flags = strings.Trim(f[1:], "u0123456789")
+		case arg != "" && isDigits(f):
+			// mIRC's mask type after the nick (/ignore nick 1): trout
+			// ignores by nick!*@*, so it's left out.
 		default:
 			arg = f
 		}

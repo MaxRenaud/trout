@@ -117,7 +117,7 @@ func (a *App) openScriptsTab(tab edTab) {
 		return
 	}
 	ed := &scriptEditor{tab: tab}
-	data, _ := a.scriptReadFile("popups.ini")
+	data := a.popupsData()
 	secs, _, _ := iniSections(data)
 	for _, k := range popupKinds {
 		d := &scriptDoc{tab: edPopups, file: "popups.ini", kind: k.kind, def: true, ini: script.PopupSections[k.kind], disk: data}
@@ -135,7 +135,7 @@ func (a *App) openScriptsTab(tab edTab) {
 		if d.tab == edPopups {
 			d.kind = as
 		}
-		if ed.findDoc(d.tab, file) != nil || d.tab == edPopups && strings.EqualFold(file, "popups.ini") {
+		if ed.findDoc(d.tab, file) != nil {
 			continue
 		}
 		a.readDoc(d)
@@ -289,8 +289,6 @@ func (d *scriptDoc) entry() string {
 		return d.file
 	case "aliases":
 		return "-a " + d.file
-	case "popups":
-		return "-p " + d.file
 	default:
 		for sw, k := range loadKinds {
 			if k == as {
@@ -963,10 +961,14 @@ func (ed *scriptEditor) apply(a *App, d *scriptDoc) tea.Cmd {
 		cmds = append(cmds, a.unloadScript(d.was))
 	}
 	d.was = ""
-	hasText := strings.TrimSpace(d.text()) != ""
 	if d.tab == edPopups && d.def {
-		hasText = data != "" // any of its menus
+		// popups.ini isn't in the config's scripts: it's always loaded.
+		ps := a.scripts.LoadAs(d.file, data, "popups")
+		a.scriptProblems[strings.ToLower(d.file)] = ps
+		a.reportProblems(d.file, ps)
+		return nil
 	}
+	hasText := strings.TrimSpace(d.text()) != ""
 	switch {
 	case a.scriptLoaded(d.file):
 		ps := a.scripts.LoadAs(d.file, data, d.as())
@@ -1405,7 +1407,7 @@ func (ed *scriptEditor) openOrder(a *App) {
 		}
 		b.Scripts[at[i]], b.Scripts[at[j]] = b.Scripts[at[j]], b.Scripts[at[i]]
 		a.saveConfig()
-		var names []string
+		names := []string{"popups.ini"} // always first
 		for _, e := range b.Scripts {
 			_, f := splitLoad(e)
 			names = append(names, f)

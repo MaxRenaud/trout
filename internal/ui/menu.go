@@ -348,28 +348,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		return append(items,
 			MenuItem{Label: "Options...", Key: "Alt+O", Action: func(a *App) tea.Cmd { a.openOptions(optDisplay); return nil }})
 	case 4:
-		ch := ""
-		if a.active.Kind == state.KChannel {
-			ch = a.active.Name
-		}
-		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
-		items := []MenuItem{
-			{Label: "Join Channel...", Action: a.commandPrompt("Join Channel", "Channel:", "join", "#")},
-			{Label: "Part Channel...", Action: a.commandPrompt("Part Channel", "Channel:", "part", ch)},
-			{Label: "Query User...", Action: a.commandPrompt("Query User", "Nick:", "query", a.selectedNick())},
-			{Label: "Send Notice...", Action: do(a.openSendNotice)},
-			{Label: "Whois User...", Action: a.commandPrompt("Whois User", "Nick:", "whois", a.selectedNick())},
-			{Label: "Send CTCP...", Action: do(a.openSendCTCP)},
-			{Label: "Send File...", Action: do(func() { a.openSendFile("") })}, sep,
-			{Label: "Set Away...", Action: do(a.openSetAway)},
-			{Label: "Change Nick...", Action: a.commandPrompt("Change Nick", "Nick:", "nick", a.active.Net.Nick)}, sep,
-			{Label: "Ignore User...", Action: a.commandPrompt("Ignore User", "Nick or mask:", "ignore", a.selectedNick())},
-			{Label: "Invite User...", Disabled: ch == "", Action: a.commandPrompt("Invite User", "Nick:", "invite", "")},
-		}
-		if more := a.scriptMenu("menubar", a.active, nil); len(more) > 0 { // like mIRC's Commands menu
-			items = append(append(items, sep), more...)
-		}
-		return items
+		return a.commandsMenu()
 	case 5:
 		items := []MenuItem{{Label: "Order...", Action: func(a *App) tea.Cmd { a.openOrder(); return nil }}, sep}
 		for n, w := range a.order() {
@@ -430,62 +409,6 @@ func (a *App) windowMenu(w *state.Window, x, y int) {
 	}
 	if w.Kind != state.KTransfer {
 		items = append(append(items, MenuItem{Sep: true}), a.winOptItems(w)...)
-	}
-	a.closeMenus()
-	a.pushMenu(items, x, y)
-}
-
-// nickMenu is mIRC's default nicklist popup. (DCC Chat isn't there: it
-// would need an open port here. Send File goes through the bouncer.)
-func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
-	sub := func(labels ...string) []MenuItem {
-		items := make([]MenuItem, len(labels))
-		for i, l := range labels {
-			items[i] = MenuItem{Label: l}
-		}
-		return items
-	}
-	query := func(a *App) tea.Cmd { a.openQuery(win.Net, nick); return nil }
-	control := sub("Ignore", "Unignore", "Op", "Deop", "Voice", "Devoice",
-		"Kick", "Kick (why)", "Ban", "Ban, Kick", "Ban, Kick (why)")
-	whois, slap := MenuItem{Label: "Whois"}, MenuItem{Label: "Slap!"}
-	info := MenuItem{Label: "Info", Action: func(a *App) tea.Cmd { a.openNickInfo(win.Net, nick); return nil }}
-	ctcp := sub("Ping", "Time", "Version")
-	sendFile := MenuItem{Label: "Send File...", Action: func(a *App) tea.Cmd { a.openSendFile(nick); return nil }}
-	if !a.opts.Demo {
-		// The channel operator actions are real; the "(why)" variants ask
-		// for a reason.
-		do := func(f func()) func(*App) tea.Cmd { return func(*App) tea.Cmd { f(); return nil } }
-		mode := func(m, arg string) func(*App) tea.Cmd {
-			return do(func() { a.sendTo(win, "MODE", win.Name, m, arg) })
-		}
-		kick := do(func() { a.sendTo(win, "KICK", win.Name, nick, "trout") })
-		ban := mode("+b", nick+"!*@*")
-		why := func(ban bool) func(*App) tea.Cmd {
-			return do(func() { a.openDialog(a.kickWhy(win, nick, ban)) })
-		}
-		ignore := func(on bool) func(*App) tea.Cmd { return do(func() { a.setIgnore(win, nick, on) }) }
-		for i, act := range []func(*App) tea.Cmd{ignore(true), ignore(false), mode("+o", nick), mode("-o", nick),
-			mode("+v", nick), mode("-v", nick), kick, why(false), ban,
-			do(func() { ban(a); kick(a) }), why(true)} {
-			control[i].Action = act
-		}
-		whois.Action = do(func() { a.sendTo(win, "WHOIS", nick) })
-		for i, req := range []string{"PING", "TIME", "VERSION"} {
-			ctcp[i].Action = do(func() { a.sendCTCP(win, nick, req) })
-		}
-		slap.Action = do(func() { a.action(win, slapText(nick)) })
-	}
-	items := []MenuItem{
-		info, whois, {Label: "Query", Action: query}, {Sep: true},
-		{Label: "Control", Sub: control},
-		{Label: "CTCP", Sub: ctcp},
-		sendFile,
-		{Sep: true},
-		slap,
-	}
-	if more := a.scriptMenu("nicklist", win, []string{nick}); len(more) > 0 { // scripts' menu nicklist
-		items = append(append(items, MenuItem{Sep: true}), more...)
 	}
 	a.closeMenus()
 	a.pushMenu(items, x, y)

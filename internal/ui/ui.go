@@ -131,7 +131,8 @@ func (a *App) drawMenuBar(c *Canvas, y int) {
 	face := Style{FG: t.FaceText, BG: t.Face}
 	c.Fill(0, y, a.w, 1, face)
 	x := 1
-	for i, name := range menuBarNames {
+	for i := range menuBarNames {
+		name := a.menuBarName(i)
 		st := face
 		if a.menuBar == i && len(a.menus) > 0 && !a.dlgMenu {
 			st = Style{FG: t.MenuSelText, BG: t.MenuSel}

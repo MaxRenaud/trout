@@ -35,6 +35,22 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 	n := w.Net
 	need := func() { a.addLine(w, state.RoleInfo, "* /"+name+": insufficient parameters") }
 	switch strings.ToLower(name) {
+	case "uwho": // the nick's info, like mIRC's user info box
+		nick := arg
+		if nick == "" && w.Kind == state.KQuery {
+			nick = w.Name
+		}
+		if nick == "" {
+			need()
+			return nil, true
+		}
+		a.openNickInfo(n, nick)
+		return nil, true
+	case "closemsg": // closes a query
+		if q := n.Find(state.KQuery, arg); q != nil {
+			a.closeWindow(q)
+		}
+		return nil, true
 	case "beep": // the terminal bell, which is trout's only sound
 		a.bellDue = true
 		return nil, true

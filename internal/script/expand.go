@@ -89,6 +89,13 @@ func splitWords(s string) []string {
 		}
 		j := i
 		for j < len(s) && !isSpace(s[j]) {
+			if s[j] == '"' && j >= 2 && s[j-2:j] == "?=" {
+				// $?="Enter a channel:" is one word, spaces and all.
+				if end := strings.IndexByte(s[j+1:], '"'); end >= 0 {
+					j += end + 2
+					continue
+				}
+			}
 			if s[j] == '(' && identBefore(s[i:j]) {
 				if end := matchParen(s, j); end >= 0 {
 					j = end + 1
@@ -203,7 +210,18 @@ func (r *run) evalIdentBody(fr *frame, s string) (string, error) {
 	case s[0] == '!' && len(s) > 1:
 		// $!name is $name, left for a later evaluation: $eval($!len(ab),2).
 		return "$" + s[1:], nil
-	case s[0] == '?' || s[0] == '!':
+	case s == "!":
+		return r.e.lastAnswer, nil // the last input box's answer
+	case s[0] == '?':
+		// $?="question": an input box, answered before the command ran
+		// (see Prompt).
+		if len(r.e.answers) == 0 {
+			return "", errorf("$?: input boxes only work in popups and typed commands")
+		}
+		v := r.e.answers[0]
+		r.e.answers, r.e.lastAnswer = r.e.answers[1:], v
+		return v, nil
+	case s[0] == '!':
 		return "", errorf("$", s[:1], ": input prompts aren't supported")
 	}
 	// Like mIRC, the name runs to a ( or the end of the word: "$nick!" is

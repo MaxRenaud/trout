@@ -11,6 +11,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
 
@@ -105,9 +106,9 @@ func TestFrames(t *testing.T) {
 	a.openConnect("Login failed. Check the user name and password.")
 	frame("connect")
 	a.dlg.key(a, "esc")
-	a.openDialog(a.kickWhy(a.nets[0].Wins[1], "bob", true))
+	a.askInputs([]script.Prompt{{Text: "Reason:", Required: true}}, func(*App, []string) tea.Cmd { return nil })
 	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("flooding")})
-	frame("kick (why)")
+	frame("input request")
 	a.dlg.key(a, "esc")
 	a.openDialog(a.trustBox(&irc.CertError{Addr: "bnc.example.net:6697",
 		Fingerprint: "SHA256:9f2cXq1v0b0lZ0Yw3o8m7Jm9uEo0qkqH3H3cS0kR3hE"}))
@@ -133,9 +134,6 @@ func TestFrames(t *testing.T) {
 	}
 	frame("found")
 	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	a.openSetAway()
-	frame("set away")
-	a.dlg = nil
 	for _, d := range []struct {
 		name string
 		open func()
