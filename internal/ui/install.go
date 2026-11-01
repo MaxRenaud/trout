@@ -20,6 +20,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
 	"github.com/MaxRenaud/trout/internal/state"
+	"github.com/MaxRenaud/trout/internal/update"
 )
 
 // installWizard is Tools > Set Up Bouncer for real (the demo keeps
@@ -88,6 +89,10 @@ type installHooks struct {
 	check    func(ctx context.Context, in *install.Installer) error
 	cloud    func(id, token string) cloud.Provider
 	sshKey   string
+
+	// Updating trout itself: GitHub's latest release, and putting it in.
+	latest func(ctx context.Context) (update.Release, error)
+	update func(ctx context.Context, rel update.Release, progress func(string)) error
 }
 
 type (

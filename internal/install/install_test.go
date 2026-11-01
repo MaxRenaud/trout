@@ -357,25 +357,9 @@ func TestFindNextToTrout(t *testing.T) {
 	}
 }
 
-// TestOlder compares saved soju versions with the one trout comes with,
-// by number: v0.9.0 is older than v0.10.0.
+// TestOlder compares saved soju versions with the one trout comes with.
 func TestOlder(t *testing.T) {
-	for _, c := range []struct {
-		a, b string
-		want int
-	}{
-		{"v0.11.1", "v0.11.1", 0},
-		{"v0.9.0", "v0.10.0", -1},
-		{"v0.10.1", "v0.10.0", 1},
-		{"v1.0.0", "v0.11.1", 1},
-		{"v0.11", "v0.11.0", 0},
-		{"0.11.0", "v0.11.1", -1},
-	} {
-		if got := compareVersions(c.a, c.b); got != c.want {
-			t.Errorf("compareVersions(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
-		}
-	}
-	if Older("") || Older(SojuVersion) || !Older("v0.1.0") {
-		t.Error("Older: empty and the current version aren't older; v0.1.0 is")
+	if Older("") || Older(SojuVersion) || !Older("v0.1.0") || Older("v99.0.0") {
+		t.Error("Older: empty, the current version and a newer one aren't older; v0.1.0 is")
 	}
 }

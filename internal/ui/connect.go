@@ -336,7 +336,7 @@ func (a *App) settings() config.Settings {
 		PrivateTo: privateModes[a.privateTo], ShowAddress: a.showAddress, NicksOnJoin: a.nicksOnJoin,
 		NotifyActive:    a.notifyActive,
 		TimestampFormat: a.stampFormat, RejoinOnKick: a.rejoinOnKick, JoinOnInvite: a.joinOnInvite,
-		NoticesActive: a.noticesActive, WhoisOnQuery: a.whoisOnQuery, ConfirmPaste: a.confirmPaste,
+		NoticesActive: a.noticesActive, WhoisOnQuery: a.whoisOnQuery, ConfirmPaste: a.confirmPaste, CheckUpdates: a.checkUpdates,
 		StripCodes: a.stripCodes, KeepOpen: a.keepOpenOnPart, PrefixOwn: a.prefixOwn, CTCPActive: a.ctcpActive,
 		AwayCancel: a.awayCancel, Invisible: a.invisible, PopFavorites: a.popFavorites, DCCChat: dccModes[a.dccChat], DCCClose: a.dccClose,
 		DCCGet: dccModes[a.dccGet], DCCAutoAsked: a.dccAutoAsked, DCCWarn: a.dccWarn, DownloadDir: a.downloadDir,
@@ -356,6 +356,7 @@ func (a *App) applySettings(s config.Settings) {
 	a.showAddress, a.nicksOnJoin, a.notifyActive = s.ShowAddress, s.NicksOnJoin, s.NotifyActive
 	a.stampFormat, a.rejoinOnKick, a.joinOnInvite = cmp.Or(s.TimestampFormat, "[HH:nn]"), s.RejoinOnKick, s.JoinOnInvite
 	a.noticesActive, a.whoisOnQuery, a.confirmPaste = s.NoticesActive, s.WhoisOnQuery, s.ConfirmPaste
+	a.checkUpdates = s.CheckUpdates
 	a.stripCodes, a.keepOpenOnPart, a.prefixOwn, a.ctcpActive = s.StripCodes, s.KeepOpen, s.PrefixOwn, s.CTCPActive
 	a.awayCancel, a.invisible, a.popFavorites = s.AwayCancel, s.Invisible, s.PopFavorites
 	a.dccChat = max(0, slices.Index(dccModes, s.DCCChat))

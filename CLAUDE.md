@@ -62,6 +62,11 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   other eight, `themefile.go` users' theme files (`docs/themes.md`), and `colors.go` the
   Colors dialog.
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
+- `internal/update`: trout updating itself: GitHub's latest release, how this trout was
+  installed (Homebrew's Caskroom, an unpacked archive, `go install`, a build from source),
+  `brew upgrade`, or replacing an archive's files in place (checked against
+  checksums.txt; old ones kept as `.old` until the next start, since Windows can't delete
+  a running program). `ui/selfupdate.go` is Help > Check for Updates and the daily check.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
 - `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens) or

@@ -134,6 +134,7 @@ func (a *App) openOptions(page int) {
 			{Label: "Command prefix: " + a.cmdPrefix + "...", Action: (*App).openCmdPrefix},
 			{Label: "After a Tab-completed nick: \"" + a.tabSuffix + "\"...", Action: (*App).openTabSuffix},
 			{Label: fmt.Sprintf("Window buffer: %d lines...", state.MaxLines), Action: (*App).openBuffer},
+			{Label: "Check for updates", Bool: &a.checkUpdates},
 		}},
 	}})
 	o := a.dlg.(*optionsBox)

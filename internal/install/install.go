@@ -8,7 +8,6 @@ package install
 import (
 	"bufio"
 	"bytes"
-	"cmp"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -25,11 +24,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/update"
 )
 
 // SojuVersion is the soju trout installs; dev/build-soju builds it.
@@ -38,27 +37,7 @@ const SojuVersion = "v0.11.1"
 // Older reports whether v, a version like "v0.10.1", is older than
 // SojuVersion. An empty v (not known) isn't.
 func Older(v string) bool {
-	return v != "" && compareVersions(v, SojuVersion) < 0
-}
-
-// compareVersions compares two vX.Y.Z versions part by part, as numbers;
-// a missing or unreadable part counts as 0.
-func compareVersions(a, b string) int {
-	pa := strings.Split(strings.TrimPrefix(a, "v"), ".")
-	pb := strings.Split(strings.TrimPrefix(b, "v"), ".")
-	for i := range max(len(pa), len(pb)) {
-		var x, y int
-		if i < len(pa) {
-			x, _ = strconv.Atoi(pa[i])
-		}
-		if i < len(pb) {
-			y, _ = strconv.Atoi(pb[i])
-		}
-		if c := cmp.Compare(x, y); c != 0 {
-			return c
-		}
-	}
-	return 0
+	return v != "" && update.Compare(v, SojuVersion) < 0
 }
 
 //go:embed setup.sh

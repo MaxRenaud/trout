@@ -18,10 +18,20 @@ import (
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/ui"
+	"github.com/MaxRenaud/trout/internal/update"
 )
 
 // version is set by the release build (goreleaser's -X main.version).
 var version string
+
+// moduleVersion is the version go install …@v0.1.0 put in the build
+// info, or "".
+func moduleVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		return info.Main.Version
+	}
+	return ""
+}
 
 // appVersion is trout's version: the release's, the module version for
 // `go install …@v0.1.0`, or "dev" and the commit for a build from source.
@@ -50,7 +60,7 @@ func appVersion() string {
 }
 
 func main() {
-	opts := ui.Options{Version: appVersion()}
+	opts := ui.Options{Version: appVersion(), Install: update.Detect(version != "", moduleVersion())}
 	defaultPath, err := config.DefaultPath()
 	if err != nil {
 		fail(err)

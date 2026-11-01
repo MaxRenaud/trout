@@ -22,6 +22,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
+	"github.com/MaxRenaud/trout/internal/update"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -68,6 +69,10 @@ type Options struct {
 	// Version is trout's, for About and CTCP VERSION: "v0.1.0", or a
 	// development build's "dev" and commit.
 	Version string
+
+	// Install is how this trout was installed, for updating itself
+	// (update.Detect); the zero value, a build from source, never checks.
+	Install update.Install
 }
 
 type App struct {
@@ -89,6 +94,8 @@ type App struct {
 	certFailed  bool             // the bouncer refused it this session: use the password
 	certNoted   bool             // said once that the bouncer can\'t take certificates
 	updateAsked map[string]bool  // bouncers offered a soju update this session
+	updating    bool             // trout is putting a newer trout in
+	updatedTo   string           // the version it put in this session
 	send        func(tea.Msg)    // delivers messages from connection goroutines
 	home        *state.Network
 	control     *irc.Conn
@@ -152,6 +159,7 @@ type App struct {
 	noticesActive  bool
 	whoisOnQuery   bool
 	confirmPaste   bool
+	checkUpdates   bool // Options > Other, like mIRC's
 	stripCodes     bool
 	keepOpenOnPart bool
 	prefixOwn      bool
@@ -362,7 +370,7 @@ func (a *App) Init() tea.Cmd {
 		a.openConnect("")
 		return a.startScripts()
 	}
-	return tea.Batch(a.connectBouncer(), a.optionKeyStart(), a.startScripts())
+	return tea.Batch(a.connectBouncer(), a.optionKeyStart(), a.startScripts(), a.autoCheckUpdate())
 }
 
 type tickMsg struct{}
@@ -411,6 +419,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.installUpdate(msg)
 	case localUpMsg:
 		cmd = a.localUp(msg)
+	case updateCheckedMsg:
+		cmd = a.updateChecked(msg)
+	case updateStepMsg:
+		a.updateStep(msg)
+	case updateDoneMsg:
+		a.updateDone(msg)
 	case serverDeletedMsg:
 		a.serverDeleted(msg)
 	case phoneSHA1Msg:

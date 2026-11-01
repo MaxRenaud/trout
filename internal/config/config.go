@@ -282,6 +282,9 @@ type Settings struct {
 	CmdPrefix    string `toml:"command-prefix"`
 	TabSuffix    string `toml:"tab-suffix,omitempty"`
 	Buffer       int    `toml:"buffer-lines"`
+	// CheckUpdates is mIRC's "Check for updates": once a day at most,
+	// when trout starts.
+	CheckUpdates bool `toml:"check-updates"`
 
 	// Display > switchbar, like mIRC's: sort the buttons, stretch them to
 	// fill the bar, and color the active one's button on new lines too.
@@ -321,7 +324,7 @@ func DefaultSettings() Settings {
 		Timestamps: true, ModePrefix: true, LineMarker: true, TreebarWidth: 20, NicklistWidth: 18, Beep: true,
 		DCCGet: "ask", DCCAutoAsked: true, DCCWarn: true, DCCChat: "ask", DCCIgnoreMode: "ignore", DCCTimeout: 300,
 		TimestampFormat: "[HH:nn]", NoticesActive: true, ConfirmPaste: true, PrefixOwn: true, PopFavorites: true,
-		CmdPrefix: "/", Buffer: 500, PrivateTo: "windows", ShowAddress: true}
+		CmdPrefix: "/", Buffer: 500, CheckUpdates: true, PrivateTo: "windows", ShowAddress: true}
 }
 
 // DefaultPath is config.toml in trout's directory under the user config

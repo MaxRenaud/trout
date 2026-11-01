@@ -32,6 +32,11 @@ and run `trout` from where you unpack it: the soju it installs and runs comes in
 archive, next to it. From source, `go install github.com/MaxRenaud/trout/cmd/trout@latest`
 works too, and `dev/build-soju` builds that soju.
 
+trout checks for a new version once a day when it starts (Options > Other turns that off;
+Help > Check for Updates checks now) and puts it in the way you installed it: with
+Homebrew, or by replacing the unpacked archive's files where they are. `go install` gets
+told the command.
+
 trout isn't signed yet. Homebrew takes care of that on macOS; from a downloaded archive,
 macOS says it can't check trout: run `xattr -dr com.apple.quarantine` on the unpacked
 folder once. On Windows, SmartScreen may warn the first time: More info, then Run anyway.
