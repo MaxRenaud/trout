@@ -105,6 +105,10 @@ type scriptEditor struct {
 	unloads []string // config entries File > Unload took out, for OK
 	find    string
 	drag    bool
+	// focus is 0 for the text, else the button it's on, from 1. mIRC's
+	// way out of a text box that takes Tab is Ctrl+Tab, which terminals
+	// send as Tab; Shift+Tab gets there instead.
+	focus int
 
 	tx, ty, tw, th int // the text area, from the last frame
 }
@@ -403,7 +407,7 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 		if hasSel && row >= r1 && row < r2 && cx < ed.tw { // the line break
 			c.Set(ed.tx+cx, sy, ' ', sel)
 		}
-		if row == d.row {
+		if row == d.row && ed.focus == 0 {
 			if cc := runesWidth(line[min(d.left, d.col):d.col]); d.col >= d.left && cc < ed.tw {
 				c.Restyle(ed.tx+cc, sy, t.TextBG, t.TextFG)
 			}
@@ -422,7 +426,7 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 	c.Fill(x+1, y+h-4, w-2, 1, face)
 	c.Text(x+2, y+h-4, w-6-len(pos), "File: "+path, face)
 	c.Text(x+w-2-len(pos), y+h-4, len(pos), pos, face)
-	a.dlgButtonsTaken(c, x, y+h-3, w, edButtons, 0, edMnemonics)
+	a.dlgButtonsTaken(c, x, y+h-3, w, edButtons, max(0, ed.focus-1), edMnemonics)
 }
 
 func runesWidth(rs []rune) int {
@@ -729,6 +733,9 @@ func (ed *scriptEditor) key(a *App, k string) tea.Cmd {
 		}
 		return nil
 	}
+	if ed.focus > 0 {
+		return ed.buttonKey(a, k)
+	}
 	switch mv := strings.Replace(strings.TrimPrefix(k, "shift+"), "ctrl+shift+", "ctrl+", 1); mv {
 	case "left", "right", "up", "down", "home", "end", "pgup", "pgdown",
 		"ctrl+home", "ctrl+end", "ctrl+left", "ctrl+right":
@@ -742,6 +749,8 @@ func (ed *scriptEditor) key(a *App, k string) tea.Cmd {
 		d.edit("", d.newline)
 	case "tab":
 		d.edit("type", func() bool { return d.insert([]rune("  ")) })
+	case "shift+tab":
+		ed.focus = 1
 	case "backspace":
 		d.edit("backspace", d.backspace)
 	case "delete":
@@ -785,8 +794,31 @@ func (ed *scriptEditor) key(a *App, k string) tea.Cmd {
 	return nil
 }
 
+// buttonKey is a key while the focus is on the buttons: Tab and the
+// arrows move along them and back to the text, Enter and Space press.
+func (ed *scriptEditor) buttonKey(a *App, k string) tea.Cmd {
+	n := len(edButtons) + 1 // the buttons and the text
+	switch k {
+	case "tab", "right", "down":
+		ed.focus = (ed.focus + 1) % n
+	case "shift+tab", "left", "up":
+		ed.focus = (ed.focus + n - 1) % n
+	case "enter", " ", "space":
+		i := ed.focus - 1
+		ed.focus = 0
+		return ed.press(a, edButtons[i])
+	case "esc":
+		ed.focus = 0
+		return ed.cancel(a)
+	}
+	return nil
+}
+
 func (ed *scriptEditor) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.Cmd {
 	d := ed.doc()
+	if m.Action == tea.MouseActionPress && r.S == "text" {
+		ed.focus = 0
+	}
 	switch {
 	case m.Action == tea.MouseActionRelease:
 		ed.drag = false
@@ -1816,5 +1848,5 @@ func mircList(data string, vars bool) []string {
 // theirs first.
 func (ed *scriptEditor) buttonLabels(*App) []string        { return edButtons }
 func (ed *scriptEditor) pressButton(a *App, i int) tea.Cmd { return ed.press(a, edButtons[i]) }
-func (ed *scriptEditor) typing() bool                      { return true }
+func (ed *scriptEditor) typing() bool                      { return ed.focus == 0 }
 func (ed *scriptEditor) takenMnemonics() string            { return edMnemonics }

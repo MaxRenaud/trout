@@ -436,3 +436,51 @@ func TestButtonMnemonics(t *testing.T) {
 		t.Fatalf("the Scripts Editor closed: %T", a.dlg)
 	}
 }
+
+// TestScriptsEditorButtons reaches the Scripts Editor's buttons from the
+// keyboard: Tab indents the text, Shift+Tab goes to OK, Tab along to
+// Cancel and back round to the text, and Enter presses.
+func TestScriptsEditorButtons(t *testing.T) {
+	a, _, _ := realApp(t)
+	key := func(k tea.KeyType) { a.Update(tea.KeyMsg{Type: k}) }
+	typ := func(s string) { a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}) }
+	a.openScripts()
+	ed := a.dlg.(*scriptEditor)
+	typ("alias hi echo -a hi")
+	key(tea.KeyTab)
+	if got := ed.doc().data(); !strings.Contains(got, "echo -a hi  ") {
+		t.Fatalf("Tab didn't indent: %q", got)
+	}
+	key(tea.KeyShiftTab)
+	if ed.focus != 1 {
+		t.Fatalf("Shift+Tab: focus %d, want OK", ed.focus)
+	}
+	typ("x") // a letter doesn't type while on the buttons
+	key(tea.KeyTab)
+	key(tea.KeyTab)
+	key(tea.KeyTab)
+	if ed.focus != 0 || strings.Contains(ed.doc().data(), "x") {
+		t.Fatalf("Tab round the buttons: focus %d, text %q", ed.focus, ed.doc().data())
+	}
+	key(tea.KeyShiftTab)
+	key(tea.KeyEnter) // OK: saved and closed
+	if a.dlg != nil {
+		t.Fatalf("Enter on OK left %T open", a.dlg)
+	}
+	if data, _ := a.readScript("remote.ini"); !strings.Contains(data, "alias hi") {
+		t.Fatalf("OK didn't save remote.ini: %q", data)
+	}
+
+	a.openScripts()
+	typ("more")
+	key(tea.KeyShiftTab)
+	key(tea.KeyRight) // Cancel
+	key(tea.KeyEnter)
+	if m, ok := a.dlg.(*msgBox); !ok || m.Lines[0] != "Save the changes to your scripts?" {
+		t.Fatalf("Enter on Cancel opened %T, not the save prompt", a.dlg)
+	}
+	typ("n")
+	if a.dlg != nil {
+		t.Fatalf("N left %T open", a.dlg)
+	}
+}

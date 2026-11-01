@@ -54,7 +54,9 @@ Like mIRC's, it has five tabs:
 OK saves what changed and loads it again. A script loaded in the editor that has `on LOAD`
 or `on START` asks whether to run them once the editor has closed. Cancel forgets the
 changes (asking first, with Options > Ask to Save Files). The ✓ button checks the
-brackets and lists what trout can't run in the file, by line.
+brackets and lists what trout can't run in the file, by line. In the text, Enter is a new
+line and Tab indents, so Shift+Tab goes to the buttons (mIRC's Ctrl+Tab, which terminals
+don't send): there Tab and the arrows move along them, and Enter presses one.
 
 The menus are mIRC's:
 

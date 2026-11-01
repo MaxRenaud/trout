@@ -484,7 +484,7 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 				return br.pressButton(a, i)
 			}
 		}
-		if ed, ok := a.dlg.(*scriptEditor); ok && (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) && !k.Alt {
+		if ed, ok := a.dlg.(*scriptEditor); ok && ed.focus == 0 && (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) && !k.Alt {
 			return ed.typed(a, k.Runes) // line breaks and all
 		}
 		if f, ok := a.dlg.(*formBox); ok {
