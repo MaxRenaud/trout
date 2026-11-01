@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -36,7 +37,7 @@ func updateApp(t *testing.T, how update.How, latest string, fail error) (*App, *
 			if latest == "" {
 				return update.Release{}, errors.New("no network")
 			}
-			name := update.AssetName(latest, "darwin", "arm64")
+			name := update.AssetName(latest, runtime.GOOS, runtime.GOARCH) // this computer's, as the offer looks it up
 			return update.Release{Version: latest, URL: "https://github.com/MaxRenaud/trout/releases/tag/" + latest,
 				Sizes: map[string]int64{name: 45 << 20}}, nil
 		},
