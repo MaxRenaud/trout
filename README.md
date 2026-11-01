@@ -114,7 +114,7 @@ set -as terminal-features ',xterm-256color:RGB'
 ```
 
 **GNU screen** works, in 256 colors: screen 4 can't show 24-bit color, so trout doesn't
-send it there. Colors come from `COLORTERM` and `TERM`; if they look wrong, set
+send it there (or to the Linux console, which gets 16). If colors look wrong, set
 `TROUT_COLORS` to `24bit`, `256` or `16` (`24bit` for screen 5 with `truecolor on`).
 
 **Windows:** tested on Windows 11 in Windows Terminal, This Computer and Set Up Bouncer
