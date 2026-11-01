@@ -12,7 +12,7 @@ Show
 Sleep 1.5s
 Alt+t
 Sleep 1s
-Down@350ms 3
+Down@350ms 4
 Sleep 600ms
 Enter
 Sleep 1.5s

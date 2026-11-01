@@ -1219,6 +1219,12 @@ func (a *App) demoCommand(w *state.Window, line string) tea.Cmd {
 			break
 		}
 		a.addLine(w, state.RoleOwn, "-> *"+arg+"* "+tail)
+	case "say":
+		if rest == "" {
+			need()
+			break
+		}
+		a.say(w, rest)
 	case "me":
 		if w.Kind == state.KStatus || rest == "" {
 			need()

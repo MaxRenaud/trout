@@ -8,7 +8,7 @@ arch=$(docker info --format '{{.Architecture}}' | sed 's/x86_64/amd64/; s/aarch6
 GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o trout ./cmd/trout
 trap 'rm -f trout' EXIT
 mkdir -p docs/gifs dev/vhs/shots
-tapes=${*:-dev/vhs/chat.tape dev/vhs/menus.tape dev/vhs/setup.tape}
+tapes=${*:-dev/vhs/chat.tape dev/vhs/menus.tape dev/vhs/setup.tape dev/vhs/scripts.tape}
 for t in $tapes; do
 	echo "$t..."
 	docker run --rm -v "$PWD":/vhs -w /vhs ghcr.io/charmbracelet/vhs:v0.12.1 "$t" >/dev/null

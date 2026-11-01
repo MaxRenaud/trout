@@ -93,6 +93,8 @@ Popups, Remote, Users and Variables tabs and its files, so yours can be copied o
 right-click menu comes from `popups.ini`, so you can change them. Not mIRC's dialogs,
 custom windows or DLLs, which need Windows. See [docs/scripting.md](docs/scripting.md).
 
+![Scripting: an alias and an INPUT event typed into the Scripts Editor, then used in a channel](docs/gifs/scripts.gif)
+
 ## Terminal notes
 
 **Mac: Alt is Option.** trout's Alt shortcuts need the Option key to send Alt, as in
