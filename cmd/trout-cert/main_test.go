@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -145,11 +146,17 @@ func TestRenew(t *testing.T) {
 	if saved, _ := os.ReadFile(filepath.Join(dir, "tls.crt.self-signed")); !bytes.Equal(saved, trouts) {
 		t.Error("trout's self-signed certificate wasn't kept")
 	}
-	if st, err := os.Stat(filepath.Join(r.State, "account.key")); err != nil || st.Mode().Perm() != 0o600 {
-		t.Errorf("account key: %v %v", st, err)
+	st, err := os.Stat(filepath.Join(r.State, "account.key"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "tls.crt")); st.Mode().Perm() != 0o640 {
-		t.Errorf("tls.crt is %v; soju reads it through its group", st.Mode())
+	if runtime.GOOS != "windows" { // no modes there; trout-cert runs on Linux
+		if st.Mode().Perm() != 0o600 {
+			t.Errorf("the account key is %v", st.Mode())
+		}
+		if st, _ := os.Stat(filepath.Join(dir, "tls.crt")); st.Mode().Perm() != 0o640 {
+			t.Errorf("tls.crt is %v; soju reads it through its group", st.Mode())
+		}
 	}
 
 	// Not due: nothing changes.
