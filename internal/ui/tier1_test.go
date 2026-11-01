@@ -37,10 +37,31 @@ func TestMIRCCommands(t *testing.T) {
 		a.ircCommand(w, c.typed)
 		expectSent(t, sent, c.want)
 	}
-	expectSent(t, sent, "JOIN #go") // the rest of /hop
+	// The rest of /hop waits for the PART to come back: soju drops a JOIN
+	// right behind it. Then it rejoins, with the key if there is one.
+	for len(sent) > 0 {
+		if got := <-sent; strings.HasPrefix(got, "JOIN") {
+			t.Fatalf("/hop sent %q before its PART came back", got)
+		}
+	}
 	feed(":max!m@h PART #go")
+	expectSent(t, sent, "JOIN #go")
 	if n.Find(state.KChannel, "#go") == nil {
 		t.Fatal("/hop closed the window")
+	}
+	feed(":max!m@h JOIN #go")
+	feed(":srv 324 max #go +nk sesame")
+	a.ircCommand(w, "hop")
+	feed(":max!m@h PART #go")
+	expectSent(t, sent, "JOIN #go sesame")
+	feed(":max!m@h JOIN #go")
+	feed(":srv MODE #go -k sesame")
+	feed(":max!m@h PART #go") // a plain part closes it
+	if n.Find(state.KChannel, "#go") != nil {
+		t.Fatal("a /part after /hop rejoined")
+	}
+	if w.Key != "" {
+		t.Fatalf("-k left the key %q", w.Key)
 	}
 	a.ircCommand(other, "partall see you")
 	expectSent(t, sent, "PART #rust :see you")

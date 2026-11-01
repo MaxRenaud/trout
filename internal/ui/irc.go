@@ -337,9 +337,20 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		case isMe && (a.hopping[n.Fold(w.Name)] || a.keepOpenOnPart):
 			// /hop, or Options > IRC: the window stays, like mIRC's
 			// "Keep channels open".
+			hop := a.hopping[n.Fold(w.Name)]
 			delete(a.hopping, n.Fold(w.Name))
 			w.Joined, w.Nicks = false, nil
 			line(w, state.RoleEvent, "* You left "+w.Name)
+			if hop {
+				// /hop rejoins once the part is done: soju drops a JOIN
+				// that comes right behind the PART (checked on the dev
+				// soju), as it still has the channel.
+				if w.Key != "" {
+					a.sendNet(n, "JOIN", w.Name, w.Key)
+				} else {
+					a.sendNet(n, "JOIN", w.Name)
+				}
+			}
 		case isMe:
 			delete(a.history, w)
 			a.removeWindow(w)
@@ -1232,7 +1243,13 @@ func applyChanModes(w *state.Window, modes string, args []string) {
 			}
 		default:
 			if takesArg(c, on) && len(args) > 0 {
+				if c == 'k' && on && args[0] != "*" { // servers hide it from non-members as *
+					w.Key = args[0]
+				}
 				args = args[1:]
+			}
+			if c == 'k' && !on {
+				w.Key = ""
 			}
 			if strings.IndexByte(groups[0], c) < 0 {
 				w.Modes = applyFlags(w.Modes, string([]byte{"-+"[b2i(on)], c}))

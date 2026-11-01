@@ -151,13 +151,16 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 			need()
 			break
 		}
+		if cw := n.Find(state.KChannel, ch); cw == nil || !cw.Joined {
+			a.sendNet(n, "JOIN", ch) // no PART would come back to rejoin on
+			break
+		}
 		a.hopping[n.Fold(ch)] = true
 		if msg != "" {
 			a.sendNet(n, "PART", ch, msg)
 		} else {
 			a.sendNet(n, "PART", ch)
-		}
-		a.sendNet(n, "JOIN", ch)
+		} // the JOIN goes when the PART comes back, in handleIRC
 	case "partall":
 		for _, ch := range n.Wins {
 			if ch.Kind == state.KChannel && ch.Joined {

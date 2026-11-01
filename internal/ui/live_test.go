@@ -600,3 +600,37 @@ func TestMoveNetworksLive(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 }
+
+// TestHopLive /hops a keyed channel on TroutNet: soju drops a JOIN that
+// comes right behind the PART, so trout rejoins once the PART is back,
+// with the key.
+//
+//	go test -tags integration ./internal/ui -run TestHopLive -v
+func TestHopLive(t *testing.T) {
+	a, pump := liveApp(t)
+	var tn *state.Network
+	pump("TroutNet", func() bool {
+		for _, n := range a.nets[1:] {
+			if n.Name == "TroutNet" && a.conns[n] != nil {
+				tn = n
+			}
+		}
+		return tn != nil
+	})
+	ch := "#hop" + strconv.FormatInt(time.Now().Unix()%100000, 36)
+	a.ircCommand(tn.Status(), "join "+ch)
+	var w *state.Window
+	pump(ch+" joined", func() bool {
+		w = tn.Find(state.KChannel, ch)
+		return w != nil && w.Joined
+	})
+	defer a.ircCommand(w, "part")
+	a.ircCommand(w, "mode "+ch+" +k sesame")
+	pump("the key", func() bool { return w.Key == "sesame" })
+	a.ircCommand(w, "hop")
+	pump("the PART", func() bool { return !w.Joined })
+	pump("the rejoin", func() bool { return w.Joined && len(w.Nicks) > 0 && w.Key == "sesame" })
+	if tn.Find(state.KChannel, ch) != w {
+		t.Fatal("/hop didn't keep the window")
+	}
+}

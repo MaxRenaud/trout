@@ -93,6 +93,7 @@ type Window struct {
 	Name    string
 	Topic   string // channels
 	Modes   string // channels
+	Key     string // channels: their +k key, when the server shows it
 	Host    string // queries
 	Away    string // queries: their away message
 	Lines   []Line
