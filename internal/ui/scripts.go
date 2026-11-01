@@ -110,6 +110,30 @@ func (a *App) scriptWriteFile(f *script.File) error {
 	return errors.Join(err, file.Close())
 }
 
+// scriptName is how a script to load is known: a full path into the
+// scripts folder is its name there, so loading it again either way
+// reloads the one script, like mIRC (checked: dup.mrc and
+// C:\...\dup.mrc are one script there, though .\dup.mrc is a second).
+func (a *App) scriptName(name string) string {
+	dir := a.scriptsDir()
+	if dir == "" || !filepath.IsAbs(name) {
+		return name
+	}
+	if rel, err := filepath.Rel(dir, filepath.Clean(name)); err == nil && filepath.IsLocal(rel) {
+		return rel
+	}
+	return name
+}
+
+// scriptEntry is scriptName for a config entry, which may start with a
+// /load switch ("-a aliases.mrc").
+func (a *App) scriptEntry(entry string) string {
+	if sw, f, ok := strings.Cut(entry, " "); ok && strings.HasPrefix(sw, "-") {
+		return sw + " " + a.scriptName(f)
+	}
+	return a.scriptName(entry)
+}
+
 // readScript reads a script to load: a file name in the scripts folder,
 // or a full path the user gave.
 func (a *App) readScript(name string) (string, error) {
@@ -133,9 +157,24 @@ func (a *App) startScripts() tea.Cmd {
 	a.applyScriptOpts()
 	// An early build kept popups.ini in the scripts as "-p popups.ini";
 	// it's always loaded now.
-	if kept := slices.DeleteFunc(slices.Clone(b.Scripts), func(s string) bool {
+	kept := slices.DeleteFunc(slices.Clone(b.Scripts), func(s string) bool {
 		return strings.HasPrefix(strings.ToLower(s), "-p ")
-	}); len(kept) != len(b.Scripts) {
+	})
+	// A script loaded twice, by name and by its full path, before trout
+	// knew they're the same file: it's loaded once.
+	var seen []string
+	kept = slices.DeleteFunc(kept, func(s string) bool {
+		_, f := splitLoad(a.scriptEntry(s))
+		if slices.ContainsFunc(seen, func(g string) bool { return strings.EqualFold(f, g) }) {
+			return true
+		}
+		seen = append(seen, f)
+		return false
+	})
+	for i, s := range kept {
+		kept[i] = a.scriptEntry(s)
+	}
+	if !slices.Equal(kept, b.Scripts) {
 		b.Scripts = kept
 		a.saveConfig()
 	}
@@ -201,6 +240,7 @@ func (a *App) loadScript(entry string, first bool) tea.Cmd {
 	if first {
 		where = a.active
 	}
+	entry = a.scriptEntry(entry)
 	as, name := splitLoad(entry)
 	src, err := a.readScript(name)
 	if err != nil {
@@ -258,6 +298,7 @@ func (a *App) loadScript(entry string, first bool) tea.Cmd {
 func (a *App) unloadScript(name string) tea.Cmd {
 	b := a.book()
 	_, name = splitLoad(name)
+	name = a.scriptName(name)
 	i := slices.IndexFunc(b.Scripts, func(s string) bool { _, f := splitLoad(s); return strings.EqualFold(f, name) })
 	if i < 0 {
 		a.addLine(a.active, state.RoleInfo, "* /unload: "+name+" isn't loaded")
@@ -314,6 +355,7 @@ func (a *App) scriptAdmin(line string, fromScript bool) (tea.Cmd, bool) {
 	case "unload":
 		return a.unloadScript(file), true
 	case "reload":
+		file = a.scriptName(file)
 		src, err := a.readScript(file)
 		if err != nil {
 			a.addLine(a.active, state.RoleQuit, "* /reload: couldn't read "+file+": "+err.Error())

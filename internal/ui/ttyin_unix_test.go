@@ -17,6 +17,9 @@ func TestPartialEsc(t *testing.T) {
 		"": false, "abc": false, "\x1b": true, "a\x1b": true, "\x1b[": true, "\x1bO": true,
 		"\x1b[<35;7": true, "\x1b[<35;73;51": true, "\x1b[<35;73;51M": false, "\x1b[A": false,
 		"\x1b[<35;1;1M\x1b[<35": true, "\x1bOA": false, "\x1ba": false, "\x1b[200~hi": false,
+		// X10 reports, which GNU screen 4 sends (it has no SGR mouse): ESC [ M and three bytes
+		"\x1b[M": true, "\x1b[MC": true, "\x1b[MC|": true, "\x1b[MC|E": false, "\x1b[MC|Ex": false,
+		"\x1b[MC|E\x1b[MC": true,
 	} {
 		if got := partialEsc([]byte(in)); got != want {
 			t.Errorf("%q: %v, want %v", in, got, want)
@@ -57,6 +60,35 @@ func TestSplitMouse(t *testing.T) {
 		if m.got[i] != want[i] {
 			t.Fatalf("got %q, want %q", m.got, want)
 		}
+	}
+}
+
+// TestSplitX10Mouse: GNU screen 4 reports the mouse the old X10 way, ESC
+// [ M and three bytes (button, x, y, each plus 32), and sends them in
+// pieces; split ones are mouse events, not "C|E" typed in the editbox.
+func TestSplitX10Mouse(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	go func() {
+		for _, chunk := range []string{"\x1b[MC|E", "\x1b[M", "C^M", "\x1b[MC", "HS", "\x1b[MCH", "S", "x"} {
+			w.WriteString(chunk)
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(2 * escWait)
+		w.WriteString("\x03")
+		w.Close()
+	}()
+	m := &msgLog{}
+	p := tea.NewProgram(m, tea.WithInput(&ttyIn{File: r}), tea.WithOutput(io.Discard), tea.WithMouseAllMotion())
+	if _, err := p.Run(); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprint([]string{"motion", "motion", "motion", "motion", "x", "ctrl+c"})
+	if got := fmt.Sprint(m.got); got != want {
+		t.Fatalf("got %s, want %s", got, want)
 	}
 }
 

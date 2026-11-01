@@ -67,6 +67,11 @@ func partialEsc(b []byte) bool {
 		return len(tail) == 1
 	case tail[0] != '[':
 		return false
+	case len(tail) >= 2 && tail[1] == 'M':
+		// An X10 mouse report, which GNU screen 4 sends (it has no SGR
+		// mouse): ESC [ M and three bytes, button, x and y, each plus 32,
+		// so never an ESC. Its M isn't a final byte.
+		return len(tail) < 5
 	default:
 		for _, c := range tail[1:] {
 			if c < 0x20 || c > 0x3f { // a final byte (or not a CSI after all)

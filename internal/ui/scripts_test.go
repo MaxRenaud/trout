@@ -1063,3 +1063,40 @@ func evalScript(a *App, text string) string {
 	a.scripts.Command(a.home.Name, "", "set %_eval "+text, true, a.scriptHost())
 	return a.scripts.Vars()["_eval"]
 }
+
+// TestScriptLoadedOnce: a script loaded by name and by its full path is
+// one script, like mIRC's (checked), so its events run once; a config
+// that has both, from before, keeps one. mIRC does load .\name as a
+// second copy, and so does trout.
+func TestScriptLoadedOnce(t *testing.T) {
+	dir := t.TempDir()
+	folder := filepath.Join(dir, "scripts")
+	os.MkdirAll(folder, 0o700)
+	os.WriteFile(filepath.Join(folder, "asn.mrc"), []byte("on *:TEXT:!trigger:#:msg # hi\n"), 0o600)
+	full := filepath.Join(folder, "asn.mrc")
+	cfg := &config.Config{Path: filepath.Join(dir, "config.toml"), Scripts: []string{"asn.mrc", full, "-a " + full}}
+	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max"}})
+	a.startScripts()
+	count := func() int {
+		return len(slices.DeleteFunc(a.scripts.Scripts(), func(s string) bool { return !strings.EqualFold(s, "asn.mrc") })) // ASN.mrc renames it, like mIRC
+	}
+	if count() != 1 || !slices.Equal(cfg.Scripts, []string{"asn.mrc"}) {
+		t.Fatalf("at start: engine %q, config %q", a.scripts.Scripts(), cfg.Scripts)
+	}
+	for _, again := range []string{full, "-rs " + full, "ASN.mrc"} {
+		a.scriptAdmin("load "+again, false)
+		if count() != 1 || len(cfg.Scripts) != 1 {
+			t.Fatalf("after /load %s: engine %q, config %q", again, a.scripts.Scripts(), cfg.Scripts)
+		}
+	}
+	a.scriptAdmin("reload -rs "+full, false)
+	a.scriptAdmin("unload -rs "+full, false)
+	if count() != 0 || len(cfg.Scripts) != 0 {
+		t.Fatalf("after /unload by full path: engine %q, config %q", a.scripts.Scripts(), cfg.Scripts)
+	}
+	a.scriptAdmin("load asn.mrc", false)
+	a.scriptAdmin(`load .\asn.mrc`, false)
+	if got := a.scripts.Scripts(); !slices.Contains(got, `.\asn.mrc`) || count() != 1 {
+		t.Errorf(`/load .\asn.mrc: %q; mIRC loads it as a second script`, got)
+	}
+}
