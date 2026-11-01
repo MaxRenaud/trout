@@ -1,5 +1,5 @@
-// Package termkeys finds out which terminal trout runs in and whether its
-// Option key sends Alt, which trout's mIRC-style shortcuts need on a Mac,
+// Package termkeys finds out which terminal trout runs in, how many colors
+// it shows (colors.go), and whether its Option key sends Alt, which trout's mIRC-style shortcuts need on a Mac,
 // and fixes that where it safely can. WeeChat, irssi and Emacs ask Mac
 // users for the same terminal setting.
 package termkeys

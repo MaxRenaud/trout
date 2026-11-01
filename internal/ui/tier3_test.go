@@ -482,3 +482,27 @@ func TestControlRunes(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// TestTermColors draws the same cell for terminals with fewer colors than
+// 24-bit: GNU screen 4 can't read 38;2 at all.
+func TestTermColors(t *testing.T) {
+	st := Style{FG: 0x000080, BG: 0xc0c0c0} // the Classic theme's navy on face gray
+	for colors, want := range map[int]string{
+		0:                  "\x1b[0;38;2;0;0;128;48;2;192;192;192mx",
+		termkeys.Colors256: "\x1b[0;38;5;18;48;5;250mx",
+		termkeys.Colors16:  "\x1b[0;34;47mx",
+	} {
+		c := NewCanvas(1, 1, st)
+		c.Set(0, 0, 'x', st)
+		c.Colors = colors
+		if got := c.String(); got != want+"\x1b[0m" {
+			t.Errorf("%d colors: %q, want %q", colors, got, want)
+		}
+	}
+	if got := nearest256(0xffffff); got != 231 {
+		t.Errorf("white is %d, want 231", got)
+	}
+	if got := nearest16(0xff0000); got != 9 {
+		t.Errorf("red is %d, want 9 (bright red)", got)
+	}
+}

@@ -71,10 +71,11 @@ type Options struct {
 }
 
 type App struct {
-	opts   Options
-	w, h   int
-	nets   []*state.Network
-	active *state.Window
+	opts       Options
+	w, h       int
+	termColors int // how many the terminal shows (termkeys.Colors); 0 is 24-bit
+	nets       []*state.Network
+	active     *state.Window
 
 	// Real mode: home is the bouncer's own status window, and the network
 	// list soju reports; every network has its own connection.
@@ -282,6 +283,7 @@ func Run(opts Options) error {
 	a.bellOut = os.Stdout
 	env := termkeys.SystemEnv()
 	a.term, a.termHome = termkeys.Detect(env), env.Home
+	a.termColors = termkeys.Colors(env.Getenv)
 	_, err := p.Run()
 	a.stopITermProfile() // back to the tab's own profile
 	a.local.Stop()       // trout's own soju, if it started one

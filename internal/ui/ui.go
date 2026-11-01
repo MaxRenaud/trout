@@ -86,6 +86,7 @@ func (a *App) View() string {
 	}
 	t := a.theme()
 	c := NewCanvas(a.w, a.h, Style{FG: t.TextFG, BG: t.TextBG})
+	c.Colors = a.termColors
 	a.regions = a.regions[:0]
 	clear(a.sbars)
 	y := 0

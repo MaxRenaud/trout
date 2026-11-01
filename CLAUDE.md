@@ -31,7 +31,7 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 ## Layout
 
 - `cmd/trout`: flags and env (`TROUT_CONFIG`, `TROUT_ADDR`, `TROUT_USER`, `TROUT_PASSWORD`,
-  `TROUT_DEBUG`), which override the config; picks the bouncer and runs `password-command`.
+  `TROUT_DEBUG`; `TROUT_COLORS`, read in `termkeys/colors.go`), which override the config; picks the bouncer and runs `password-command`.
 - `internal/config`: `config.toml` (bouncers, the active one, settings) and the 0600
   `credentials` file next to it, in `os.UserConfigDir()/trout`.
 - `internal/state`: the data model (networks, windows, lines, nicklists, editbox). No I/O.
