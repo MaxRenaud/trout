@@ -25,7 +25,8 @@ trout ──per net──▶ soju ──▶ IRC network   (BOUNCER BIND <netid> 
 - TLS checks the system's authorities first. A certificate none of them signed (a
   self-signed soju) gets an SSH-style prompt showing its key fingerprint
   (`SHA256:` + base64 of the public key's SHA-256, so renewing with the same key keeps
-  the pin). Trusting it saves `pin` on the bouncer; a different key later is refused.
+  the pin). Trusting it saves `pin` on the bouncer; a different key later is refused. A
+  bouncer with a Let's Encrypt certificate for its pinned key passes both ways.
 - A failed SASL login or an untrusted certificate stops the retry loop and asks instead.
 - A bouncer can vanish without closing the connection (its machine gone): writes still go
   into the OS's buffer for minutes and nothing comes back. So after anything trout sends, a
@@ -321,11 +322,13 @@ Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/in
   `/etc/soju` (root:soju), `/var/lib/soju`, a hardened `soju.service` after soju's
   contrib unit, ircs on 6697 and https (file uploads) on 8443, those ports opened in ufw or
   firewalld when active, and your account (`-admin=true`). `update` swaps in trout's soju
-  and keeps the key and accounts; `remove` keeps the history, `purge` doesn't.
+  and keeps the key and accounts (and trout-cert, when it's there); `remove` keeps the
+  history, `purge` doesn't; `cert` and `nocert` are below.
 - **Check** logs in from here with the pin and the password. If that fails it looks on
   the server for what's missing; if the server's fine, it's the provider's firewall.
 - **Then** the bouncer is saved (its `ssh` host marks it as trout's, for Update and
-  Uninstall in Tools > Bouncers), and trout moves the old bouncer's networks over.
+  Uninstall in Tools > Bouncers), and trout moves the old bouncer's networks over. Last,
+  it offers a trusted certificate.
 
 Moving networks happens here and when you switch bouncers (Bouncers > Use, This Computer),
 which asks first. Once the new bouncer's network list is complete (the end of its
@@ -339,7 +342,7 @@ The setup wizard's first question is where: your own server, or a new one at Het
 DigitalOcean or Google Cloud (`internal/cloud`, the wizard steps in `ui/vps.go`). Google
 goes through the `gcloud` command (its login and project, no API token): the free tier's
 e2-micro in us-west1, us-central1 or us-east1, a reserved IPv4 (about $3.65/month, released
-with the server), a `trout-bouncer` firewall rule for 6697 and 8443, and your key for user
+with the server), a `trout-bouncer` firewall rule for 6697, 8443 and 80, and your key for user
 `trout` (Google's images don't let root in; its agent gives that user sudo). For a provider, trout
 asks for an API token once (kept in the credentials file as `(hetzner)` or
 `(digitalocean)`; DigitalOcean's prompt shows trout's referral link, labeled), lists its
@@ -351,14 +354,52 @@ fails, or you stop, with a server made, the wizard offers to delete it so it isn
 billing. The bouncer is saved with `cloud` and `server-id`, and Bouncers > Remove offers
 Delete Server.
 
+## A certificate phones trust
+
+The pin is trout's alone: Goguma and web browsers check the system's authorities, so a
+self-signed bouncer gets Bad Certificate in Goguma and warnings in browsers (worse: no
+pin, so clicking through would accept anyone's). Let's Encrypt has vouched for IP addresses
+since January 2026, with its `shortlived` profile only (160 hours). The wizard's last
+question, or Bouncers > Server > Certificate (`ui/certificate.go`), runs `setup.sh cert`:
+
+- **trout-cert** (`cmd/trout-cert`, about 7 MB, built by `dev/build-soju` and shipped in
+  the archives' `soju-linux-*/`) goes to `/usr/local/bin`. It asks Let's Encrypt for a
+  certificate for the bouncer's address with soju's own key (`/etc/soju/tls.key`, which
+  never changes), so the pin still holds, answers its http-01 check on port 80 itself for
+  those seconds, writes the chain over `/etc/soju/tls.crt` (keeping trout's self-signed one
+  as `tls.crt.self-signed`), and reloads soju (SIGHUP: no one is dropped).
+- **Renewal:** `trout-cert.timer` runs it twice a day (spread over 4 hours); it renews once
+  half the certificate's time is up, about 3 days, so a few failures in a row still leave
+  days to spare. 160 hours apart is under Let's Encrypt's 5 a week for the same address.
+- **The ACME account** is a key in `/var/lib/trout-cert`, with no email: Let's Encrypt
+  stopped sending expiry mail in 2025 and no longer keeps addresses with accounts. Asking
+  is where you accept its Subscriber Agreement.
+- **Port 80** must be open to everyone (Let's Encrypt checks from several places). trout
+  opens it in ufw and firewalld, noting that it did so it only closes what it opened, and
+  Google's `trout-bouncer` rule includes it. Plain nftables and provider firewalls (like
+  Hetzner's) are yours to open; trout-cert says so when the check fails.
+- **Not offered** for This Computer, private addresses (LANs, Tailscale's 100.64/10) or
+  names only a LAN knows.
+- **Watching:** connecting to a bouncer with `cert = "letsencrypt"` reads its certificate;
+  if it's no longer trusted or ends within 2 days, the status window says the server
+  couldn't renew it, and Set Up Again runs it now and shows why. trout itself keeps
+  connecting through the pin either way.
+- **`nocert`** (Self-Signed) stops the timer, puts the self-signed certificate back and
+  removes trout-cert. Uninstall removes it too.
+
+`TROUT_ACME_DIRECTORY` points trout-cert at another CA, like Let's Encrypt's staging one.
+Its tests run Let's Encrypt's own test CA, pebble, in-process; `-tags cloud` gets a real
+certificate for a throwaway Hetzner server's IP.
+
 ## Phones
 
 There's no trout for phones: Goguma (App Store, F-Droid, Google Play) speaks soju's
 extensions and its push notifications (`soju.im/webpush`, on in soju by default). Tools >
 Connect a Phone (`ui/phone.go`) shows a QR code of `ircs://user:password@host:port` for the
 bouncer in use, which the phone's camera hands to Goguma. Goguma doesn't know trout's pin:
-the first time it shows the certificate's SHA-1 and asks, so the dialog shows that SHA-1
-(`irc.CertSHA1`, fetched through the pin) to compare before Accept Always.
+unless Let's Encrypt vouches for the bouncer, the first time it shows the certificate's
+SHA-1 and asks, so the dialog shows that SHA-1 (`irc.ReadCert`, fetched through the pin) to
+compare before Accept Always, and where to get a certificate Goguma trusts.
 
 ## This Computer: trout's own soju
 

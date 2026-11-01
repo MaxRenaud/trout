@@ -60,6 +60,10 @@ func TestProbe(t *testing.T) {
 	if f != want {
 		t.Fatalf("got %+v\nwant %+v", f, want)
 	}
+	srv = &fakeServer{replies: []reply{{match: "uname", stdout: "uname=Linux x86_64\nhome=/root\ninstalled=yes\ncert=yes\n"}}}
+	if f, _ := Probe(context.Background(), srv); !f.Installed || !f.Cert {
+		t.Fatalf("soju and trout-cert there: %+v", f)
+	}
 	if f.BestRoot() != WithPassword || f.Unsupported() != "" {
 		t.Fatal(f.BestRoot(), f.Unsupported())
 	}
@@ -126,7 +130,8 @@ func TestNewAndScript(t *testing.T) {
 	}
 	s := in.Script()
 	for _, want := range []string{"#!/bin/sh\n", "TROUT_HOST=192.0.2.7\n", "TROUT_INGRESS=https://192.0.2.7:8443\n",
-		"TROUT_ACCOUNT=max\n", "TROUT_PASSWORD=" + in.Password + "\n", "TROUT_SOJU_VERSION=" + SojuVersion + "\n", "set -eu"} {
+		"TROUT_ACCOUNT=max\n", "TROUT_PASSWORD=" + in.Password + "\n", "TROUT_SOJU_VERSION=" + SojuVersion + "\n", "set -eu",
+		"TROUT_ACME=https://acme-v02.api.letsencrypt.org/directory\n"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("the script has no %q", want)
 		}
@@ -287,6 +292,28 @@ func TestFindBinaries(t *testing.T) {
 	if err != nil || soju != filepath.Join(dir, "soju") || sojuctl != filepath.Join(dir, "sojuctl") {
 		t.Fatal(soju, sojuctl, err)
 	}
+	if _, err := FindCert("arm64"); err == nil || !strings.Contains(err.Error(), "dev/build-soju") {
+		t.Fatalf("trout-cert, with only soju built: %v", err)
+	}
+	os.WriteFile(filepath.Join(dir, "trout-cert"), nil, 0o755)
+	if p, err := FindCert("arm64"); err != nil || p != filepath.Join(dir, "trout-cert") {
+		t.Fatal(p, err)
+	}
+}
+
+// TestCertProblem: Let's Encrypt only vouches for addresses and names
+// the internet can reach, so trout doesn't offer it for the others.
+func TestCertProblem(t *testing.T) {
+	for host, ok := range map[string]bool{
+		"46.225.22.161": true, "2a01:4f8:1c1c::1": true, "bouncer.example.com": true,
+		"192.168.1.20": false, "10.0.0.5": false, "127.0.0.1": false, "100.101.102.103": false, // Tailscale
+		"fd7a:115c:a1e0::1": false, "fe80::1": false, "pi.local": false, "nas.lan": false, "box.tail1234.ts.net": false,
+		"raspberrypi": false,
+	} {
+		if why := CertProblem(host); (why == "") != ok {
+			t.Errorf("%s: %q", host, why)
+		}
+	}
 }
 
 func TestModes(t *testing.T) {
@@ -294,26 +321,36 @@ func TestModes(t *testing.T) {
 	if _, err := Existing(nil, f, "vps", "max", "pw", "SHA256:x", "reinstall"); err == nil {
 		t.Fatal("an unknown mode")
 	}
+	if _, err := Existing(nil, f, "vps$(id)", "max", "pw", "SHA256:x", "cert"); err == nil {
+		t.Fatal("a host with shell in it")
+	}
 	for _, c := range []struct {
 		mode    string
+		cert    bool // trout-cert is on the server
 		uploads []string
 	}{
-		{"update", []string{"soju", "sojuctl", "setup.sh"}}, // no new key: the pin stays
-		{"remove", []string{"setup.sh"}},
-		{"purge", []string{"setup.sh"}},
+		{"update", false, []string{"soju", "sojuctl", "setup.sh"}}, // no new key: the pin stays
+		{"update", true, []string{"soju", "sojuctl", "trout-cert", "setup.sh"}},
+		{"cert", false, []string{"trout-cert", "setup.sh"}},
+		{"nocert", true, []string{"setup.sh"}},
+		{"remove", true, []string{"setup.sh"}},
+		{"purge", false, []string{"setup.sh"}},
 	} {
 		srv := &fakeServer{}
-		in, err := Existing(srv, f, "vps", "max", "pw", "SHA256:x", c.mode)
+		facts := f
+		facts.Cert = c.cert
+		in, err := Existing(srv, facts, "vps", "max", "pw", "SHA256:x", c.mode)
 		if err != nil {
 			t.Fatal(err)
 		}
 		dir := t.TempDir()
-		for _, b := range []string{"soju", "sojuctl"} {
+		for _, b := range []string{"soju", "sojuctl", "trout-cert"} {
 			os.WriteFile(filepath.Join(dir, b), nil, 0o755)
 		}
 		in.Binaries = func(string) (string, string, error) {
 			return filepath.Join(dir, "soju"), filepath.Join(dir, "sojuctl"), nil
 		}
+		in.CertBinary = func(string) (string, error) { return filepath.Join(dir, "trout-cert"), nil }
 		if err := in.StageFiles(context.Background()); err != nil {
 			t.Fatal(err)
 		}
@@ -322,7 +359,7 @@ func TestModes(t *testing.T) {
 			got = append(got, strings.TrimPrefix(strings.Fields(r.Line)[2], "/home/max/.trout-install/"))
 		}
 		if !slices.Equal(got, c.uploads) {
-			t.Errorf("%s uploads %q", c.mode, got)
+			t.Errorf("%s (trout-cert there: %v) uploads %q", c.mode, c.cert, got)
 		}
 		// The script leaves the account alone, and runs in the mode.
 		if !strings.Contains(in.Script(), "TROUT_PASSWORD=\n") || in.ManualCommand() != "sudo sh /home/max/.trout-install/setup.sh "+c.mode {

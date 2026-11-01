@@ -8,6 +8,7 @@ import (
 	"rsc.io/qr"
 
 	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/irc"
 )
 
 // TestPhoneQR draws Connect a Phone and reads the code back off the
@@ -20,7 +21,7 @@ func TestPhoneQR(t *testing.T) {
 	if p := a.phoneProblem(); p != nil {
 		t.Fatalf("a TLS bouncer isn't phone-ready: %q", p)
 	}
-	d := &phoneBox{withPassword: true, sha1: "0123456789abcdef0123456789abcdef01234567"}
+	d := &phoneBox{withPassword: true, known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567"}}
 	if got := d.link(a); got != "ircs://max:abcdefghijkmnpqrstuvwxyz@203.0.113.40:6697" {
 		t.Fatalf("link %q", got)
 	}

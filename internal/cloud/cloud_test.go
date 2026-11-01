@@ -128,6 +128,42 @@ func TestGCloudCleansUp(t *testing.T) {
 	}
 }
 
+// TestGCloudFirewall: the trout-bouncer rule lets in port 80 too, for
+// Let's Encrypt; a rule an older trout made without it gets it.
+func TestGCloudFirewall(t *testing.T) {
+	for _, c := range []struct {
+		what     string
+		describe string // "" for no rule yet
+		want     string // what's run about the rule, after describe
+	}{
+		{"new", "", "compute firewall-rules create trout-bouncer --project p --allow tcp:80,tcp:6697,tcp:8443"},
+		{"old", `{"allowed": [{"IPProtocol": "tcp", "ports": ["6697", "8443"]}]}`,
+			"compute firewall-rules update trout-bouncer --project p --allow tcp:80,tcp:6697,tcp:8443"},
+		{"current", `{"allowed": [{"IPProtocol": "tcp", "ports": ["80", "6697", "8443"]}]}`, ""},
+	} {
+		var ran []string
+		g := &GCloud{Project: "p", Run: func(_ context.Context, args ...string) ([]byte, error) {
+			cmd := strings.Join(args, " ")
+			switch {
+			case strings.HasPrefix(cmd, "compute firewall-rules describe"):
+				if c.describe == "" {
+					return nil, errors.New("not found")
+				}
+				return []byte(c.describe), nil
+			case strings.HasPrefix(cmd, "compute firewall-rules"):
+				ran = append(ran, strings.Join(args[:8], " "))
+			case strings.HasPrefix(cmd, "compute instances create"):
+				return nil, errors.New("stop here")
+			}
+			return []byte("192.0.2.9\n"), nil
+		}}
+		g.Create(context.Background(), Region{ID: "us-west1-b", Plan: "e2-micro", Image: "debian-13"}, "trout-x", "ssh-ed25519 AAAA")
+		if want := []string{c.want}; (c.want == "" && len(ran) > 0) || (c.want != "" && !slices.Equal(ran, want)) {
+			t.Errorf("%s rule: ran %q", c.what, ran)
+		}
+	}
+}
+
 // TestHetznerUndo: a server that was made but never came up is deleted, so
 // it isn't left billing.
 func TestHetznerUndo(t *testing.T) {

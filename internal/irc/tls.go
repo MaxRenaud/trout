@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ErrLogin is a failed SASL login: a wrong user name or password.
@@ -116,23 +117,44 @@ func (cfg Config) TLSConfig() *tls.Config {
 	}
 }
 
-// CertSHA1 connects to cfg.Addr over TLS, checked as Dial checks it (so a
-// pin must match), and returns the certificate's SHA-1 in lowercase hex:
-// how Goguma, the phone client, shows a certificate it asks you to accept.
-func CertSHA1(ctx context.Context, cfg Config) (string, error) {
+// ServerCert is the certificate a server presented, read by ReadCert.
+type ServerCert struct {
+	SHA1     string // lowercase hex: how Goguma, the phone client, shows a certificate it asks about
+	Issuer   string // who signed it: an authority's name, or the server's own for a self-signed one
+	NotAfter time.Time
+	Trusted  bool  // this computer's authorities vouch for it, without the pin
+	Why      error // why not, when it isn't Trusted
+}
+
+// ReadCert connects to cfg.Addr over TLS, checked as Dial checks it (so a
+// pin must match), and says what certificate it has.
+func ReadCert(ctx context.Context, cfg Config) (ServerCert, error) {
 	dial := cfg.Dial
 	if dial == nil {
 		dial = (&net.Dialer{}).DialContext
 	}
 	nc, err := dial(ctx, "tcp", cfg.Addr)
 	if err != nil {
-		return "", err
+		return ServerCert{}, err
 	}
 	defer nc.Close()
 	tc := tls.Client(nc, cfg.TLSConfig())
 	if err := tc.HandshakeContext(ctx); err != nil {
-		return "", err
+		return ServerCert{}, err
 	}
-	sum := sha1.Sum(tc.ConnectionState().PeerCertificates[0].Raw)
-	return hex.EncodeToString(sum[:]), nil
+	certs := tc.ConnectionState().PeerCertificates
+	leaf := certs[0]
+	sum := sha1.Sum(leaf.Raw)
+	sc := ServerCert{SHA1: hex.EncodeToString(sum[:]), NotAfter: leaf.NotAfter, Issuer: leaf.Issuer.CommonName}
+	if len(leaf.Issuer.Organization) > 0 {
+		sc.Issuer = leaf.Issuer.Organization[0]
+	}
+	host, _, _ := net.SplitHostPort(cfg.Addr)
+	inter := x509.NewCertPool()
+	for _, c := range certs[1:] {
+		inter.AddCert(c)
+	}
+	_, sc.Why = leaf.Verify(x509.VerifyOptions{DNSName: host, Intermediates: inter})
+	sc.Trusted = sc.Why == nil
+	return sc, nil
 }

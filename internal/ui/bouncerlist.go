@@ -9,14 +9,15 @@ import (
 )
 
 // savedBouncersBox is Tools > Bouncers for real: the bouncers in
-// config.toml, to switch between, add, edit and remove, and update the
-// soju on ones trout set up. (The demo has bouncerBox, its mock-up.)
+// config.toml, to switch between, add, edit and remove, and, on ones
+// trout set up, Server: update soju, or get it a trusted certificate.
+// (The demo has bouncerBox, its mock-up.)
 type savedBouncersBox struct{ sel int }
 
-// buttons has Update when the selected bouncer is one trout set up.
+// buttons has Server when the selected bouncer is one trout set up.
 func (d *savedBouncersBox) buttons(a *App) []string {
 	if bs := a.savedBouncers(); len(bs) > 0 && bs[clamp(d.sel, 0, len(bs)-1)].SSH != "" {
-		return []string{"Use", "Add", "Edit", "Update", "Remove", "Close"}
+		return []string{"Use", "Add", "Edit", "Server", "Remove", "Close"}
 	}
 	return []string{"Use", "Add", "Edit", "Remove", "Close"}
 }
@@ -85,6 +86,8 @@ func bouncerDetails(a *App, b config.Bouncer) [][2]string {
 	switch _, useTLS, _ := irc.ParseAddress(b.Address); {
 	case !useTLS:
 		key = "none: plain text"
+	case b.Pin != "" && b.Cert == letsEncrypt:
+		key = b.Pin + ", and Let's Encrypt vouches for it"
 	case b.Pin != "":
 		key = b.Pin
 	}
@@ -166,9 +169,8 @@ func (d *savedBouncersBox) press(a *App, button string) tea.Cmd {
 			pw, _ = a.cfg.StoredPassword(b.Name)
 		}
 		a.openConnectFor(b, pw, "", d)
-	case "Update":
-		a.dlg = nil
-		return a.openReinstall(b, "update")
+	case "Server":
+		a.openServer(b, d)
 	case "Remove":
 		if b.SSH != "" {
 			a.openDialog(d.uninstallBox(b))

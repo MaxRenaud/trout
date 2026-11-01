@@ -1,6 +1,8 @@
 #!/bin/sh
 # Builds the soju trout uses (install.SojuVersion). Pure Go (moderncsqlite,
-# no cgo), so it runs anywhere without packages.
+# no cgo), so it runs anywhere without packages. For Linux it also builds
+# trout-cert (cmd/trout-cert), which trout uploads with soju to get the
+# bouncer a Let's Encrypt certificate; that one is rebuilt every time.
 #
 #   dev/build-soju                     into the cache install.FindFor looks in:
 #                                      linux amd64, arm64 and arm, to install
@@ -44,6 +46,12 @@ for platform in $platforms; do
 	rm -r "$tmp/gopath/bin"
 	echo "  -> $out"
 done
+for platform in $platforms; do
+	os=${platform%/*} arch=${platform#*/}
+	[ "$os" = linux ] || continue
+	GOOS=linux GOARCH=$arch GOARM=6 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$cache/$os-$arch/trout-cert" ./cmd/trout-cert
+	echo "trout-cert $os/$arch -> $cache/$os-$arch"
+done
 # soju is AGPL: its license, and where to get the exact source, go with it.
 src=$(GOFLAGS=-mod=mod go mod download -json codeberg.org/emersion/soju@"$version" | sed -n 's/^[[:space:]]*"Dir": "\(.*\)",$/\1/p')
 install -m 644 "$src/LICENSE" "$cache/SOJU-LICENSE" # read-only in the module cache
@@ -56,4 +64,8 @@ as a separate program, unchanged, built with (and GOARM=6 for 32-bit ARM):
         codeberg.org/emersion/soju/cmd/soju@$version codeberg.org/emersion/soju/cmd/sojuctl@$version
 
 Its source: https://codeberg.org/emersion/soju/src/tag/$version
+
+The soju-linux-*/ folders also hold trout-cert, trout's own helper (MIT,
+like trout; cmd/trout-cert), which gets the bouncer a Let's Encrypt
+certificate on its server.
 EOT

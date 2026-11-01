@@ -235,7 +235,19 @@ func TestFrames(t *testing.T) {
 		}},
 		{"connect a phone", func() {
 			a.bnc, a.password = config.Bouncer{Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x"}, "abcdefghijkmnpqrstuvwxyz"
-			a.openDialog(&phoneBox{withPassword: true, sha1: "0123456789abcdef0123456789abcdef01234567"})
+			a.openDialog(&phoneBox{withPassword: true, known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567"}})
+		}},
+		{"connect a phone: trusted", func() {
+			a.bnc, a.password = config.Bouncer{Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x", SSH: "vps", Cert: letsEncrypt}, ""
+			a.openDialog(&phoneBox{known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567",
+				Issuer: "Let's Encrypt", Trusted: true}})
+		}},
+		{"bouncers: server", func() {
+			a.openServer(config.Bouncer{Name: "vps", Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x",
+				SSH: "max@203.0.113.40", SojuVersion: "v0.10.0"}, nil)
+		}},
+		{"trusted certificate", func() {
+			a.askCert(config.Bouncer{Name: "vps", Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x", SSH: "vps"}, nil, true)
 		}},
 		{"set up bouncer: where", func() {
 			a.openDialog(&installWizard{step: instWhere, where: 1, hosts: []string{"vps"}, account: "max"})

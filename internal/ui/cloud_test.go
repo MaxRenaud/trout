@@ -2,8 +2,10 @@
 
 // The setup wizard making a real server at each provider (tokens in
 // tmp/cloud.env), installing soju on it, connecting to it with its pinned
-// key and moving a network there, then Bouncers > Remove > Delete Server.
-// Costs a few cents per provider per run.
+// key and moving a network there, getting it a Let's Encrypt certificate
+// (the real one, or TROUT_ACME_DIRECTORY's) and taking it away, then
+// Bouncers > Remove > Delete Server. Costs a few cents per provider per
+// run, and two certificates for the server's throwaway IP address.
 //
 //	go test -tags cloud ./internal/ui -run TestCloudBouncer -v
 package ui
@@ -11,6 +13,7 @@ package ui
 import (
 	"bufio"
 	"context"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +26,7 @@ import (
 
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
+	"github.com/MaxRenaud/trout/internal/irc"
 )
 
 func TestCloudBouncer(t *testing.T) {
@@ -47,12 +51,16 @@ func TestCloudBouncer(t *testing.T) {
 		t.Setenv("CLOUDSDK_CONFIG", filepath.Join(home, ".config", "gcloud"))
 	}
 	soju := map[string][2]string{}
+	certs := map[string]string{}
 	for _, arch := range []string{"amd64", "arm64"} { // before installApp moves HOME
 		s, c, err := install.FindBinaries(arch)
 		if err != nil {
 			t.Fatal(err)
 		}
 		soju[arch] = [2]string{s, c}
+		if certs[arch], err = install.FindCert(arch); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for i, id := range []string{"hetzner", "digitalocean", "gcloud"} {
 		if only := os.Getenv("TROUT_CLOUD"); only != "" && only != id {
@@ -67,7 +75,8 @@ func TestCloudBouncer(t *testing.T) {
 					return install.SSH{Host: host, Options: []string{"-i", repo("tmp/pve_ed25519"),
 						"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"}}
 				},
-				binaries: func(arch string) (string, string, error) { return soju[arch][0], soju[arch][1], nil },
+				binaries:   func(arch string) (string, string, error) { return soju[arch][0], soju[arch][1], nil },
+				certBinary: func(arch string) (string, error) { return certs[arch], nil },
 			}
 			a.saveCloudToken(id, tok)
 			a.nets[1].Server = "irc.example.invalid" // moved, but going nowhere
@@ -128,6 +137,9 @@ func TestCloudBouncer(t *testing.T) {
 				}
 			}
 
+			// Finish asked about a certificate: Get Certificate, from Let's Encrypt.
+			testCertificate(t, a, b, ssh)
+
 			// Bouncers > Remove > Delete Server.
 			a.openSavedBouncers()
 			d := a.dlg.(*savedBouncersBox)
@@ -139,5 +151,83 @@ func TestCloudBouncer(t *testing.T) {
 				t.Fatalf("not deleted: %q", lineTexts(a.home.Status()))
 			}
 		})
+	}
+}
+
+// testCertificate gets bouncer b a Let's Encrypt certificate from the
+// question Finish asked, checks a phone would trust it, that the timer's
+// sandboxed service runs and a renewal reloads soju, then goes back to
+// self-signed.
+func testCertificate(t *testing.T, a *App, b config.Bouncer, ssh install.SSH) {
+	t.Helper()
+	onServer := func(cmd string) string {
+		t.Helper()
+		out, err := exec.Command("ssh", append(ssh.Options, ssh.Host, "--", cmd)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", cmd, err, out)
+		}
+		return string(out)
+	}
+	addr, _, _ := irc.ParseAddress(b.Address)
+	host, _, _ := net.SplitHostPort(addr)
+	read := func(pin string) irc.ServerCert {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		sc, err := irc.ReadCert(ctx, irc.Config{Addr: addr, Pin: pin})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return sc
+	}
+
+	start := time.Now()
+	drive(a, certBox(t, a).close(a, 0)) // Get Certificate
+	w := wizard(t, a)
+	t.Logf("certificate log:\n%s", strings.Join(w.log, "\n"))
+	if w.mode != "cert" || w.step != instDone {
+		t.Fatalf("certificate: step %d, err %q", w.step, w.err)
+	}
+	t.Logf("certificate in %s", time.Since(start).Round(time.Second))
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Finish
+	if a.cfg.Find(b.Name).Cert != letsEncrypt {
+		t.Fatal("not saved")
+	}
+	first := read("") // no pin: the system's authorities alone, like a phone
+	if !first.Trusted {
+		t.Fatalf("not trusted: %v", first.Why)
+	}
+	t.Logf("%s vouches for %s until %s", first.Issuer, host, first.NotAfter)
+
+	// The timer's service in its sandbox: not due yet.
+	t.Log(onServer("systemctl is-enabled trout-cert.timer && sudo -n systemctl start trout-cert.service && " +
+		"sudo -n journalctl -u trout-cert.service -n 2 --no-pager -o cat"))
+	// A renewal in the same sandbox, forced, reloads soju without a restart.
+	pid := onServer("systemctl show -p MainPID --value soju")
+	t.Log(onServer("sudo -n systemd-run --wait --collect --quiet -p ProtectSystem=strict " +
+		"-p 'ReadWritePaths=/etc/soju /var/lib/trout-cert' -p NoNewPrivileges=yes -p PrivateTmp=yes -p ProtectHome=yes " +
+		"/usr/local/bin/trout-cert renew -force -host " + host + " -acme " + install.ACMEDirectory + " && " +
+		"sudo -n journalctl -n 4 --no-pager -o cat _COMM=trout-cert"))
+	if again := read(b.Pin); !again.Trusted || again.SHA1 == first.SHA1 {
+		t.Fatalf("renewed: trusted %v, same certificate %v", again.Trusted, again.SHA1 == first.SHA1)
+	}
+	if now := onServer("systemctl show -p MainPID --value soju"); now != pid {
+		t.Errorf("soju restarted (%s, was %s): it should only reload", now, pid)
+	}
+
+	// Self-Signed: back to the certificate only trout knows.
+	a.openServer(*a.cfg.Find(b.Name), nil)
+	drive(a, a.dlg.(*msgBox).close(a, 1)) // Certificate
+	drive(a, certBox(t, a).close(a, 1))   // Self-Signed
+	if w := wizard(t, a); w.step != instDone {
+		t.Fatalf("self-signed: step %d, err %q, log %q", w.step, w.err, w.log)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Finish
+	if sc := read(b.Pin); sc.Trusted || a.cfg.Find(b.Name).Cert != "" {
+		t.Fatalf("still trusted (%v) or saved (%q)", sc.Trusted, a.cfg.Find(b.Name).Cert)
+	}
+	if out := onServer("for f in /usr/local/bin/trout-cert /etc/systemd/system/trout-cert.timer /var/lib/trout-cert; do " +
+		"if [ -e $f ]; then echo $f is left; fi; done"); out != "" {
+		t.Errorf("trout-cert is still there:\n%s", out)
 	}
 }

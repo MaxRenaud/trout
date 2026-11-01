@@ -198,6 +198,11 @@ type Bouncer struct {
 	// saved it, which trout doesn't ask about.
 	SojuVersion string `toml:"soju-version,omitempty"`
 
+	// Cert is "letsencrypt" once trout has set the server up to get the
+	// bouncer a Let's Encrypt certificate and renew it (cmd/trout-cert),
+	// for phones and browsers; trout itself still checks the pin.
+	Cert string `toml:"cert,omitempty"`
+
 	// Local is trout's own soju, run on this computer while trout runs
 	// (internal/local); it has no Address, as its port changes each time.
 	Local bool `toml:"local,omitempty"`

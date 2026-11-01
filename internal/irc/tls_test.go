@@ -126,9 +126,10 @@ func selfSigned(t *testing.T) tls.Certificate {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
-// TestCertSHA1 is the certificate's SHA-1 as Goguma shows it, only when
-// the pin matches.
-func TestCertSHA1(t *testing.T) {
+// TestReadCert is the certificate's SHA-1 as Goguma shows it, only when
+// the pin matches, and whether this computer's authorities trust it (a
+// self-signed one: no).
+func TestReadCert(t *testing.T) {
 	cert := selfSigned(t)
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}})
 	if err != nil {
@@ -146,11 +147,11 @@ func TestCertSHA1(t *testing.T) {
 	}()
 	leaf, _ := x509.ParseCertificate(cert.Certificate[0])
 	sum := sha1.Sum(cert.Certificate[0])
-	got, err := CertSHA1(t.Context(), Config{Addr: ln.Addr().String(), Pin: Fingerprint(leaf)})
-	if err != nil || got != hex.EncodeToString(sum[:]) {
-		t.Fatalf("got %q, %v", got, err)
+	got, err := ReadCert(t.Context(), Config{Addr: ln.Addr().String(), Pin: Fingerprint(leaf)})
+	if err != nil || got.SHA1 != hex.EncodeToString(sum[:]) || got.Trusted || got.Why == nil || !got.NotAfter.Equal(leaf.NotAfter) {
+		t.Fatalf("got %+v, %v", got, err)
 	}
-	if _, err := CertSHA1(t.Context(), Config{Addr: ln.Addr().String(), Pin: "SHA256:other"}); err == nil {
+	if _, err := ReadCert(t.Context(), Config{Addr: ln.Addr().String(), Pin: "SHA256:other"}); err == nil {
 		t.Fatal("no error with the wrong pin")
 	}
 }

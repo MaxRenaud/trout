@@ -94,6 +94,7 @@ type App struct {
 	certFailed  bool             // the bouncer refused it this session: use the password
 	certNoted   bool             // said once that the bouncer can\'t take certificates
 	updateAsked map[string]bool  // bouncers offered a soju update this session
+	certWatched map[string]bool  // bouncers whose certificate was checked this session
 	updating    bool             // trout is putting a newer trout in
 	updatedTo   string           // the version it put in this session
 	send        func(tea.Msg)    // delivers messages from connection goroutines
@@ -427,8 +428,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.updateDone(msg)
 	case serverDeletedMsg:
 		a.serverDeleted(msg)
-	case phoneSHA1Msg:
-		a.phoneSHA1(msg)
+	case phoneCertMsg:
+		a.phoneCert(msg)
+	case certCheckedMsg:
+		a.certChecked(msg)
 	case tea.FocusMsg:
 		a.focused = true
 		if ed, ok := a.dlg.(*scriptEditor); ok && !a.book().ScriptOpts.NoMonitor {

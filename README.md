@@ -16,7 +16,7 @@ trout is a hobby project. There's no hosted service and nothing to sign up for.
 - A bouncer, or not: trout connects to a soju you already have, sets one up on a Linux
   server you can SSH into or on a new server at Hetzner Cloud, DigitalOcean or Google
   Cloud's free tier, or runs one itself on this computer while it's open.
-- Go 1.25 or later to build it.
+- Go 1.26 or later to build it.
 
 ## Install and run
 
@@ -63,11 +63,21 @@ key and pins it, so there's no domain to buy, checks the bouncer by logging in, 
 your networks onto it. Tools > Bouncers updates or removes it later, deleting the server
 too.
 
+Phones and web browsers don't know that pinned key, so last of all it offers a certificate
+from [Let's Encrypt](https://letsencrypt.org), which vouches for IP addresses too (later:
+Tools > Bouncers > Server > Certificate). trout puts a small helper, trout-cert, on the
+server; it gets the certificate for the same key, so the pin still holds, and a timer renews
+it every few days. Let's Encrypt checks the server over port 80, so that port has to be open
+to everyone, in the server's firewall and at your provider (trout opens it in ufw and
+firewalld). Getting one accepts Let's Encrypt's
+[Subscriber Agreement](https://letsencrypt.org/repository/); there's no email to give.
+
 ![Set Up a Bouncer: a new Hetzner server, soju installed, networks moved over](docs/gifs/setup.gif)
 
 This Computer runs soju right here instead, while trout is open, for when there's no
 server. Tools > Connect a Phone shows a QR code that opens your bouncer in
-[Goguma](https://goguma.im) (iPhone and Android), which gets soju's push notifications.
+[Goguma](https://goguma.im) (iPhone and Android), which gets soju's push notifications;
+without a Let's Encrypt certificate, it shows the SHA-1 Goguma asks you to accept.
 
 ## What's in it
 

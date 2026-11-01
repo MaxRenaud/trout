@@ -16,17 +16,19 @@ import (
 // with the bouncer in use filled in (an ircs:// link, which Goguma
 // registers on iOS and Android). Goguma asks before trusting a certificate
 // no authority signed, showing its SHA-1; for a pinned bouncer this shows
-// the same, to compare, which trout gets by connecting with its pin.
+// the same, to compare, which trout gets by connecting with its pin. A
+// bouncer with a Let's Encrypt certificate needs none of that.
 type phoneBox struct {
 	withPassword bool
-	sha1         string // the certificate's, once known; "" when no pin
+	cert         irc.ServerCert // once read
+	known        bool
 	checking     bool
 	err          string
 }
 
-type phoneSHA1Msg struct {
+type phoneCertMsg struct {
 	box  *phoneBox
-	sha1 string
+	cert irc.ServerCert
 	err  error
 }
 
@@ -60,29 +62,25 @@ func (a *App) openPhone() tea.Cmd {
 		a.openDialog(m)
 		return nil
 	}
-	d := &phoneBox{withPassword: true}
+	d := &phoneBox{withPassword: true, checking: true}
 	a.openDialog(d)
-	if a.bnc.Pin == "" {
-		return nil
-	}
-	d.checking = true
 	addr, _, _ := irc.ParseAddress(a.bnc.Address)
 	cfg := irc.Config{Addr: addr, TLS: true, Pin: a.bnc.Pin, Dial: a.dialer(false)}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		sum, err := irc.CertSHA1(ctx, cfg)
-		return phoneSHA1Msg{d, sum, err}
+		sc, err := a.readCert(ctx, cfg)
+		return phoneCertMsg{d, sc, err}
 	}
 }
 
-func (a *App) phoneSHA1(m phoneSHA1Msg) {
+func (a *App) phoneCert(m phoneCertMsg) {
 	m.box.checking = false
 	if m.err != nil {
 		m.box.err = m.err.Error()
 		return
 	}
-	m.box.sha1 = m.sha1
+	m.box.cert, m.box.known = m.cert, true
 }
 
 // link is the bouncer as an IRC URL: ircs://user[:password]@host:port.
@@ -164,9 +162,15 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		text("Getting the bouncer's certificate...", face)
 	case d.err != "":
 		text("Couldn't get the bouncer's certificate: "+d.err, face)
-	case d.sha1 != "":
+	case d.known && d.cert.Trusted:
+		text("Goguma trusts the bouncer's certificate ("+d.cert.Issuer+" vouches for it).", face)
+	case d.known:
 		text("Goguma says Bad Certificate the first time. Accept Always if its SHA1 is:", face)
-		text(d.sha1, bold)
+		text(d.cert.SHA1, bold)
+		if b := a.bnc; b.SSH != "" && b.Cert == "" && certProblem(b) == "" {
+			row++
+			text("Or get one Goguma trusts: Tools > Bouncers > Server > Certificate.", face)
+		}
 	}
 	row++
 	if d.withPassword {

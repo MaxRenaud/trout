@@ -19,6 +19,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/cloud"
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/install"
+	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/update"
 )
@@ -26,11 +27,12 @@ import (
 // installWizard is Tools > Set Up Bouncer for real (the demo keeps
 // setupWizard, the mock-up with VPS providers): soju on a Linux server you
 // can SSH into, by internal/install. The same steps update or uninstall
-// one it set up (Bouncers > Update and Remove): connect with ssh, find out
-// what the server is, get root (as root, sudo, sudo with your password, or
-// a script you run), upload, run the setup script, log in to check.
+// one it set up, or get it a certificate (Bouncers > Server and Remove):
+// connect with ssh, find out what the server is, get root (as root, sudo,
+// sudo with your password, or a script you run), upload, run the setup
+// script, log in to check.
 type installWizard struct {
-	mode    string // "" installs; or install's "update", "remove", "purge"
+	mode    string // "" installs; or install's "update", "cert", "nocert", "remove", "purge"
 	step    int
 	hosts   []string // ~/.ssh/config's
 	choice  int      // a host, or len(hosts) for the one typed in
@@ -84,11 +86,16 @@ type remote interface {
 // installHooks stand in for the parts of setting up a bouncer that reach
 // out: ssh, the soju binaries, and logging in to check. Tests set them.
 type installHooks struct {
-	remote   func(host string) remote
-	binaries func(arch string) (soju, sojuctl string, err error)
-	check    func(ctx context.Context, in *install.Installer) error
-	cloud    func(id, token string) cloud.Provider
-	sshKey   string
+	remote     func(host string) remote
+	binaries   func(arch string) (soju, sojuctl string, err error)
+	certBinary func(arch string) (string, error)
+	check      func(ctx context.Context, in *install.Installer) error
+	cloud      func(id, token string) cloud.Provider
+	sshKey     string
+
+	// readCert reads a bouncer's certificate (Connect a Phone, and the
+	// check that a Let's Encrypt one is still good).
+	readCert func(ctx context.Context, cfg irc.Config) (irc.ServerCert, error)
 
 	// Updating trout itself: GitHub's latest release, and putting it in.
 	latest func(ctx context.Context) (update.Release, error)
@@ -134,8 +141,9 @@ func (a *App) openInstall() {
 	a.openDialog(&installWizard{step: instWhere, hosts: sshConfigHosts(), account: a.defaultAccount()})
 }
 
-// openReinstall updates or uninstalls bouncer b, which trout set up (mode
-// "update", "remove" or "purge"), straight away.
+// openReinstall updates or uninstalls bouncer b, which trout set up, or
+// gets it a certificate or takes that away (mode "update", "remove",
+// "purge", "cert" or "nocert"), straight away.
 func (a *App) openReinstall(b config.Bouncer, mode string) tea.Cmd {
 	w := &installWizard{mode: mode, b: b, typed: b.SSH, account: b.User}
 	a.openDialog(w)
@@ -370,7 +378,9 @@ func (w *installWizard) probed(a *App, f install.Facts, host string) tea.Cmd {
 	if w.mode == "" {
 		w.in, err = install.New(w.remote, f, host, w.account)
 	} else {
-		w.in, err = install.Existing(w.remote, f, host, w.b.User, a.bouncerPassword(w.b), w.b.Pin, w.mode)
+		// The address people connect to, which the certificate is for; ssh
+		// may know the server by another name.
+		w.in, err = install.Existing(w.remote, f, cmp.Or(bouncerHost(w.b), host), w.b.User, a.bouncerPassword(w.b), w.b.Pin, w.mode)
 	}
 	if err != nil {
 		return w.fail(err.Error())
@@ -379,7 +389,7 @@ func (w *installWizard) probed(a *App, f install.Facts, host string) tea.Cmd {
 	w.in.Progress = func(s string) { a.send(instStepMsg{w, seq, s}) }
 	w.in.Dial = a.dialer(false)
 	if a.hooks != nil {
-		w.in.Binaries = a.hooks.binaries
+		w.in.Binaries, w.in.CertBinary = a.hooks.binaries, a.hooks.certBinary
 	}
 	switch w.in.Root {
 	case install.AsRoot:
@@ -422,6 +432,14 @@ func (w *installWizard) done() tea.Cmd {
 		w.say("Your bouncer is ready. Its TLS key is pinned: " + w.in.Pin)
 	case "update":
 		w.say("soju " + install.SojuVersion + " is running")
+	case "cert":
+		until := ""
+		if c := w.in.Cert; !c.NotAfter.IsZero() {
+			until = " (" + c.Issuer + ", until " + c.NotAfter.Local().Format("Jan 2 15:04") + ")"
+		}
+		w.say("Phones and web browsers trust the bouncer's certificate now" + until + ". The server renews it every few days.")
+	case "nocert":
+		w.say("The bouncer has its self-signed certificate again")
 	default:
 		w.say("soju is gone from " + w.host)
 	}
@@ -450,14 +468,15 @@ func (w *installWizard) close(a *App) {
 // leave is every way out of the wizard (Cancel, Close, its ×, the ssh and
 // sudo prompts' Cancel). A cloud server it made is never left behind
 // unrecorded: while it's being made, it's waited for; once made, you're
-// asked whether to delete it; once set up, it's saved like Finish.
+// asked whether to delete it; once set up, it's saved like Finish. What
+// a finished update, certificate or uninstall did is saved the same way.
 func (w *installWizard) leave(a *App) tea.Cmd {
 	switch {
 	case w.creating:
 		w.stopping = true
 		w.say("Stopping once " + w.prov.Name() + " has made the server, to ask about deleting it...")
 		a.openDialog(w)
-	case w.server != nil && w.step == instDone:
+	case w.step == instDone && (w.server != nil || w.mode != ""):
 		w.close(a)
 		return a.finishInstall(w)
 	case w.server != nil:
@@ -556,6 +575,8 @@ func (w *installWizard) title() string {
 	switch w.mode {
 	case "update":
 		return "Update Bouncer"
+	case "cert", "nocert":
+		return "Trusted Certificate"
 	case "remove", "purge":
 		return "Uninstall Bouncer"
 	}
@@ -844,6 +865,22 @@ func (a *App) finishInstall(w *installWizard) tea.Cmd {
 		}
 		a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: "+w.b.Name+" now runs soju "+install.SojuVersion)
 		return nil
+	case "cert", "nocert":
+		cert, say := letsEncrypt, " has a certificate from Let's Encrypt now: phones and web browsers trust it"
+		if w.mode == "nocert" {
+			cert, say = "", " has its self-signed certificate again"
+		}
+		if a.cfg != nil {
+			if b := a.cfg.Find(w.b.Name); b != nil {
+				b.Cert = cert
+				a.saveConfig()
+			}
+		}
+		if a.bnc.Name == w.b.Name {
+			a.bnc.Cert = cert
+		}
+		a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: "+w.b.Name+say)
+		return nil
 	}
 	in := w.in
 	name := w.targetName()
@@ -862,6 +899,7 @@ func (a *App) finishInstall(w *installWizard) tea.Cmd {
 	}
 	cmd := a.switchBouncer(b, in.Password)
 	a.moveTo(b.Name, moving)
+	a.offerCert(b.Name)
 	return cmd
 }
 

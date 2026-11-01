@@ -30,9 +30,14 @@ var gcloudRegions = []struct{ id, label string }{
 // gcloudIPv4 is an external IPv4's monthly price, $0.005 an hour.
 const gcloudIPv4 = 3.65
 
-// gcloudFirewall is the rule letting IRC (6697) and file uploads (8443)
-// reach servers tagged with it.
+// gcloudFirewall is the rule letting IRC (6697), file uploads (8443) and
+// Let's Encrypt's checks for a trusted certificate (80) reach servers
+// tagged with it. Nothing listens on 80 but trout-cert, for a moment
+// every few days.
 const gcloudFirewall = "trout-bouncer"
+
+// gcloudPorts are the rule's.
+const gcloudPorts = "tcp:80,tcp:6697,tcp:8443"
 
 // NewGCloud uses project, or gcloud's own when it's empty.
 func NewGCloud(project string) *GCloud { return &GCloud{Project: project} }
@@ -109,10 +114,17 @@ func (g *GCloud) Create(ctx context.Context, r Region, name, key string) (Server
 	if err != nil {
 		return Server{}, err
 	}
-	if _, err := g.gcloud(ctx, "compute", "firewall-rules", "describe", gcloudFirewall, "--project", p, "--format", "value(name)"); err != nil {
+	rule, err := g.gcloud(ctx, "compute", "firewall-rules", "describe", gcloudFirewall, "--project", p, "--format", "json(allowed)")
+	switch {
+	case err != nil:
 		if _, err := g.gcloud(ctx, "compute", "firewall-rules", "create", gcloudFirewall, "--project", p,
-			"--allow", "tcp:6697,tcp:8443", "--target-tags", gcloudFirewall,
-			"--description", "trout's bouncers: IRC over TLS and file uploads"); err != nil {
+			"--allow", gcloudPorts, "--target-tags", gcloudFirewall,
+			"--description", "trout's bouncers: IRC over TLS, file uploads, Let's Encrypt's checks"); err != nil {
+			return Server{}, err
+		}
+	case !strings.Contains(string(rule), `"80"`): // made by a trout from before certificates
+		if _, err := g.gcloud(ctx, "compute", "firewall-rules", "update", gcloudFirewall, "--project", p,
+			"--allow", gcloudPorts); err != nil {
 			return Server{}, err
 		}
 	}

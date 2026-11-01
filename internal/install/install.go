@@ -2,12 +2,15 @@
 // what the server is, gets root (as root, sudo without a password, sudo
 // with yours, or a script you run), uploads trout's pinned soju with a
 // TLS key made here, runs one setup script that's safe to run again, and
-// checks the result end to end by logging in.
+// checks the result end to end by logging in. The same script gets the
+// bouncer a certificate from Let's Encrypt (cmd/trout-cert) and takes it
+// away again.
 package install
 
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -21,6 +24,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,6 +47,33 @@ func Older(v string) bool {
 //go:embed setup.sh
 var setupScript string
 
+// ACMEDirectory is the CA trout-cert gets certificates from: Let's
+// Encrypt, or another (its staging one, say) in TROUT_ACME_DIRECTORY.
+var ACMEDirectory = cmp.Or(os.Getenv("TROUT_ACME_DIRECTORY"), "https://acme-v02.api.letsencrypt.org/directory")
+
+// CertProblem says why Let's Encrypt can't vouch for host, the
+// bouncer's address, or "" if it might: it only checks addresses and
+// names anyone on the internet can reach.
+func CertProblem(host string) string {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip.IsPrivate() || ip.IsLoopback() || !ip.IsGlobalUnicast() || netip.MustParsePrefix("100.64.0.0/10").Contains(ip) {
+			return host + " is a private address (a home network, a VPN like Tailscale), " +
+				"and Let's Encrypt only vouches for public ones"
+		}
+		return ""
+	}
+	low := strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, private := range []string{".local", ".lan", ".home", ".internal", ".home.arpa", ".localdomain", ".ts.net"} {
+		if strings.HasSuffix(low, private) {
+			return host + " is a name only your own network knows, and Let's Encrypt only vouches for public ones"
+		}
+	}
+	if !strings.Contains(low, ".") {
+		return host + " isn't a full name (like bouncer.example.com), and Let's Encrypt only vouches for public ones"
+	}
+	return ""
+}
+
 // Facts are what Probe found out about the server.
 type Facts struct {
 	Arch      string // "amd64", "arm64" or "arm" (32-bit, ARMv6 and up); "" for anything else
@@ -55,6 +86,7 @@ type Facts struct {
 	Sudo      Sudo
 	SudoGroup bool // in sudo, wheel or admin: a password probably works
 	Installed bool // /usr/local/bin/soju is there (an update, or a re-run)
+	Cert      bool // /usr/local/bin/trout-cert is there: an update puts in the new one
 }
 
 // Sudo is what `sudo -n true` said.
@@ -71,7 +103,8 @@ if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then echo
 if [ -r /etc/os-release ]; then (. /etc/os-release; echo "os=$PRETTY_NAME"); fi
 if command -v sudo >/dev/null 2>&1; then if sudo -n true >/dev/null 2>&1; then echo sudo=nopasswd; else echo sudo=password; fi; fi
 echo "groups=$(id -nG)"
-if [ -x /usr/local/bin/soju ]; then echo installed=yes; fi`
+if [ -x /usr/local/bin/soju ]; then echo installed=yes; fi
+if [ -x /usr/local/bin/trout-cert ]; then echo cert=yes; fi`
 
 // Probe finds out what the server is, without changing anything.
 func Probe(ctx context.Context, r Runner) (Facts, error) {
@@ -112,6 +145,8 @@ func Probe(ctx context.Context, r Runner) (Facts, error) {
 			}
 		case "installed":
 			f.Installed = true
+		case "cert":
+			f.Cert = true
 		}
 	}
 	if f.Home == "" {
@@ -171,8 +206,10 @@ type Installer struct {
 	Facts Facts
 	Root  Root
 	// Mode is the script's: "" installs, "update" puts in trout's soju and
-	// keeps the key and the account's password, "remove" stops and deletes
-	// soju but keeps its history, "purge" deletes the history too.
+	// keeps the key and the account's password, "cert" gets a certificate
+	// from Let's Encrypt and keeps it renewed, "nocert" goes back to the
+	// self-signed one, "remove" stops and deletes soju but keeps its
+	// history, "purge" deletes the history too.
 	Mode string
 	// SudoPassword is for WithPassword; it's only kept in memory.
 	SudoPassword string
@@ -182,8 +219,9 @@ type Installer struct {
 	Password string // its password, made by New
 
 	// Binaries finds soju and sojuctl for an architecture; FindBinaries
-	// if nil.
-	Binaries func(arch string) (soju, sojuctl string, err error)
+	// if nil. CertBinary finds trout-cert; FindCert if nil.
+	Binaries   func(arch string) (soju, sojuctl string, err error)
+	CertBinary func(arch string) (string, error)
 	// Progress, if set, hears each step as it happens.
 	Progress func(string)
 	// Dial, if set, makes Check's connection (through a proxy, say).
@@ -191,6 +229,9 @@ type Installer struct {
 
 	Pin       string // the TLS key's fingerprint, to pin
 	cert, key []byte
+
+	// Cert is the certificate Check found, in mode "cert".
+	Cert irc.ServerCert
 }
 
 var accountRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
@@ -213,13 +254,18 @@ func New(r Runner, f Facts, host, account string) (*Installer, error) {
 }
 
 // Existing works on a bouncer trout set up before, in mode "update",
-// "remove" or "purge": the key and the password on the server stay, and
-// pin and password are what Check expects.
+// "cert", "nocert", "remove" or "purge": the key and the password on the
+// server stay, and pin and password are what Check expects.
 func Existing(r Runner, f Facts, host, account, password, pin, mode string) (*Installer, error) {
 	if !accountRe.MatchString(account) {
 		return nil, fmt.Errorf("the account name %q should be letters, digits, '.', '_' or '-'", account)
 	}
-	if mode != "update" && mode != "remove" && mode != "purge" {
+	if strings.ContainsAny(host, " \t\n'\"$`\\/") || host == "" {
+		return nil, fmt.Errorf("can't use %q as the server's address", host)
+	}
+	switch mode {
+	case "update", "cert", "nocert", "remove", "purge":
+	default:
 		return nil, fmt.Errorf("unknown mode %q", mode)
 	}
 	return &Installer{R: r, Facts: f, Root: f.BestRoot(), Mode: mode, Host: host, Account: account,
@@ -298,8 +344,8 @@ func (in *Installer) Script() string {
 	if in.Mode != "" {
 		password = "" // the account stays as it is
 	}
-	return fmt.Sprintf("#!/bin/sh\nTROUT_SOJU_VERSION=%s\nTROUT_HOST=%s\nTROUT_INGRESS=%s\nTROUT_ACCOUNT=%s\nTROUT_PASSWORD=%s\n\n",
-		SojuVersion, in.Host, ingress, in.Account, password) + setupScript
+	return fmt.Sprintf("#!/bin/sh\nTROUT_SOJU_VERSION=%s\nTROUT_HOST=%s\nTROUT_INGRESS=%s\nTROUT_ACCOUNT=%s\nTROUT_PASSWORD=%s\nTROUT_ACME=%s\n\n",
+		SojuVersion, in.Host, ingress, in.Account, password, ACMEDirectory) + setupScript
 }
 
 // ManualCommand is what you run as root yourself when trout can't (ByHand).
@@ -308,9 +354,10 @@ func (in *Installer) ManualCommand() string {
 }
 
 // StageFiles uploads the setup script and what it needs: soju and sojuctl
-// (not to remove), and the TLS key (a new install).
+// (to install or update), trout-cert (for a certificate, or an update
+// where it's set up), and the TLS key (a new install).
 func (in *Installer) StageFiles(ctx context.Context) error {
-	var soju, sojuctl string
+	var soju, sojuctl, cert string
 	if in.Mode == "" || in.Mode == "update" {
 		find := in.Binaries
 		if find == nil {
@@ -321,6 +368,16 @@ func (in *Installer) StageFiles(ctx context.Context) error {
 			return err
 		}
 	}
+	if in.Mode == "cert" || (in.Mode == "update" && in.Facts.Cert) {
+		find := in.CertBinary
+		if find == nil {
+			find = FindCert
+		}
+		var err error
+		if cert, err = find(in.Facts.Arch); err != nil {
+			return err
+		}
+	}
 	dir := in.Stage()
 	if err := in.R.Run(ctx, Cmd{Line: "rm -rf " + dir + " && mkdir -m 700 " + dir}); err != nil {
 		return err
@@ -328,7 +385,7 @@ func (in *Installer) StageFiles(ctx context.Context) error {
 	upload := func(name string, data io.Reader, mode string) error {
 		return in.R.Run(ctx, Cmd{Line: fmt.Sprintf("cat > %s/%s && chmod %s %s/%s", dir, name, mode, dir, name), Stdin: data})
 	}
-	for _, b := range []struct{ name, path string }{{"soju", soju}, {"sojuctl", sojuctl}} {
+	for _, b := range []struct{ name, path, version string }{{"soju", soju, " " + SojuVersion}, {"sojuctl", sojuctl, " " + SojuVersion}, {"trout-cert", cert, ""}} {
 		if b.path == "" {
 			continue
 		}
@@ -337,7 +394,7 @@ func (in *Installer) StageFiles(ctx context.Context) error {
 			return err
 		}
 		st, _ := f.Stat()
-		in.progress(fmt.Sprintf("Uploading %s %s (%d MB)", b.name, SojuVersion, st.Size()>>20))
+		in.progress(fmt.Sprintf("Uploading %s%s (%d MB)", b.name, b.version, st.Size()>>20))
 		err = upload(b.name, f, "755")
 		f.Close()
 		if err != nil {
@@ -445,6 +502,9 @@ func (in *Installer) Check(ctx context.Context) error {
 	c, err := irc.Dial(dctx, cfg)
 	if err == nil {
 		c.Close()
+		if in.Mode == "cert" {
+			return in.checkCert(dctx, cfg)
+		}
 		return nil
 	}
 	var ce *irc.CertError
@@ -459,6 +519,20 @@ func (in *Installer) Check(ctx context.Context) error {
 	}
 	return fmt.Errorf("soju runs on the server, but trout can't reach %s:6697 from here (%v). "+
 		"A firewall at your provider is the usual reason: allow TCP 6697 and 8443", in.Host, err)
+}
+
+// checkCert makes sure the bouncer now shows a certificate this
+// computer's authorities trust, as a phone's would.
+func (in *Installer) checkCert(ctx context.Context, cfg irc.Config) error {
+	sc, err := irc.ReadCert(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("couldn't read the bouncer's certificate: %w", err)
+	}
+	in.Cert = sc
+	if !sc.Trusted {
+		return fmt.Errorf("the bouncer still shows a certificate this computer doesn't trust (from %s: %v)", sc.Issuer, sc.Why)
+	}
+	return nil
 }
 
 // missing looks on the server for what the setup should have done.
@@ -484,10 +558,21 @@ ss -ltn 2>/dev/null | grep -q ':6697 ' || echo "nothing listens on port 6697"`)
 // server (see FindFor).
 func FindBinaries(arch string) (soju, sojuctl string, err error) { return FindFor("linux", arch) }
 
-// FindFor finds soju and sojuctl for goos/arch: next to trout (in
+// FindCert finds trout-cert for linux/arch, to install on a server. It
+// goes with soju (see FindFor).
+func FindCert(arch string) (string, error) {
+	for _, d := range binDirs("linux", arch) {
+		if p := filepath.Join(d, "trout-cert"); fileExists(p) {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("no trout-cert for linux/%s next to trout; dev/build-soju builds it", arch)
+}
+
+// binDirs is where soju for goos/arch may be: next to trout (in
 // soju-<goos>-<arch>/, as release archives have them), or where
 // dev/build-soju puts them.
-func FindFor(goos, arch string) (soju, sojuctl string, err error) {
+func binDirs(goos, arch string) []string {
 	platform := goos + "-" + arch
 	var dirs []string
 	if exe, err := os.Executable(); err == nil {
@@ -499,11 +584,16 @@ func FindFor(goos, arch string) (soju, sojuctl string, err error) {
 	if cache, err := os.UserCacheDir(); err == nil {
 		dirs = append(dirs, filepath.Join(cache, "trout", "soju", SojuVersion, platform))
 	}
+	return dirs
+}
+
+// FindFor finds soju and sojuctl for goos/arch (see binDirs).
+func FindFor(goos, arch string) (soju, sojuctl string, err error) {
 	ext := ""
 	if goos == "windows" {
 		ext = ".exe"
 	}
-	for _, d := range dirs {
+	for _, d := range binDirs(goos, arch) {
 		s, c := filepath.Join(d, "soju"+ext), filepath.Join(d, "sojuctl"+ext)
 		if fileExists(s) && fileExists(c) {
 			return s, c, nil

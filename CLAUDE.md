@@ -15,12 +15,12 @@ TROUT_DEBUG=1 dev/trout                            # log raw IRC lines to trout-
 
 go test ./...                                      # unit and frame tests, no network
 go test -tags integration ./internal/ui -v         # needs the dev env
-dev/build-soju                                     # the soju trout installs on servers
+dev/build-soju                                     # the soju trout installs on servers, and trout-cert
 go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean   # release archives in dist/, nothing published
 go test -tags proxmox ./internal/install -v -parallel 3   # bouncer setup on real VMs
 go test -tags docker ./internal/install -v         # the same on this computer's arch (arm64)
 TROUT_DOCKER_ARCH=arm go test -tags docker ./internal/install -v   # on 32-bit ARM, emulated
-go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and DigitalOcean servers (cents)
+go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real servers (cents), and a real Let's Encrypt certificate
 dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
 dev/windows/mirc-run script.mrc                    # run a script in real mIRC on that VM, print its out.txt
 go test -tags mirc ./internal/script -run TestMIRC -v   # check internal/script against real mIRC
@@ -69,6 +69,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   a running program). `ui/selfupdate.go` is Help > Check for Updates and the daily check.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
+- `cmd/trout-cert`: the helper trout uploads with soju (`setup.sh cert`) to get the
+  bouncer a Let's Encrypt certificate for soju's own key (so the pin holds) and renew it
+  from a systemd timer; `ui/certificate.go` asks (the wizard's last question, Bouncers >
+  Server > Certificate) and watches it. `TROUT_ACME_DIRECTORY` points it at another CA.
 - `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens) or
   Google Cloud (the gcloud command: free e2-micro, reserved IPv4, `trout-bouncer` firewall rule):
   regions with the cheapest plan and price, create with your SSH key, delete. `ui/vps.go`
@@ -154,10 +158,14 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `TestMoveNetworksLive` moves tester's networks to a throwaway soju user it deletes
   afterwards. With `-tags cloud` (tokens in `tmp/cloud.env`),
   `cloud/live_test.go` lists regions and makes and deletes a server per provider, and
-  `ui/cloud_test.go` runs the whole wizard on one, then deletes it from Bouncers. Check
+  `ui/cloud_test.go` runs the whole wizard on one, gets it a real Let's Encrypt
+  certificate and takes it away, then deletes it from Bouncers. Check
   nothing's left at any provider afterwards (Google: instances, addresses, disks, the
   `trout-bouncer` firewall rule), and only touch what trout made. `TROUT_CLOUD=gcloud`
   runs one provider.
+- `cmd/trout-cert`'s tests run pebble, Let's Encrypt's test CA, in-process (its http-01
+  check fetches from 127.0.0.1); `ui/certificate_test.go` walks asking, the cert and
+  nocert modes, the watch on connect, and Connect a Phone's text.
 - `local/local_test.go` and `ui/localbnc_test.go` run the real soju for this computer
   (skipped until `dev/build-soju` has built it), in a short folder under /tmp: Unix
   socket paths can't be long.

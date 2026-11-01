@@ -96,7 +96,7 @@ func installApp(t *testing.T, srv *fakeServer) (*App, chan string) {
 	}
 	a.cfg = cfg
 	bin := t.TempDir()
-	for _, b := range []string{"soju", "sojuctl"} {
+	for _, b := range []string{"soju", "sojuctl", "trout-cert"} {
 		os.WriteFile(filepath.Join(bin, b), []byte(b), 0o755)
 	}
 	a.hooks = &installHooks{
@@ -104,7 +104,8 @@ func installApp(t *testing.T, srv *fakeServer) (*App, chan string) {
 		binaries: func(string) (string, string, error) {
 			return filepath.Join(bin, "soju"), filepath.Join(bin, "sojuctl"), nil
 		},
-		check: func(context.Context, *install.Installer) error { return nil },
+		certBinary: func(string) (string, error) { return filepath.Join(bin, "trout-cert"), nil },
+		check:      func(context.Context, *install.Installer) error { return nil },
 	}
 	return a, sent
 }
@@ -183,8 +184,19 @@ func TestInstallWizard(t *testing.T) {
 	}
 	pin := w.in.Pin
 	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Finish
-	if a.dlg != nil || a.installing != nil {
-		t.Fatalf("Finish left %T open", a.dlg)
+	if a.installing != nil {
+		t.Fatal("Finish left the wizard running")
+	}
+	// Last, it asks about a certificate phones trust; Not Now says where it is.
+	if box, ok := a.dlg.(*msgBox); !ok || box.Title != "Trusted Certificate" || box.Buttons[1] != "Not Now" ||
+		!slices.Contains(box.Lines, "https://letsencrypt.org/repository/") {
+		t.Fatalf("after Finish: %T %+v", a.dlg, a.dlg)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.dlg != nil || !slices.ContainsFunc(lineTexts(a.home.Status()), func(l string) bool {
+		return strings.Contains(l, "Tools > Bouncers > Server > Certificate")
+	}) {
+		t.Fatalf("Not Now: %T, %q", a.dlg, lineTexts(a.home.Status()))
 	}
 	b := a.cfg.Find("vps")
 	if b == nil || b.Address != "ircs://192.0.2.10:6697" || b.User != "max" || b.Pin != pin || b.SSH != "vps" || a.cfg.Active != "vps" ||
@@ -358,8 +370,8 @@ func TestUninstall(t *testing.T) {
 	a.openSavedBouncers()
 	d := a.dlg.(*savedBouncersBox)
 	d.sel = slices.IndexFunc(a.savedBouncers(), func(b config.Bouncer) bool { return b.Name == "vps" })
-	if !slices.Contains(d.buttons(a), "Update") {
-		t.Fatalf("no Update for a bouncer trout set up: %q", d.buttons(a))
+	if !slices.Contains(d.buttons(a), "Server") {
+		t.Fatalf("no Server for a bouncer trout set up: %q", d.buttons(a))
 	}
 	d.press(a, "Remove")
 	box, ok := a.dlg.(*msgBox)
