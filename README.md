@@ -79,6 +79,7 @@ server. Tools > Connect a Phone shows a QR code that opens your bouncer in
 - The multi-line editbox (Alt+Enter), the second editbox (Alt+Q), per-window options in
   each button's popup, a proxy (SOCKS4, SOCKS5, HTTP) for the bouncer and DCC.
 - mIRC scripts and the Scripts Editor (see [Scripting](#scripting)).
+- Ten color themes, from green phosphor to Nord, and your own (see [Themes](#themes)).
 
 F1 lists the keys. Right-click, Ctrl+click or a long press opens popups.
 
@@ -94,6 +95,17 @@ right-click menu comes from `popups.ini`, so you can change them. Not mIRC's dia
 custom windows or DLLs, which need Windows. See [docs/scripting.md](docs/scripting.md).
 
 ![Scripting: an alias and an INPUT event typed into the Scripts Editor, then used in a channel](docs/gifs/scripts.gif)
+
+## Themes
+
+View > Themes, or the Scheme list in Tools > Colors: Green Phosphor, Amber, DOS Blue, BBS,
+Classic (mIRC's own colors, the default), High Contrast, Solarized, Gruvbox, Dark and
+Nord. F2 switches between Classic and Dark. The Colors dialog then changes any kind of
+text to one of the theme's 16 colors, like mIRC's. To make your own, put a `.toml` file
+in the `themes` folder next to `config.toml`: it starts from a built-in theme and
+changes the colors you list. See [docs/themes.md](docs/themes.md).
+
+![The ten themes, oldest look first: Green Phosphor, Amber, DOS Blue, BBS, Classic, High Contrast, Solarized, Gruvbox, Dark, Nord](docs/gifs/themes.png)
 
 ## Terminal notes
 

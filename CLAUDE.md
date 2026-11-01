@@ -24,7 +24,7 @@ go test -tags cloud ./internal/ui -run TestCloudBouncer -v   # real Hetzner and 
 dev/windows/run-tests                              # the unit tests on the Windows 11 VM (VM 9907)
 dev/windows/mirc-run script.mrc                    # run a script in real mIRC on that VM, print its out.txt
 go test -tags mirc ./internal/script -run TestMIRC -v   # check internal/script against real mIRC
-dev/vhs/record                                     # the README's GIFs (docs/gifs) from dev/vhs/*.tape
+dev/vhs/record                                     # the README's GIFs and theme composite (docs/gifs) from dev/vhs/*.tape
 go vet ./... && go fix -diff ./...                 # must both be clean
 ```
 
@@ -58,7 +58,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   sockets (the network side of `/sockopen`); `scripteditor.go` the Scripts Editor
   (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files);
   `popups.go` the right-click menus and Commands, from popups.ini like mIRC's, and the
-  `$?` input boxes.
+  `$?` input boxes; `theme.go` the theme list with Classic and Dark, `themes.go` the
+  other eight, `themefile.go` users' theme files (`docs/themes.md`), and `colors.go` the
+  Colors dialog.
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.

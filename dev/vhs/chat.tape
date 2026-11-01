@@ -31,7 +31,10 @@ Ctrl+N
 Sleep 1s
 Alt+v
 Sleep 1s
-Down 7
+Down 6
+Right
 Sleep 600ms
+Down
+Sleep 400ms
 Enter
 Sleep 3s

@@ -8,9 +8,27 @@ arch=$(docker info --format '{{.Architecture}}' | sed 's/x86_64/amd64/; s/aarch6
 GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o trout ./cmd/trout
 trap 'rm -f trout' EXIT
 mkdir -p docs/gifs dev/vhs/shots
-tapes=${*:-dev/vhs/chat.tape dev/vhs/menus.tape dev/vhs/setup.tape dev/vhs/scripts.tape}
+tapes=${*:-dev/vhs/chat.tape dev/vhs/menus.tape dev/vhs/setup.tape dev/vhs/scripts.tape dev/vhs/themes.tape}
 for t in $tapes; do
 	echo "$t..."
 	docker run --rm -v "$PWD":/vhs -w /vhs ghcr.io/charmbracelet/vhs:v0.12.1 "$t" >/dev/null
 done
+case $tapes in *themes.tape*)
+	# Tile the theme screenshots two across, in 256 colors to keep it small,
+	# with the ffmpeg in VHS's image.
+	inputs="" filters="" stack="" layout="" i=0
+	for s in $(ls dev/vhs/shots/theme-*.png | sort -t- -k2 -n); do
+		inputs="$inputs -i $s"
+		filters="$filters[$i]scale=600:-1:flags=lanczos,pad=iw+8:ih+8:4:4:color=white[s$i];"
+		stack="$stack[s$i]"
+		x=0; [ $((i % 2)) = 1 ] && x=w0
+		y=0; r=0; while [ $r -lt $((i / 2)) ]; do y="$y+h0"; r=$((r + 1)); done
+		layout="$layout|${x}_${y}"
+		i=$((i + 1))
+	done
+	docker run --rm -v "$PWD":/vhs -w /vhs --entrypoint ffmpeg ghcr.io/charmbracelet/vhs:v0.12.1 -y -v error $inputs \
+		-filter_complex "${filters}${stack}xstack=inputs=$i:layout=${layout#|},split[a][b];[a]palettegen=max_colors=256[p];[b][p]paletteuse=dither=none" \
+		docs/gifs/themes.png
+	;;
+esac
 ls -la docs/gifs

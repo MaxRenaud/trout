@@ -126,7 +126,7 @@ func TestColors(t *testing.T) {
 	d.sel = 3 // Action text
 	a.dlg.key(a, "right")
 	idx := a.colors[state.RoleAction]
-	if a.theme().Roles[state.RoleAction] != themes[0].Pal[idx] {
+	if a.theme().Roles[state.RoleAction] != classicTheme.Pal[idx] {
 		t.Fatal("the choice didn't change the action color")
 	}
 	s := a.settings().Colors

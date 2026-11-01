@@ -1,6 +1,12 @@
 package ui
 
-import "github.com/MaxRenaud/trout/internal/state"
+import (
+	"slices"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/MaxRenaud/trout/internal/state"
+)
 
 type Theme struct {
 	Pal   [16]RGB // what mIRC color codes 00-15 render as
@@ -18,10 +24,44 @@ type Theme struct {
 	Warn                           RGB // errors in dialogs, on Face
 }
 
-var themes = []*Theme{&classicTheme, &darkTheme}
+// namedTheme is a theme with the name config.toml and theme files use,
+// and the label menus show.
+type namedTheme struct {
+	name, label string
+	t           *Theme
+}
 
-// themeNames are the themes as config.toml names them.
-var themeNames = []string{"classic", "dark"}
+// builtinThemes are Classic and Dark, which F2 switches between, then the
+// rest (themes.go), oldest look first. Theme files add more (themefile.go).
+var builtinThemes = []namedTheme{
+	{"classic", "Classic", &classicTheme},
+	{"dark", "Dark", &darkTheme},
+	{"phosphor", "Green Phosphor", &phosphorTheme},
+	{"amber", "Amber", &amberTheme},
+	{"dos", "DOS Blue", &dosTheme},
+	{"bbs", "BBS", &bbsTheme},
+	{"contrast", "High Contrast", &contrastTheme},
+	{"solarized", "Solarized", &solarizedTheme},
+	{"gruvbox", "Gruvbox", &gruvboxTheme},
+	{"nord", "Nord", &nordTheme},
+}
+
+// themeList is the built-in themes and the theme files'.
+func (a *App) themeList() []namedTheme {
+	return append(builtinThemes[:len(builtinThemes):len(builtinThemes)], a.userThemes...)
+}
+
+// baseTheme is the scheme picked, before the Colors dialog's choices.
+func (a *App) baseTheme() *Theme {
+	l := a.themeList()
+	return l[min(a.themeIdx, len(l)-1)].t
+}
+
+// themeIndex is where the theme config.toml names is in themeList, or
+// Classic's if it's gone (a deleted theme file).
+func (a *App) themeIndex(name string) int {
+	return max(0, slices.IndexFunc(a.themeList(), func(t namedTheme) bool { return t.name == name }))
+}
 
 // classicTheme is mIRC's default colors in Windows 98 chrome.
 var classicTheme = Theme{
@@ -68,4 +108,22 @@ var darkTheme = Theme{
 	TrackFG: 0x3A3A3E, TrackBG: 0x252528,
 	ActEvent: 0xD19A66, ActMsg: 0xFF6B6B, ActHi: 0x6FA8FF,
 	Warn: 0xFF7A7A,
+}
+
+// themeItems are the themes as menu items, the one in use checked:
+// Classic and Dark, the other built-in ones, then the theme files'.
+func (a *App) themeItems() []MenuItem {
+	var items []MenuItem
+	for i, t := range a.themeList() {
+		if i == 2 || i == len(builtinThemes) {
+			items = append(items, MenuItem{Sep: true})
+		}
+		key := ""
+		if i < 2 {
+			key = "F2"
+		}
+		items = append(items, MenuItem{Label: t.label, Key: key, Check: a.themeIdx == i,
+			Action: func(a *App) tea.Cmd { a.themeIdx = i; return nil }})
+	}
+	return items
 }

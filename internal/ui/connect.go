@@ -326,7 +326,7 @@ func (a *App) gotPassword(msg passwordMsg) tea.Cmd {
 // settings and applySettings move the View menu and Options choices to
 // and from config.toml.
 func (a *App) settings() config.Settings {
-	return config.Settings{Theme: themeNames[a.themeIdx],
+	return config.Settings{Theme: a.themeList()[a.themeIdx].name,
 		Toolbar: a.showToolbar, Switchbar: a.showSwitchbar, Treebar: a.showTreebar, Nicklist: a.showNicklist,
 		Timestamps: a.stamps, ModePrefix: a.modePrefix, LineMarker: a.showMarker, LineShading: a.shading,
 		NickColors: a.nickColors, TreebarWidth: a.treeW, NicklistWidth: a.nickW, Beep: a.beep,
@@ -344,7 +344,7 @@ func (a *App) settings() config.Settings {
 }
 
 func (a *App) applySettings(s config.Settings) {
-	a.themeIdx = max(0, slices.Index(themeNames, s.Theme))
+	a.themeIdx = a.themeIndex(s.Theme)
 	a.showToolbar, a.showSwitchbar, a.showTreebar, a.showNicklist = s.Toolbar, s.Switchbar, s.Treebar, s.Nicklist
 	a.stamps, a.modePrefix, a.showMarker, a.shading = s.Timestamps, s.ModePrefix, s.LineMarker, s.LineShading
 	a.nickColors, a.treeW, a.nickW, a.beep = s.NickColors, s.TreebarWidth, s.NicklistWidth, s.Beep

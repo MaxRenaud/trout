@@ -65,7 +65,7 @@ func themeColor(t *Theme, role state.Role) RGB {
 
 // theme is the scheme with the Colors dialog's choices applied.
 func (a *App) theme() *Theme {
-	base := themes[a.themeIdx]
+	base := a.baseTheme()
 	if len(a.colors) == 0 {
 		return base
 	}
@@ -111,7 +111,10 @@ func parseColors(s string) map[state.Role]int {
 	return m
 }
 
-type colorsBox struct{ sel int }
+type colorsBox struct {
+	sel    int
+	sx, sy int // the Scheme box, from the last frame
+}
 
 func (a *App) openColors() { a.openDialog(&colorsBox{sel: 1}) }
 
@@ -123,16 +126,16 @@ func (d *colorsBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	t := a.theme()
 	face := Style{FG: t.FaceText, BG: t.Face}
 	lx, ly, lw := x+2, y+2, 22
-	c.Text(lx, ly, lw, "Scheme:", Style{FG: t.FaceText, BG: t.Face, Bold: true})
-	for i, name := range []string{"Classic", "Dark"} {
-		box := "( ) "
-		if a.themeIdx == i {
-			box = "(•) "
-		}
-		sx := lx + 9 + i*12
-		c.Text(sx, ly, 12, box+name, face)
-		a.addRegion(Region{X: sx, Y: ly, W: 11, H: 1, Kind: HitDlg, S: "scheme", I: i})
-	}
+	// The scheme is a drop-down list, like mIRC's.
+	label := Style{FG: t.FaceText, BG: t.Face, Bold: true}
+	c.Text(lx, ly, lw, "Scheme:", label)
+	a.underlineMnemonic(c, lx, ly, "Scheme:", 0, label)
+	d.sx, d.sy = lx+9, ly
+	field := Style{FG: t.TextFG, BG: t.TextBG}
+	c.Fill(d.sx, ly, 24, 1, field)
+	c.Text(d.sx+1, ly, 20, a.themeList()[a.themeIdx].label, field)
+	c.Text(d.sx+22, ly, 1, "▼", field)
+	a.addRegion(Region{X: d.sx, Y: ly, W: 24, H: 1, Kind: HitDlg, S: "scheme"})
 	ly += 2
 	c.Fill(lx, ly, lw, len(colorItems), Style{BG: t.TextBG})
 	for i, it := range colorItems {
@@ -177,7 +180,7 @@ func (d *colorsBox) current(a *App) int {
 	if idx, ok := a.colors[it.role]; ok {
 		return idx
 	}
-	t := themes[a.themeIdx]
+	t := a.baseTheme()
 	return slices.Index(t.Pal[:], themeColor(t, it.role))
 }
 
@@ -202,6 +205,8 @@ func (d *colorsBox) key(a *App, k string) tea.Cmd {
 		d.pick(a, max(0, d.current(a))+step)
 	case "r":
 		clear(a.colors)
+	case "s", "alt+s":
+		d.openScheme(a)
 	case "enter", "esc", "o":
 		a.dlg = nil
 	}
@@ -218,7 +223,7 @@ func (d *colorsBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 	case "swatch":
 		d.pick(a, r.I)
 	case "scheme":
-		a.themeIdx = r.I
+		d.openScheme(a)
 	case "button":
 		if r.I == 1 {
 			clear(a.colors)
@@ -230,6 +235,16 @@ func (d *colorsBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 	}
 	return nil
 }
+
+// openScheme drops the Scheme list down, on the theme in use.
+func (d *colorsBox) openScheme(a *App) {
+	items := a.themeItems()
+	a.closeMenus()
+	a.pushMenu(items, d.sx, d.sy+1)
+	a.menus[0].Sel = slices.IndexFunc(items, func(it MenuItem) bool { return it.Check })
+}
+
+func (d *colorsBox) takenMnemonics() string { return "s" } // Scheme
 
 var colorsButtons = []string{"OK", "Reset"}
 

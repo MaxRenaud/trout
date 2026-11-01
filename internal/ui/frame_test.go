@@ -96,6 +96,13 @@ func TestFrames(t *testing.T) {
 	frame("dark status + Window menu")
 
 	a.themeIdx = 0
+	a.openColors()
+	a.View()
+	a.dlg.key(a, "s")
+	frame("Colors, the Scheme list down")
+	a.closeMenus()
+	a.dlg = nil
+
 	a.openDialog(aboutBox(true, "v0.1.0"))
 	frame("about box")
 	a.dlg.key(a, "o") // OK has no letter, like mIRC's: it's Enter

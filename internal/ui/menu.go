@@ -276,9 +276,6 @@ func (a *App) menuBarItems(i int) []MenuItem {
 	toggle := func(p *bool) func(*App) tea.Cmd {
 		return func(*App) tea.Cmd { *p = !*p; return nil }
 	}
-	setTheme := func(n int) func(*App) tea.Cmd {
-		return func(a *App) tea.Cmd { a.themeIdx = n; return nil }
-	}
 	switch i {
 	case 0:
 		// Like mIRC, these are about the active window's network; soju's own
@@ -314,8 +311,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 			{Label: "Treebar", Check: a.showTreebar, Action: toggle(&a.showTreebar)},
 			{Label: "Nicklist", Check: a.showNicklist, Action: toggle(&a.showNicklist)},
 			{Label: "Timestamps", Check: a.stamps, Action: toggle(&a.stamps)}, sep,
-			{Label: "Classic Theme", Check: a.themeIdx == 0, Action: setTheme(0)},
-			{Label: "Dark Theme", Check: a.themeIdx == 1, Action: setTheme(1)}}
+			{Label: "Themes", Sub: a.themeItems()}}
 	case 2:
 		n, w := a.active.Net, a.active
 		add := MenuItem{Label: "Add to Favorites", Disabled: w.Kind != state.KChannel || a.opts.Demo,

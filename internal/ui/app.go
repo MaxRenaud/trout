@@ -73,7 +73,8 @@ type Options struct {
 type App struct {
 	opts       Options
 	w, h       int
-	termColors int // how many the terminal shows (termkeys.Colors); 0 is 24-bit
+	userThemes []namedTheme // from theme files
+	termColors int          // how many the terminal shows (termkeys.Colors); 0 is 24-bit
 	nets       []*state.Network
 	active     *state.Window
 
@@ -323,6 +324,7 @@ func New(opts Options) *App {
 	}
 	a.applySettings(config.DefaultSettings())
 	a.memBook.DCCIgnore = slices.Clone(config.DefaultDCCIgnore)
+	themeProblems := a.loadThemeFiles() // before the settings name one
 	if a.cfg != nil {
 		a.applySettings(a.cfg.Settings)
 	}
@@ -333,6 +335,9 @@ func New(opts Options) *App {
 	a.scriptTab = edRemote
 	if !opts.Demo {
 		a.setBouncer(opts.Bouncer, opts.Password)
+		for _, p := range themeProblems {
+			a.addLine(a.firstStatus(), state.RoleInfo, "* "+p)
+		}
 		return a
 	}
 	a.nets = demo.Seed()
@@ -473,8 +478,8 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		}
 		a.addLine(a.active, state.RoleInfo, "* Ctrl+C copies what's selected; File > Exit or /exit quits")
 		return nil
-	case "f2":
-		a.themeIdx = (a.themeIdx + 1) % len(themes)
+	case "f2": // Classic and Dark; the other themes are in View > Themes
+		a.themeIdx = 1 - min(a.themeIdx, 1)
 		return nil
 	}
 	if len(a.menus) > 0 { // over a dialog too: the Scripts Editor's

@@ -220,7 +220,7 @@ type ScriptOpts struct {
 
 // Settings are the View menu and Options dialog choices.
 type Settings struct {
-	Theme         string `toml:"theme"` // "classic" or "dark"
+	Theme         string `toml:"theme"` // a built-in theme's name ("classic", "dark", "nord"...) or a theme file's
 	Toolbar       bool   `toml:"toolbar"`
 	Switchbar     bool   `toml:"switchbar"`
 	Treebar       bool   `toml:"treebar"`
