@@ -187,7 +187,8 @@ func TestInstallWizard(t *testing.T) {
 		t.Fatalf("Finish left %T open", a.dlg)
 	}
 	b := a.cfg.Find("vps")
-	if b == nil || b.Address != "ircs://192.0.2.10:6697" || b.User != "max" || b.Pin != pin || b.SSH != "vps" || a.cfg.Active != "vps" {
+	if b == nil || b.Address != "ircs://192.0.2.10:6697" || b.User != "max" || b.Pin != pin || b.SSH != "vps" || a.cfg.Active != "vps" ||
+		b.SojuVersion != install.SojuVersion {
 		t.Fatalf("saved %+v, active %q", b, a.cfg.Active)
 	}
 	if pw, _ := a.cfg.StoredPassword("vps"); pw != a.password || len(pw) != 24 {
@@ -374,6 +375,65 @@ func TestUninstall(t *testing.T) {
 	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Finish
 	if a.cfg.Find("vps") != nil {
 		t.Fatal("the uninstalled bouncer is still in config.toml")
+	}
+}
+
+// TestOfferUpdate: connecting to a bouncer trout set up with an older
+// soju asks once a session to update it; Update runs the wizard and saves
+// the new version. Not Now isn't asked again, and a bouncer with no
+// version saved (from before trout saved it) is never asked about.
+func TestOfferUpdate(t *testing.T) {
+	srv := &fakeServer{sudo: "nopasswd"}
+	a, _ := installApp(t, srv)
+	connectAs := func(b config.Bouncer) {
+		t.Helper()
+		a.cfg.Use(b)
+		a.bnc = b
+		up, ok := a.connectBouncer()().(ircUpMsg)
+		if !ok {
+			t.Fatal("couldn't connect to the fake bouncer")
+		}
+		a.Update(up)
+	}
+	b := a.bnc
+	b.Name, b.SSH = "vps", "vps"
+
+	connectAs(b) // no version saved
+	if a.dlg != nil {
+		t.Fatalf("asked about a bouncer with no version saved: %T", a.dlg)
+	}
+
+	b.SojuVersion = "v0.10.0"
+	connectAs(b)
+	box, ok := a.dlg.(*msgBox)
+	if !ok || box.Title != "Update Bouncer" || box.Buttons[0] != "Update" || !strings.Contains(box.Lines[0], "v0.10.0") {
+		t.Fatalf("connecting opened %T %+v", a.dlg, a.dlg)
+	}
+	drive(a, box.close(a, 1)) // Not Now
+	connectAs(b)
+	if a.dlg != nil {
+		t.Fatalf("asked again after Not Now: %T", a.dlg)
+	}
+
+	a.updateAsked = nil // a new session
+	connectAs(b)
+	box = a.dlg.(*msgBox)
+	drive(a, box.close(a, 0)) // Update
+	w := wizard(t, a)
+	if w.mode != "update" || w.step != instDone || !slices.Contains(srv.lines(), "sudo -n sh /home/max/.trout-install/setup.sh update") {
+		t.Fatalf("mode %q step %d err %q ran %q", w.mode, w.step, w.err, srv.lines())
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Finish
+	if v := a.cfg.Find("vps").SojuVersion; v != install.SojuVersion || a.bnc.SojuVersion != v {
+		t.Fatalf("saved %q, in use %q after updating", v, a.bnc.SojuVersion)
+	}
+	if saved, _ := config.Load(a.cfg.Path); saved.Find("vps").SojuVersion != install.SojuVersion {
+		t.Fatal("the new version isn't in config.toml")
+	}
+	a.updateAsked = nil
+	connectAs(*a.cfg.Find("vps"))
+	if a.dlg != nil {
+		t.Fatalf("asked about an up-to-date bouncer: %T", a.dlg)
 	}
 }
 

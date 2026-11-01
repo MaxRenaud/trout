@@ -115,6 +115,7 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 			c.Send("BOUNCER", "LISTNETWORKS")
 			a.refreshDisabled()
 			a.pinClientCert(c)
+			a.offerUpdate()
 		} else {
 			a.conns[n] = c
 			a.addLine(n.Status(), state.RoleInfo, "* Connected to "+n.Name+" through the bouncer")

@@ -115,7 +115,11 @@ func bouncerDetails(a *App, b config.Bouncer) [][2]string {
 		{"Status", status},
 	}
 	if b.SSH != "" {
-		rows = append(rows, [2]string{"Server", "set up by trout, on " + b.SSH})
+		server := "set up by trout, on " + b.SSH
+		if b.SojuVersion != "" {
+			server += " (soju " + b.SojuVersion + ")"
+		}
+		rows = append(rows, [2]string{"Server", server})
 	}
 	return rows
 }

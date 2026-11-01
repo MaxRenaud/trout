@@ -88,6 +88,7 @@ type App struct {
 	clientCert  *tls.Certificate // this computer\'s, for logging in to TLS bouncers
 	certFailed  bool             // the bouncer refused it this session: use the password
 	certNoted   bool             // said once that the bouncer can\'t take certificates
+	updateAsked map[string]bool  // bouncers offered a soju update this session
 	send        func(tea.Msg)    // delivers messages from connection goroutines
 	home        *state.Network
 	control     *irc.Conn

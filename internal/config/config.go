@@ -192,6 +192,12 @@ type Bouncer struct {
 	// bouncer trout didn't install.
 	SSH string `toml:"ssh,omitempty"`
 
+	// SojuVersion is the soju trout last installed there (install.SojuVersion
+	// then), for offering an update when trout comes with a newer one; soju
+	// doesn't tell clients its version. Empty for one set up before trout
+	// saved it, which trout doesn't ask about.
+	SojuVersion string `toml:"soju-version,omitempty"`
+
 	// Local is trout's own soju, run on this computer while trout runs
 	// (internal/local); it has no Address, as its port changes each time.
 	Local bool `toml:"local,omitempty"`

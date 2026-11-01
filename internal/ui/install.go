@@ -137,6 +137,43 @@ func (a *App) openReinstall(b config.Bouncer, mode string) tea.Cmd {
 	return w.start(a)
 }
 
+// offerUpdate asks, once a session, whether to update the bouncer just
+// connected to, when trout set it up with an older soju than the one it
+// comes with now. soju doesn't tell clients its version, so this goes by
+// the one saved at install; a bouncer with none saved (set up before
+// trout saved it) is left alone.
+func (a *App) offerUpdate() {
+	b := a.savedBouncer()
+	if b == nil || b.SSH == "" || !install.Older(b.SojuVersion) || a.updateAsked[b.Name] {
+		return
+	}
+	if a.updateAsked == nil {
+		a.updateAsked = map[string]bool{}
+	}
+	a.updateAsked[b.Name] = true
+	name := b.Name
+	a.whenFree(func(a *App) tea.Cmd {
+		b := a.cfg.Find(name)
+		if b == nil || !install.Older(b.SojuVersion) { // forgotten or updated meanwhile
+			return nil
+		}
+		bnc := *b
+		a.openDialog(&msgBox{Title: "Update Bouncer", Lines: []string{
+			name + " runs soju " + b.SojuVersion + "; this trout comes with " + install.SojuVersion + ".",
+			"Update it now? trout logs in to " + b.SSH + " to put it in;",
+			"its networks, accounts and history stay as they are.",
+		}, Buttons: []string{"Update", "Not Now"}, Cancel: 1,
+			OnClose: func(a *App, button int) tea.Cmd {
+				if button != 0 {
+					a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: update "+name+" any time from Tools > Bouncers > Update")
+					return nil
+				}
+				return a.openReinstall(bnc, "update")
+			}})
+		return nil
+	})
+}
+
 var accountChars = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
 // defaultAccount names your soju account like the bouncer in use does, or
@@ -791,6 +828,15 @@ func (a *App) finishInstall(w *installWizard) tea.Cmd {
 		}
 		return nil
 	case "update":
+		if a.cfg != nil {
+			if b := a.cfg.Find(w.b.Name); b != nil {
+				b.SojuVersion = install.SojuVersion
+				a.saveConfig()
+			}
+		}
+		if a.bnc.Name == w.b.Name {
+			a.bnc.SojuVersion = install.SojuVersion
+		}
 		a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: "+w.b.Name+" now runs soju "+install.SojuVersion)
 		return nil
 	}
@@ -799,7 +845,8 @@ func (a *App) finishInstall(w *installWizard) tea.Cmd {
 	for i := 2; a.cfg != nil && a.cfg.Find(name) != nil; i++ {
 		name = fmt.Sprintf("%s-%d", w.targetName(), i)
 	}
-	b := w.cloudBouncer(config.Bouncer{Name: name, Address: in.Address(), User: in.Account, Pin: in.Pin, SSH: w.target()})
+	b := w.cloudBouncer(config.Bouncer{Name: name, Address: in.Address(), User: in.Account, Pin: in.Pin, SSH: w.target(),
+		SojuVersion: install.SojuVersion})
 	moving := a.networksToMove()
 	if a.cfg != nil {
 		a.cfg.Use(b)
