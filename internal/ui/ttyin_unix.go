@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"bytes"
 	"os"
 	"time"
 
@@ -16,18 +17,35 @@ import (
 // this long too.
 const escWait = 100 * time.Millisecond
 
-// ttyIn is stdin, but a read never ends partway through an escape sequence
-// while the rest is on its way. Bubble Tea v1 only waits for the rest when
-// its buffer filled up; otherwise, a mouse report split across reads (over
-// ssh, say) comes out as Alt+[ and typed text, "<35;111;26M".
-type ttyIn struct{ *os.File }
+// ttyIn is stdin, but a read never ends partway through an escape sequence.
+// Bubble Tea v1 takes a read's end for the end of the input unless its
+// buffer filled up, and even then it only keeps back text, not the start
+// of a sequence; either way a mouse report cut in two comes out as Alt+[
+// and typed text, "<35;111;26M". Over ssh a report can come in pieces, and
+// on a slow computer (a Raspberry Pi 1) the mouse's motion reports pile
+// up past the buffer's 256 bytes.
+type ttyIn struct {
+	*os.File
+	held []byte // the start of a sequence a full read ended in, for the next read
+}
 
-func (t ttyIn) Read(p []byte) (int, error) {
-	n, err := t.File.Read(p)
+func (t *ttyIn) Read(p []byte) (int, error) {
+	n := copy(p, t.held)
+	t.held = t.held[n:]
+	var err error
+	if n == 0 {
+		n, err = t.File.Read(p)
+	}
 	for err == nil && n < len(p) && partialEsc(p[:n]) && readable(t.Fd(), escWait) {
 		var m int
 		m, err = t.File.Read(p[n:])
 		n += m
+	}
+	if n == len(p) && partialEsc(p[:n]) {
+		if i := bytes.LastIndexByte(p[:n], 0x1b); i > 0 {
+			t.held = append([]byte(nil), p[i:n]...)
+			n = i
+		}
 	}
 	return n, err
 }
@@ -79,5 +97,5 @@ func inputOption() tea.ProgramOption {
 	if !term.IsTerminal(os.Stdin.Fd()) {
 		return func(*tea.Program) {}
 	}
-	return tea.WithInput(ttyIn{os.Stdin})
+	return tea.WithInput(&ttyIn{File: os.Stdin})
 }

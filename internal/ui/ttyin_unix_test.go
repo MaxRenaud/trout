@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -44,7 +45,7 @@ func TestSplitMouse(t *testing.T) {
 		w.Close()
 	}()
 	m := &msgLog{}
-	p := tea.NewProgram(m, tea.WithInput(ttyIn{r}), tea.WithOutput(io.Discard), tea.WithMouseAllMotion())
+	p := tea.NewProgram(m, tea.WithInput(&ttyIn{File: r}), tea.WithOutput(io.Discard), tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		t.Fatal(err)
 	}
@@ -74,4 +75,37 @@ func (m *msgLog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.got = append(m.got, tea.MouseEvent(msg).String())
 	}
 	return m, nil
+}
+
+// TestBurstMouse: mouse motion that piled up past Bubble Tea's 256-byte
+// read, as on a Raspberry Pi 1, is all mouse events: a full read that ends
+// partway through a report keeps that part for the next one.
+func TestBurstMouse(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	var burst []byte
+	for i := range 200 {
+		burst = fmt.Appendf(burst, "\x1b[<35;%d;%dM", 10+i%100, 5+i%30)
+	}
+	go func() {
+		w.Write(burst)
+		w.WriteString("\x03")
+		w.Close()
+	}()
+	m := &msgLog{}
+	p := tea.NewProgram(m, tea.WithInput(&ttyIn{File: r}), tea.WithOutput(io.Discard), tea.WithMouseAllMotion())
+	if _, err := p.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.got) != 201 || m.got[200] != "ctrl+c" {
+		t.Fatalf("got %d messages, want 200 motions and ctrl+c: %q", len(m.got), m.got)
+	}
+	for i, got := range m.got[:200] {
+		if got != "motion" {
+			t.Fatalf("message %d is %q, not a mouse motion", i, got)
+		}
+	}
 }
