@@ -21,8 +21,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // Repo is where trout's releases are.
@@ -435,7 +438,7 @@ func swap(stage, dir string, files []string) error {
 		for _, m := range done {
 			os.Remove(m.path)
 			if m.old != "" {
-				os.Rename(m.old, m.path)
+				rename(m.old, m.path)
 			}
 		}
 	}
@@ -449,14 +452,14 @@ func swap(stage, dir string, files []string) error {
 		if _, err := os.Lstat(path); err == nil {
 			m.old = path + ".old"
 			os.Remove(m.old) // left by an update whose trout has quit since
-			if err := os.Rename(path, m.old); err != nil {
+			if err := rename(path, m.old); err != nil {
 				undo()
 				return fmt.Errorf("moving %s aside: %w", f, err)
 			}
 		}
-		if err := os.Rename(filepath.Join(stage, filepath.FromSlash(f)), path); err != nil {
+		if err := rename(filepath.Join(stage, filepath.FromSlash(f)), path); err != nil {
 			if m.old != "" {
-				os.Rename(m.old, path)
+				rename(m.old, path)
 			}
 			undo()
 			return fmt.Errorf("putting in %s: %w", f, err)
@@ -464,6 +467,29 @@ func swap(stage, dir string, files []string) error {
 		done = append(done, m)
 	}
 	return nil
+}
+
+// rename is os.Rename, tried again for up to 2 seconds while Windows says
+// another process has the file: Defender scanning a program that just
+// started, or the start itself, holds it for a moment. Go's own tools do
+// the same (cmd/go's robustio).
+func rename(from, to string) error {
+	err := os.Rename(from, to)
+	for range 20 {
+		if err == nil || !busy(err) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+		err = os.Rename(from, to)
+	}
+	return err
+}
+
+// busy is Windows' ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION or
+// ERROR_LOCK_VIOLATION.
+func busy(err error) bool {
+	var errno syscall.Errno
+	return runtime.GOOS == "windows" && errors.As(err, &errno) && (errno == 5 || errno == 32 || errno == 33)
 }
 
 // Cleanup removes the .old files an update left in dir, once the trout
