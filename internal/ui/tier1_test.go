@@ -108,16 +108,22 @@ func TestFormatting(t *testing.T) {
 	if !rs[0].St.Strike || rs[len(rs)-1].St.FG != 0xff0000 {
 		t.Fatal("strikethrough or extended color 52 (red) not applied")
 	}
-	rs = parseMIRC("join #trout-dev, or (#go).", Style{}, &classicTheme.Pal)
-	markURLs(rs)
-	var links []string
-	for i := 0; i < len(rs); i++ {
-		if rs[i].URL != nil && (i == 0 || rs[i-1].URL != rs[i].URL) {
-			links = append(links, *rs[i].URL)
+	for text, want := range map[string]string{
+		"join #trout-dev, or (#go).": "#trout-dev #go",
+		// WHOIS's channels: the status prefix isn't part of the link.
+		"alice on @#go +#rust #vim ~&#local x@#not": "#go #rust #vim #local",
+	} {
+		rs = parseMIRC(text, Style{}, &classicTheme.Pal)
+		markURLs(rs)
+		var links []string
+		for i := 0; i < len(rs); i++ {
+			if rs[i].URL != nil && (i == 0 || rs[i-1].URL != rs[i].URL) {
+				links = append(links, *rs[i].URL)
+			}
 		}
-	}
-	if strings.Join(links, " ") != "#trout-dev #go" {
-		t.Fatalf("channel links %q", links)
+		if strings.Join(links, " ") != want {
+			t.Errorf("%q: channel links %q, want %s", text, links, want)
+		}
 	}
 }
 

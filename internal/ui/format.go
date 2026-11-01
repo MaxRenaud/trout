@@ -106,7 +106,7 @@ func markURLs(rs []SRune) {
 		return true
 	}
 	for i := 0; i < len(rs); i++ {
-		if rs[i].R == '#' && (i == 0 || rs[i-1].R == ' ' || rs[i-1].R == '(') {
+		if rs[i].R == '#' && channelStart(rs, i) {
 			i = markChannel(rs, i) // a channel hotlink, like mIRC's: double-click joins
 			continue
 		}
@@ -137,6 +137,16 @@ func markURLs(rs []SRune) {
 
 // markChannel tags a #channel at i as a link (its URL is the channel
 // name) and returns where it ends.
+// channelStart says the # at i starts a channel name: it begins the text
+// or follows a space or (, maybe after status prefixes, as WHOIS shows
+// "@#go +#rust", whose # part is the link.
+func channelStart(rs []SRune, i int) bool {
+	for i > 0 && strings.ContainsRune("@+%~&!", rs[i-1].R) {
+		i--
+	}
+	return i == 0 || rs[i-1].R == ' ' || rs[i-1].R == '('
+}
+
 func markChannel(rs []SRune, i int) int {
 	j := i + 1
 	for j < len(rs) && rs[j].R > ' ' && !strings.ContainsRune(",:;!?)\"'", rs[j].R) {
