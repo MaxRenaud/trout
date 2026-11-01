@@ -9,15 +9,15 @@ import (
 // loaded at all, so it never half-runs.
 var (
 	dlls, com, dialogs, sockets = "DLLs aren't supported", "COM objects aren't supported",
-		"dialogs aren't supported", "sockets aren't supported"
+		"dialogs aren't supported", "listening and UDP sockets aren't supported"
 	fatalCommands = map[string]string{
 		"dll": dlls, "dllcall": dlls, "comopen": com, "comclose": com, "comreg": com,
 		"dialog": dialogs, "did": dialogs, "run": "running programs isn't supported",
-		"sockopen": sockets, "socklisten": sockets, "sockudp": sockets,
+		"socklisten": sockets, "sockaccept": sockets, "sockudp": sockets,
 	}
 	fatalIdents = map[string]string{
 		"dll": dlls, "dllcall": dlls, "com": com, "comcall": com,
-		"dialog": dialogs, "did": dialogs, "sock": sockets,
+		"dialog": dialogs, "did": dialogs,
 	}
 	// An identifier at the start of a word, or as an argument.
 	// unsupported are mIRC's own commands for what trout doesn't have, like

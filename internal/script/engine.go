@@ -64,6 +64,7 @@ type Action struct {
 	Echo    *Echo
 	Save    *Save
 	File    *File
+	Sock    *Sock
 }
 
 // File is a file for the client to write in the scripts folder, from
@@ -141,6 +142,8 @@ type Engine struct {
 	identWarn  bool               // an identifier that doesn't exist is an error
 	answers    []string           // input box answers for $?, from Answer
 	lastAnswer string             // $!
+	socks      []*socket          // /sockopen's sockets
+	sockSeq    int                // the last socket's ID
 }
 
 // Listen turns the three kinds of event on and off, like mIRC's /ctcps,

@@ -366,7 +366,7 @@ func (a *App) scriptAdmin(line string, fromScript bool) (tea.Cmd, bool) {
 }
 
 // runScript does what scripts asked: commands like typed ones, echoes,
-// files, and saving their variables and Users list. Then it wakes the
+// files, sockets, and saving their variables and Users list. Then it wakes the
 // engine for its next timer.
 func (a *App) runScript(actions []script.Action) tea.Cmd {
 	var cmds []tea.Cmd
@@ -378,6 +378,8 @@ func (a *App) runScript(actions []script.Action) tea.Cmd {
 			if err := a.scriptWriteFile(act.File); err != nil {
 				a.addLine(a.firstStatus(), state.RoleQuit, "* Script file "+act.File.Name+": "+err.Error())
 			}
+		case act.Sock != nil:
+			a.scriptSocket(act.Sock)
 		case act.Echo != nil:
 			w := a.scriptWindow(act.Echo.Network, act.Echo.Window)
 			l := state.Line{Time: time.Now(), Role: state.RoleNormal, Text: act.Echo.Text}

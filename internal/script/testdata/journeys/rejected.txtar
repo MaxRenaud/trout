@@ -12,7 +12,7 @@ on *:TEXT:!sys:#:msg # $dll(sysinfo.dll,cpu,_)
 -- good.mrc --
 on *:NOSUCHEVENT:#:echo never
 on *:TEXT:hi:#:msg # $window(@greet)
-on *:SOCKREAD:sock:noop
+on *:SOCKLISTEN:sock:noop
 menu nicklist {
   Whois:whois $$1
 }
@@ -24,7 +24,7 @@ on *:TEXT:!ok:#:msg # still here
 ! bad.mrc: line 6: $dll: DLLs aren't supported [fatal]
 ! good.mrc: line 1: on NOSUCHEVENT isn't supported
 ! good.mrc: line 2: $window isn't supported yet
-! good.mrc: line 3: on SOCKREAD isn't supported
+! good.mrc: line 3: on SOCKLISTEN isn't supported
 me trout
 chan #trout trout bob
 active #trout

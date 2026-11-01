@@ -1,7 +1,13 @@
 package ui
 
 import (
+	"bufio"
+	"io"
+	"log"
 	"maps"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -966,4 +972,94 @@ func TestMenuClickStaysOpen(t *testing.T) {
 	if len(a.menus) != 0 || a.book().ScriptOpts.NoLineNumbers {
 		t.Errorf("drag to Line Numbers: menus %d, off %v", len(a.menus), a.book().ScriptOpts.NoLineNumbers)
 	}
+}
+
+// TestScriptSockets runs a script's sockets for real, against servers
+// here: one that greets, answers a line and hangs up; a port nothing
+// listens on; and HTTPS with a certificate no authority signed, which -e
+// turns down and -ea takes.
+func TestScriptSockets(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		c.Write([]byte("hello\r\n"))
+		line, _ := bufio.NewReader(c).ReadString('\n')
+		c.Write([]byte("you said " + line))
+	}()
+	web := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	web.Config.ErrorLog = log.New(io.Discard, "", 0) // strict's handshake failing
+	web.StartTLS()
+	defer web.Close()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	_, webPort, _ := net.SplitHostPort(strings.TrimPrefix(web.URL, "https://"))
+
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "scripts"), 0o700)
+	os.WriteFile(filepath.Join(dir, "scripts", "sock.mrc"), []byte(`alias go {
+  sockopen t 127.0.0.1 `+port+`
+  sockopen nobody 127.0.0.1 1
+  sockopen -e strict 127.0.0.1 `+webPort+`
+  sockopen -ea lax 127.0.0.1 `+webPort+`
+}
+on *:SOCKOPEN:*:{
+  if ($sockerr) { echo -s $sockname failed $sockerr $sock($sockname).wsmsg | return }
+  if ($sockname == t) sockwrite -n t ping
+  else {
+    sockwrite -n $sockname GET / HTTP/1.0
+    sockwrite -n $sockname
+  }
+}
+on *:SOCKREAD:*:{
+  var %l
+  sockread %l
+  while ($sockbr) {
+    echo -s $sockname got %l
+    sockread %l
+  }
+}
+on *:SOCKCLOSE:*:echo -s $sockname closed`), 0o600)
+	cfg := &config.Config{Path: filepath.Join(dir, "config.toml"), Scripts: []string{"sock.mrc"}}
+	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max"}})
+	msgs := make(chan tea.Msg, 256)
+	a.send = func(m tea.Msg) { msgs <- m }
+	a.startScripts()
+	actions, ok := a.scripts.Command(a.home.Name, "", "go", false, a.scriptHost())
+	if !ok {
+		t.Fatal("no alias go")
+	}
+	a.runScript(actions)
+
+	says := func(text string) bool {
+		return slices.ContainsFunc(a.home.Status().Lines, func(l state.Line) bool {
+			return l.Text == text || strings.HasSuffix(text, "*") && strings.HasPrefix(l.Text, strings.TrimSuffix(text, "*"))
+		})
+	}
+	want := []string{"t got hello", "t got you said ping", "t closed", "nobody failed 3 [10061] Connection refused",
+		"lax got HTTP/1.0 200 OK", "lax closed", "strict failed 3 *"}
+	deadline := time.After(10 * time.Second)
+	for slices.ContainsFunc(want, func(s string) bool { return !says(s) }) {
+		select {
+		case m := <-msgs:
+			a.Update(m)
+		case <-deadline:
+			t.Fatalf("status window:\n%s", dump(a.home.Status()))
+		}
+	}
+	if n := evalScript(a, "$sock(*,0)"); len(a.socks) != 0 || n != "0" {
+		t.Errorf("sockets left open: %d here, %s in the engine", len(a.socks), n)
+	}
+}
+
+// evalScript is what text evaluates to in the scripts.
+func evalScript(a *App, text string) string {
+	a.scripts.Command(a.home.Name, "", "set %_eval "+text, true, a.scriptHost())
+	return a.scripts.Vars()["_eval"]
 }

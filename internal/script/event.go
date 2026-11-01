@@ -124,7 +124,9 @@ var eventFields = map[string]int{
 	"QUIT": 0, "NICK": 0, "CONNECT": 0, "DISCONNECT": 0, "CONNECTFAIL": 0,
 	"LOAD": 0, "START": 0, "UNLOAD": 0, "EXIT": 0,
 	"SIGNAL": 1, // on SIGNAL:name: the name can be a wildcard
-	"OP":     1, "DEOP": 1, "SERVEROP": 1, "VOICE": 1, "DEVOICE": 1, "HELP": 1, "DEHELP": 1,
+	// on SOCKREAD:name: and the others: the socket's name, a wildcard too.
+	"SOCKOPEN": 1, "SOCKREAD": 1, "SOCKWRITE": 1, "SOCKCLOSE": 1,
+	"OP": 1, "DEOP": 1, "SERVEROP": 1, "VOICE": 1, "DEVOICE": 1, "HELP": 1, "DEHELP": 1,
 	"OWNER": 1, "DEOWNER": 1, "BAN": 1, "UNBAN": 1, "MODE": 1, "SERVERMODE": 1, "RAWMODE": 1,
 	"USERMODE": 0, "NOTIFY": 0, "UNOTIFY": 0, "PING": 0, "PONG": 0,
 	"CTCPREPLY": 1, "SNOTICE": 1, "WALLOPS": 1, "ERROR": 1,
@@ -226,7 +228,7 @@ func (r *run) matches(f *file, h *event, ev *Event) bool {
 		if !windowLoc(h.loc, ev.Target) {
 			return false
 		}
-	case h.kind == "SIGNAL":
+	case h.kind == "SIGNAL" || strings.HasPrefix(h.kind, "SOCK"):
 		if !wildMatch(h.loc, ev.Target, false) {
 			return false
 		}

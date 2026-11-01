@@ -22,10 +22,14 @@ type run struct {
 	files     map[string]*pendingFile
 	errText   string // $error: the error an :error label caught
 	signals   []signal
-	depth     int  // nested /signal -n calls
-	quietCall bool // the alias about to be called was called with a .
-	caret     bool // running ^ handlers (DispatchBefore)
-	haltdef   bool // a handler used /haltdef: the client's default is off
+	depth     int     // nested /signal -n calls
+	quietCall bool    // the alias about to be called was called with a .
+	caret     bool    // running ^ handlers (DispatchBefore)
+	haltdef   bool    // a handler used /haltdef: the client's default is off
+	sock      *socket // the socket event's: $sockname
+	sockErr   string  // $sockerr, $null outside socket events
+	sockBR    int     // $sockbr
+	sockReads int     // /sockreads in this SOCKREAD event
 }
 
 // frame is an alias or event handler being run: its parameters, local
@@ -319,6 +323,8 @@ func (r *run) command(fr *frame, text string) error {
 		return &gotoErr{strings.ToLower(v)}
 	case "signal":
 		return r.cmdSignal(fr, rest)
+	case "sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename", "socklist", "sockpause":
+		return r.cmdSock(fr, strings.ToLower(name), rest)
 	case "auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel":
 		return r.cmdUsers(fr, strings.ToLower(name), rest)
 	case "scid", "scon":
@@ -809,7 +815,8 @@ var engineCommands = []string{"set", "var", "unset", "unsetall", "inc", "dec", "
 	"hadd", "hdel", "hinc", "hdec", "hsave", "hload", "write", "reseterror", "signal",
 	"writeini", "remini", "flushini", "remove", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
 	"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
-	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel"}
+	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel",
+	"sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename"}
 
 // Commands is the scripting commands the engine runs itself, sorted, for
 // the Scripts Editor's Help. (The client's own commands work in scripts

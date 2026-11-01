@@ -152,14 +152,15 @@ func condTokens(s string) []string {
 }
 
 // identBefore reports whether a ( after w opens an identifier's arguments:
-// w ends in $name, or is $ itself, as in $(...).
+// w ends in $name, or is $ itself, as in $(...). A name can have dots, as
+// an alias's can: $asn.isip($1).
 func identBefore(w string) bool {
 	k := strings.LastIndexByte(w, '$')
 	if k < 0 {
 		return false
 	}
 	for i := k + 1; i < len(w); i++ {
-		if !isWordChar(w[i]) && w[i] != '+' {
+		if !isWordChar(w[i]) && w[i] != '+' && w[i] != '.' {
 			return false
 		}
 	}

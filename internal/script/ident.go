@@ -19,7 +19,7 @@ var lazyArgs = map[string]bool{"iif": true, "eval": true, "": true, "regsubex": 
 func init() {
 	builtins = map[string]builtin{"regsubex": regsubexIdent}
 	for _, m := range []map[string]builtin{eventIdents, coreIdents, textIdents, tokenIdents, numIdents,
-		timeIdents, hashIdents, regexIdents, timerIdents, fileIdents, menuIdents, miscIdents,
+		timeIdents, hashIdents, regexIdents, timerIdents, sockIdents, fileIdents, menuIdents, miscIdents,
 		fileHandleIdents, connIdents, userIdents} {
 		maps.Copy(builtins, m)
 	}

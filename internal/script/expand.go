@@ -43,6 +43,12 @@ func (r *run) brackets(fr *frame, words []string, top bool) ([]piece, error) {
 			continue
 		}
 		j := closeBracket(words, i)
+		if j == len(words) {
+			// A [ that nothing closes is just text: $+([, a, ]) is [a]
+			// (checked).
+			out = append(out, piece{text: words[i]})
+			continue
+		}
 		v, joinLeft, joinRight, err := r.bracket(fr, words[i+1:j])
 		if err != nil {
 			return nil, err

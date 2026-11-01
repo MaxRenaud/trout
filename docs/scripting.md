@@ -136,8 +136,8 @@ popup items and typed lines, and in the alias such a line calls.
   `QUIT`, `NICK`, `KICK`, `TOPIC`, `INVITE`, `RAWMODE` and the mode events (`OP`,
   `DEOP`, `VOICE`, `BAN`, `UNBAN`, `MODE`...), `USERMODE`, `SNOTICE`, `WALLOPS`,
   `ERROR`, `PING`, `PONG`, `raw` numerics, `CONNECT`, `DISCONNECT`, `CONNECTFAIL`,
-  `INPUT`, `OPEN`, `CLOSE`, `NOTIFY`, `UNOTIFY`, `LOAD`, `START`, `UNLOAD`, `EXIT` and
-  `SIGNAL`. `^` handlers run before trout shows a line and can hide it (`/haltdef`); a
+  `INPUT`, `OPEN`, `CLOSE`, `NOTIFY`, `UNOTIFY`, `LOAD`, `START`, `UNLOAD`, `EXIT`,
+  `SIGNAL`, and the socket events `SOCKOPEN`, `SOCKREAD`, `SOCKWRITE` and `SOCKCLOSE`. `^` handlers run before trout shows a line and can hide it (`/haltdef`); a
   CTCP handler's `/halt` stops trout's reply.
 - **Levels**: the Users list, with general, `=` exact and named levels, `+`, `*`, the
   `me`, `!`, `@` and `&` prefixes, and `/auser`, `/guser`, `/ruser`, `/iuser`,
@@ -150,14 +150,21 @@ popup items and typed lines, and in the alias such a line calls.
   memory until `/hsave`, like mIRC's), **files** (`/write`, INI files, file handles,
   `/copy`, `/rename`, `/remove`).
 - **Several networks**: each network is a connection (`$cid`, `/scid`, `/scon`).
+- **Sockets**: connections out, plain or SSL (`/sockopen`, `-e`, and `-a` to accept a
+  certificate that doesn't check out), `/sockwrite`, `/sockread` into a `%variable`,
+  `/sockclose`, `/sockmark`, `/sockrename`, `$sock()`, `$sockname`, `$sockerr`,
+  `$sockbr`, and `$iptype`. A web API or a whois server is a few lines, like mIRC's.
 
 A script's commands run as if you typed them: `/msg`, `/mode` and the rest go through
 trout's own commands, and anything trout doesn't know goes to the server.
 
 ## What doesn't run
 
-- **Not loaded at all**: scripts with dialogs, DLLs, COM objects, sockets or `/run`.
-  `/load` says why, and nothing of the script runs.
+- **Not loaded at all**: scripts with dialogs, DLLs, COM objects, listening or UDP
+  sockets (`/socklisten`, `/sockudp`), or `/run`. `/load` says why, and nothing of the
+  script runs.
+- **Sockets' binary variables** (`&binvar`), `/sockpause`, `/socklist` and STARTTLS
+  (`-t`) give an error when reached.
 - **Loaded, with an error when reached**: custom `@windows` (`/window`, `/aline`...) and
   the mIRC identifiers trout doesn't have yet. `/load` and the ✓ button list them.
 - **Ignored**: sounds (`/splay`); `/beep` is the terminal's bell.
@@ -175,6 +182,8 @@ trout's own commands, and anything trout doesn't know goes to the server.
   script, with mIRC's "No such identifier" message.
 - Timers run outside any script, so they can't call another script's `alias -l`.
 - `isop` counts owners and admins (`~`, `&`) as ops.
+- A socket that fails says so in mIRC's terms (`$sockerr` 3, or 4 for a name that doesn't
+  resolve, and Windows' error numbers in `$sock().wserr`), whatever the system.
 
 ## For developers
 

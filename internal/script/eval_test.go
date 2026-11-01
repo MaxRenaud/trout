@@ -113,6 +113,7 @@ var evalCases = []struct{ in, want string }{
 	{"$iif(%nope,set,unset)", "unset"},
 	{"$eval(%x,0) $eval(%x,1) $eval(%x,2) $(%x,2)", "%x %y Hiya! Hiya!"},
 	{"$+(a,b,c)", "abc"},
+	{"$+([, a, $chr(44) b, ])", "[a, b]"}, // a [ nothing closes is text (checked)
 	{"$me on $network", "trout on TestNet"},
 	{"$nick(#trout,0) $nick(#trout,2) $nick(#trout,bob) $nick(#trout,0,o) $nick(#trout,1,v)", "4 alice 3 2 bob"},
 	{"$time $date $adate", "15:04:05 29/10/2026 10/29/2026"},
@@ -539,6 +540,21 @@ func TestUnextend(t *testing.T) {
 	} {
 		if got := unextend(in); got != want {
 			t.Errorf("unextend(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestDottedAliasCondition: an alias with a dot in its name, called as an
+// identifier in a condition, like asn.mrc's ($asn.isip($site)) (real mIRC
+// runs it).
+func TestDottedAliasCondition(t *testing.T) {
+	e := New(Options{})
+	e.Load("p.mrc", `alias a.b return $1
+alias t1 if (!$a.b($1)) return empty | return set
+alias t2 if (1 == 1) && ($a.b($1) == x) return yes | return no`)
+	for in, want := range map[string]string{"$t1(x)": "set", "$t1": "empty", "$t2(x)": "yes", "$t2(y)": "no"} {
+		if got := evalIn(t, e, in); got != want {
+			t.Errorf("%s = %q, want %q", in, got, want)
 		}
 	}
 }

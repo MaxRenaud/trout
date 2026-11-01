@@ -266,7 +266,8 @@ type App struct {
 	scriptTickAt   time.Time
 	ial            map[*state.Network]map[string]string
 	isupport       map[*state.Network]map[string]string
-	scriptCmds     []tea.Cmd // from script events in places that can't return a command
+	socks          map[int]*scriptSock // scripts' sockets, by the engine's ID
+	scriptCmds     []tea.Cmd           // from script events in places that can't return a command
 	hideLines      bool
 	ctcpHalted     bool
 	lastTyped      time.Time
@@ -284,6 +285,7 @@ func Run(opts Options) error {
 	_, err := p.Run()
 	a.stopITermProfile() // back to the tab's own profile
 	a.local.Stop()       // trout's own soju, if it started one
+	a.closeSockets()     // scripts' sockets
 	return err
 }
 
@@ -369,6 +371,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.w, a.h = msg.Width, msg.Height
 	case scriptTickMsg:
 		cmd = a.scriptTick()
+	case sockOpenedMsg, sockReadMsg, sockWrittenMsg, sockClosedMsg:
+		cmd = a.sockMsg(msg)
 	case tickMsg:
 		if ev, ok := demo.Traffic(a.nets); ok {
 			a.addLine(ev.Win, ev.Role, ev.Text)
