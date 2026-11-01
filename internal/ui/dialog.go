@@ -3,6 +3,7 @@ package ui
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
@@ -83,20 +84,110 @@ func buttonsWidth(labels []string) int {
 // dlgButtons draws a centered row of push buttons with underlined
 // mnemonics; focus is drawn bold.
 func (a *App) dlgButtons(c *Canvas, x, y, w int, labels []string, focus int) {
+	a.dlgButtonsTaken(c, x, y, w, labels, focus, "")
+}
+
+// dlgButtonsTaken is dlgButtons in a dialog where other things already
+// have some letters (taken), like the Scripts Editor's menus.
+func (a *App) dlgButtonsTaken(c *Canvas, x, y, w int, labels []string, focus int, taken string) {
 	t := a.theme()
 	bx := x + (w-buttonsWidth(labels))/2
+	mns := mnemonics(labels, taken)
 	for i, b := range labels {
 		st := Style{FG: t.FaceText, BG: t.Face}
 		if i == focus {
 			st.BG, st.Bold = t.Hover, true
 		}
 		n := a.button(c, bx, y, "  "+b+"  ", st, 1)
-		mn := st
-		mn.Underline = true
-		c.Set(bx+3, y, []rune(b)[0], mn)
+		a.underlineMnemonic(c, bx+3, y, b, mns[i], st)
 		a.addRegion(Region{X: bx, Y: y, W: n, H: 1, Kind: HitDlg, S: "button", I: i})
 		bx += n + 2
 	}
+}
+
+// underlineMnemonic underlines label's mnemonic, the mn-th rune, where
+// label is drawn at x (-1: it has none).
+func (a *App) underlineMnemonic(c *Canvas, x, y int, label string, mn int, st Style) {
+	if mn < 0 {
+		return
+	}
+	rs := []rune(label)
+	st.Underline = true
+	c.Set(x+runewidth.StringWidth(string(rs[:mn])), y, rs[mn], st)
+}
+
+// noMnemonic are the buttons that have no letter, like mIRC's: OK is
+// Enter, and Cancel and Close are Esc.
+var noMnemonic = map[string]bool{"OK": true, "Cancel": true, "Close": true}
+
+// mnemonics are the letters a row of buttons underlines, as the index of
+// the rune in each label (-1 for none), each one different, like Windows
+// programs place their &: a button's first letter, or if that's taken,
+// the first letter of another of its words, else another of its letters.
+// Earlier buttons get theirs first. taken are letters the dialog already
+// uses for something else.
+func mnemonics(labels []string, taken string) []int {
+	used := strings.ToLower(taken)
+	mns := make([]int, len(labels))
+	for i, label := range labels {
+		mns[i] = -1
+		if noMnemonic[label] {
+			continue
+		}
+		rs := []rune(label)
+		var initials, others []int
+		for j, r := range rs {
+			switch {
+			case !unicode.IsLetter(r) && !unicode.IsDigit(r):
+			case j == 0 || rs[j-1] == ' ':
+				initials = append(initials, j)
+			default:
+				others = append(others, j)
+			}
+		}
+		for _, j := range append(initials, others...) {
+			if l := unicode.ToLower(rs[j]); !strings.ContainsRune(used, l) {
+				mns[i] = j
+				used += string(l)
+				break
+			}
+		}
+	}
+	return mns
+}
+
+// buttonRow is a dialog whose buttons work by their underlined letters.
+type buttonRow interface {
+	buttonLabels(a *App) []string // as they're drawn
+	pressButton(a *App, i int) tea.Cmd
+	// typing says the letter alone goes to a text field now: then only
+	// Alt and the letter presses a button.
+	typing() bool
+}
+
+// mnemonicsTaken is a buttonRow whose dialog already uses some letters.
+type mnemonicsTaken interface{ takenMnemonics() string }
+
+// buttonKey is the button k presses by its underlined letter: Alt and
+// the letter, or the letter alone when it isn't typing, like a Windows
+// dialog.
+func buttonKey(d buttonRow, a *App, k string) (int, bool) {
+	letter, alt := strings.CutPrefix(k, "alt+")
+	if len([]rune(letter)) != 1 || !alt && d.typing() {
+		return 0, false
+	}
+	taken := ""
+	if t, ok := d.(mnemonicsTaken); ok {
+		taken = t.takenMnemonics()
+	}
+	labels := d.buttonLabels(a)
+	l := unicode.ToLower([]rune(letter)[0])
+	for i, mn := range mnemonics(labels, taken) {
+		if mn >= 0 && unicode.ToLower([]rune(labels[i])[mn]) == l {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // msgBox is a Windows-style message box.
@@ -184,14 +275,16 @@ func (d *msgBox) key(a *App, k string) tea.Cmd {
 	case "esc":
 		return d.close(a, d.Cancel)
 	default:
-		for i, b := range d.Buttons {
-			if strings.EqualFold(k, b[:1]) {
-				return d.close(a, i)
-			}
+		if i, ok := buttonKey(d, a, k); ok {
+			return d.close(a, i)
 		}
 	}
 	return nil
 }
+
+func (d *msgBox) buttonLabels(*App) []string        { return d.Buttons }
+func (d *msgBox) pressButton(a *App, i int) tea.Cmd { return d.close(a, i) }
+func (d *msgBox) typing() bool                      { return false }
 
 func (d *msgBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 	if m.Action != tea.MouseActionPress || m.Button != tea.MouseButtonLeft {
@@ -364,3 +457,7 @@ func (l *listBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.Cmd {
 	l.Sel = clamp(l.Sel, 0, len(l.Rows)-1)
 	return nil
 }
+
+func (l *listBox) buttonLabels(*App) []string        { return l.buttons() }
+func (l *listBox) pressButton(a *App, i int) tea.Cmd { return l.press(a, l.buttons()[i]) }
+func (l *listBox) typing() bool                      { return false }

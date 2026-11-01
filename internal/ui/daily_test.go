@@ -353,3 +353,86 @@ func TestSwitchbarHover(t *testing.T) {
 		}
 	}
 }
+
+// TestButtonMnemonics: a dialog's buttons each underline a different
+// letter (OK, Cancel and Close none, like mIRC's: they're Enter and Esc),
+// and Alt and that letter presses the button, or the letter alone when no
+// text field has the focus. The Scripts Editor's menus keep their letters.
+func TestButtonMnemonics(t *testing.T) {
+	letters := func(labels []string, taken string) string {
+		var b strings.Builder
+		for i, mn := range mnemonics(labels, taken) {
+			if i > 0 {
+				b.WriteByte(' ')
+			}
+			if mn < 0 {
+				b.WriteByte('-')
+			} else {
+				b.WriteRune([]rune(labels[i])[mn])
+			}
+		}
+		return b.String()
+	}
+	for _, c := range []struct {
+		labels []string
+		taken  string
+		want   string
+	}{
+		{[]string{"Connect", "Cancel"}, "", "C -"},
+		{serverButtons, "", "C D A E l -"},
+		{[]string{"Move Up", "Move Down", "Close"}, "", "M D -"},
+		{[]string{"Use", "Add", "Edit", "Update", "Remove", "Close"}, "", "U A E p R -"},
+		{[]string{"Yes", "No", "Cancel"}, "", "Y N -"},
+		{[]string{"OK", "Bans...", "Topics...", "Cancel"}, "", "- B T -"},
+		{edButtons, edMnemonics, "- - p"},
+	} {
+		if got := letters(c.labels, c.taken); got != c.want {
+			t.Errorf("%q: %s, want %s", c.labels, got, c.want)
+		}
+	}
+
+	a, _, _ := realApp(t)
+	alt := func(r rune) { a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}, Alt: true}) }
+	plain := func(r rune) { a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}) }
+
+	// A form: the letter alone types into the field, Alt and it presses.
+	pressed := ""
+	f := &formBox{Title: "Test", Fields: []*formField{newField("Name:", "", false)}, Buttons: []string{"OK", "Whois", "Cancel"},
+		OnButton: map[string]func(*App) tea.Cmd{"Whois": func(*App) tea.Cmd { pressed = "Whois"; return nil }}}
+	a.openDialog(f)
+	plain('w')
+	if pressed != "" || string(f.Fields[0].Edit.Buf) != "w" {
+		t.Fatalf("w in a field pressed %q, field %q", pressed, string(f.Fields[0].Edit.Buf))
+	}
+	alt('w')
+	if pressed != "Whois" {
+		t.Fatal("Alt+W didn't press Whois")
+	}
+	a.dlg = nil
+
+	// The Servers dialog has no fields: A alone is Add..., Alt+L Delete.
+	a.openServers()
+	plain('a')
+	if f, ok := a.dlg.(*formBox); !ok || f.Title != "Add Network" {
+		t.Fatalf("A in Servers opened %T, not Add Network", a.dlg)
+	}
+	a.dlg = nil
+	a.openServers()
+	alt('l')
+	if d, ok := a.dlg.(*msgBox); !ok || d.Title != "Delete Network" {
+		t.Fatalf("Alt+L in Servers opened %T, not Delete Network", a.dlg)
+	}
+	a.dlg = nil
+
+	// The Scripts Editor: Alt+O is still its Options menu, Alt+P its Help
+	// button.
+	a.openScripts()
+	alt('o')
+	if len(a.menus) == 0 {
+		t.Fatal("Alt+O in the Scripts Editor didn't open Options")
+	}
+	a.closeMenus()
+	if _, ok := a.dlg.(*scriptEditor); !ok {
+		t.Fatalf("the Scripts Editor closed: %T", a.dlg)
+	}
+}

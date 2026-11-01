@@ -231,3 +231,7 @@ func bouncerLabel(b bouncer, width int) string {
 	}
 	return s
 }
+
+func (d *bouncerBox) buttonLabels(a *App) []string      { return d.buttons(a) }
+func (d *bouncerBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, d.buttons(a)[i]) }
+func (d *bouncerBox) typing() bool                      { return true }

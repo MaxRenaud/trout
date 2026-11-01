@@ -453,6 +453,7 @@ func (d *serversBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		a.addRegion(Region{X: lx, Y: ly + 1 + i, W: lw, H: 1, Kind: HitDlg, S: "item", I: idx})
 	}
 	bx := x + w - 2 - serverButtonW
+	mns := mnemonics(serverButtons, "")
 	for i, b := range serverButtons {
 		st := Style{FG: t.FaceText, BG: t.Face}
 		if i == 0 {
@@ -460,6 +461,7 @@ func (d *serversBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		}
 		pad := serverButtonW - 2 - runewidth.StringWidth(b)
 		a.button(c, bx, ly+2*i, strings.Repeat(" ", pad/2)+b+strings.Repeat(" ", pad-pad/2), st, 1)
+		a.underlineMnemonic(c, bx+1+pad/2, ly+2*i, b, mns[i], st)
 		a.addRegion(Region{X: bx, Y: ly + 2*i, W: serverButtonW, H: 1, Kind: HitDlg, S: "button", I: i})
 	}
 }
@@ -553,3 +555,7 @@ func (d *serversBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.Cm
 	}
 	return nil
 }
+
+func (d *serversBox) buttonLabels(*App) []string        { return serverButtons }
+func (d *serversBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, serverButtons[i]) }
+func (d *serversBox) typing() bool                      { return false }

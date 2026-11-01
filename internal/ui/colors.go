@@ -167,7 +167,7 @@ func (d *colorsBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		note = "Using the scheme's color"
 	}
 	c.Text(px, ly+8, 28, note, face)
-	a.dlgButtons(c, x, y+h-3, w, []string{"OK", "Reset"}, 0)
+	a.dlgButtons(c, x, y+h-3, w, colorsButtons, 0)
 }
 
 // current is the palette color the selected item uses: its own choice, or
@@ -229,4 +229,12 @@ func (d *colorsBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 		a.dlg = nil
 	}
 	return nil
+}
+
+var colorsButtons = []string{"OK", "Reset"}
+
+func (d *colorsBox) buttonLabels(*App) []string { return colorsButtons }
+func (d *colorsBox) typing() bool               { return false }
+func (d *colorsBox) pressButton(a *App, i int) tea.Cmd {
+	return d.key(a, map[int]string{0: "enter", 1: "r"}[i])
 }

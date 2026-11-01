@@ -308,3 +308,7 @@ func (s *setupWizard) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.C
 	}
 	return nil
 }
+
+func (s *setupWizard) buttonLabels(*App) []string        { return s.buttons() }
+func (s *setupWizard) pressButton(a *App, i int) tea.Cmd { return s.press(a, s.buttons()[i]) }
+func (s *setupWizard) typing() bool                      { return true }

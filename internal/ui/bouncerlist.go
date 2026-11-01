@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MaxRenaud/trout/internal/config"
@@ -204,14 +202,16 @@ func (d *savedBouncersBox) key(a *App, k string) tea.Cmd {
 	case "esc":
 		a.dlg = nil
 	default:
-		for _, b := range d.buttons(a) {
-			if strings.EqualFold(k, b[:1]) {
-				return d.press(a, b)
-			}
+		if i, ok := buttonKey(d, a, k); ok {
+			return d.pressButton(a, i)
 		}
 	}
 	return nil
 }
+
+func (d *savedBouncersBox) buttonLabels(a *App) []string      { return d.buttons(a) }
+func (d *savedBouncersBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, d.buttons(a)[i]) }
+func (d *savedBouncersBox) typing() bool                      { return false }
 
 func (d *savedBouncersBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.Cmd {
 	if m.Action != tea.MouseActionPress || m.Button != tea.MouseButtonLeft {

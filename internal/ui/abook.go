@@ -450,3 +450,7 @@ func putAt[T any](s []T, i int, v T) []T {
 	}
 	return append(s, v)
 }
+
+func (d *abookBox) buttonLabels(*App) []string        { return abookButtons }
+func (d *abookBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, abookButtons[i]) }
+func (d *abookBox) typing() bool                      { return false }

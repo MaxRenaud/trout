@@ -265,3 +265,7 @@ func (f *formBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 	}
 	return nil
 }
+
+func (f *formBox) buttonLabels(*App) []string        { return f.Buttons }
+func (f *formBox) pressButton(a *App, i int) tea.Cmd { return f.press(a, i) }
+func (f *formBox) typing() bool                      { return f.focus < len(f.Fields) }

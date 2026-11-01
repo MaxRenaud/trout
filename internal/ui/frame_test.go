@@ -98,10 +98,11 @@ func TestFrames(t *testing.T) {
 	a.themeIdx = 0
 	a.openDialog(aboutBox(true, "v0.1.0"))
 	frame("about box")
-	a.dlg.key(a, "o")
-	if a.dlg != nil {
-		t.Fatal("pressing O didn't close the message box")
+	a.dlg.key(a, "o") // OK has no letter, like mIRC's: it's Enter
+	if a.dlg == nil {
+		t.Fatal("pressing O closed the message box")
 	}
+	a.dlg.key(a, "enter")
 
 	a.openConnect("Login failed. Check the user name and password.")
 	frame("connect")

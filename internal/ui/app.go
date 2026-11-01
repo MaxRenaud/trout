@@ -479,6 +479,11 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		return a.menuKey(s)
 	}
 	if a.dlg != nil {
+		if br, ok := a.dlg.(buttonRow); ok {
+			if i, ok := buttonKey(br, a, s); ok {
+				return br.pressButton(a, i)
+			}
+		}
 		if ed, ok := a.dlg.(*scriptEditor); ok && (k.Type == tea.KeyRunes || k.Type == tea.KeySpace) && !k.Alt {
 			return ed.typed(a, k.Runes) // line breaks and all
 		}

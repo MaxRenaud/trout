@@ -910,3 +910,7 @@ func (a *App) moveNetworks() {
 	}
 	a.moving, a.movingTo = nil, ""
 }
+
+func (w *installWizard) buttonLabels(*App) []string        { return w.buttons() }
+func (w *installWizard) pressButton(a *App, i int) tea.Cmd { return w.press(a, w.buttons()[i]) }
+func (w *installWizard) typing() bool                      { return true } // its fields

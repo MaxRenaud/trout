@@ -422,7 +422,7 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 	c.Fill(x+1, y+h-4, w-2, 1, face)
 	c.Text(x+2, y+h-4, w-6-len(pos), "File: "+path, face)
 	c.Text(x+w-2-len(pos), y+h-4, len(pos), pos, face)
-	a.dlgButtons(c, x, y+h-3, w, edButtons, 0)
+	a.dlgButtonsTaken(c, x, y+h-3, w, edButtons, 0, edMnemonics)
 }
 
 func runesWidth(rs []rune) int {
@@ -1811,3 +1811,10 @@ func mircList(data string, vars bool) []string {
 	}
 	return lines
 }
+
+// The editor's buttons work with Alt and their letter; its menus have
+// theirs first.
+func (ed *scriptEditor) buttonLabels(*App) []string        { return edButtons }
+func (ed *scriptEditor) pressButton(a *App, i int) tea.Cmd { return ed.press(a, edButtons[i]) }
+func (ed *scriptEditor) typing() bool                      { return true }
+func (ed *scriptEditor) takenMnemonics() string            { return edMnemonics }

@@ -174,12 +174,18 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	} else {
 		text("Goguma will ask for your bouncer password.", face)
 	}
-	label := "Leave Out Password"
-	if !d.withPassword {
-		label = "Put In Password"
-	}
-	a.dlgButtons(c, x, y+h-3, w, []string{"Close", label}, 0)
+	a.dlgButtons(c, x, y+h-3, w, d.buttonLabels(a), 0)
 }
+
+func (d *phoneBox) buttonLabels(*App) []string {
+	if d.withPassword {
+		return []string{"Close", "Leave Out Password"}
+	}
+	return []string{"Close", "Put In Password"}
+}
+
+func (d *phoneBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, i) }
+func (d *phoneBox) typing() bool                      { return false }
 
 func (d *phoneBox) press(a *App, i int) tea.Cmd {
 	if i == 1 {
@@ -194,8 +200,6 @@ func (d *phoneBox) key(a *App, k string) tea.Cmd {
 	switch k {
 	case "enter", "esc":
 		return d.press(a, 0)
-	case "p", "l":
-		return d.press(a, 1)
 	}
 	return nil
 }
