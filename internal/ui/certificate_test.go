@@ -267,7 +267,7 @@ func TestPhoneCertificate(t *testing.T) {
 		t.Errorf("browser:\n%s", text)
 	}
 	d.press(a, 1)
-	if d.web || !strings.HasPrefix(d.link(a), "ircs://max:secret@") {
+	if want := "https://trout-irc.github.io/goguma#ircs://max:secret@203.0.113.9:6697"; d.web || d.link(a) != want {
 		t.Errorf("Goguma again: %q", d.link(a))
 	}
 }

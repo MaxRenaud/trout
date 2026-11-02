@@ -14,8 +14,8 @@ import (
 
 // phoneBox is Tools > Connect a Phone: a QR code that opens Goguma, the
 // phone IRC client that speaks soju's extensions and push notifications,
-// with the bouncer in use filled in (an ircs:// link, which Goguma
-// registers on iOS and Android). Goguma asks before trusting a certificate
+// with the bouncer in use filled in: an ircs:// link, which Goguma
+// registers on iOS and Android, behind gogumaPage. Goguma asks before trusting a certificate
 // no authority signed, showing its SHA-1; for a pinned bouncer this shows
 // the same, to compare, which trout gets by connecting with its pin. A
 // bouncer with a Let's Encrypt certificate needs none of that.
@@ -102,18 +102,30 @@ func webLink(a *App) string {
 	return webPage + "?server=wss://" + net.JoinHostPort(host, "8443") + "/socket&nick=" + url.QueryEscape(a.bnc.User)
 }
 
-// link is the bouncer as an IRC URL: ircs://user[:password]@host:port,
-// or gamja's page.
-func (d *phoneBox) link(a *App) string {
-	if d.web {
-		return webLink(a)
-	}
+// gogumaPage is trout's page beside gamja's (goguma.html in the site's
+// repo): a button that opens the ircs:// link after the #, and where to
+// get Goguma. A phone's camera opens any https link, but shows nothing
+// for ircs:// without Goguma installed (an iPhone says "No usable data
+// found"). Browsers never send what follows the # to a server.
+const gogumaPage = webPage + "goguma#"
+
+// ircLink is the bouncer as an IRC URL: ircs://user[:password]@host:port.
+func (d *phoneBox) ircLink(a *App) string {
 	hostport, _, _ := irc.ParseAddress(a.bnc.Address)
 	u := url.User(a.bnc.User)
 	if d.withPassword && a.password != "" {
 		u = url.UserPassword(a.bnc.User, a.password)
 	}
 	return "ircs://" + u.String() + "@" + hostport
+}
+
+// link is what the code holds: the IRC link on the Goguma page, or
+// gamja's page.
+func (d *phoneBox) link(a *App) string {
+	if d.web {
+		return webLink(a)
+	}
+	return gogumaPage + d.ircLink(a)
 }
 
 func (d *phoneBox) title() string { return "Connect a Phone" }
@@ -186,8 +198,8 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		a.dlgButtons(c, x, y+h-3, w, d.buttonLabels(a), 0)
 		return
 	}
-	text("It opens Goguma, an IRC client for soju with push notifications: "+
-		"App Store on iPhone, F-Droid or Google Play on Android.", face)
+	text("It opens a page with a button for Goguma, an IRC client for soju with push notifications "+
+		"(App Store on iPhone, Google Play or F-Droid on Android), and links to get it.", face)
 	row++
 	switch {
 	case d.checking:
