@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 	"github.com/MaxRenaud/trout/internal/termkeys"
 )
@@ -538,5 +540,39 @@ func TestScriptsEditorButtons(t *testing.T) {
 	typ("n")
 	if a.dlg != nil {
 		t.Fatalf("N left %T open", a.dlg)
+	}
+}
+
+// TestDisconnected: losing the connection says so in every channel, and
+// typing there says it isn't connected instead of the text vanishing.
+func TestDisconnected(t *testing.T) {
+	a, n, _ := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	a.Update(ircDownMsg{net: n, err: errors.New("i/o timeout")})
+	if got := lastLine(ch); got != "* Disconnected" || ch.Joined {
+		t.Fatalf("after the drop: %q", got)
+	}
+	a.edit(ch).Buf = []rune("test")
+	a.submit(ch)
+	if got := lastLine(ch); got != "* Not connected to Libera" {
+		t.Fatalf("typing while disconnected: %q", got)
+	}
+}
+
+// TestEchoActivity: a script's echo marks its window like an event (the
+// join color), unless it's echo -m, like mIRC's.
+func TestEchoActivity(t *testing.T) {
+	a, n, _ := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(n.Status())
+	ch.Act = state.ActNone
+	a.runScript([]script.Action{{Echo: &script.Echo{Network: n.Name, Window: "#go", Color: -1, Text: "AS13335 Cloudflare"}}})
+	if ch.Act != state.ActEvent {
+		t.Errorf("echo: activity %d, want an event's", ch.Act)
+	}
+	a.runScript([]script.Action{{Echo: &script.Echo{Network: n.Name, Window: "#go", Color: -1, Text: "hi", Message: true}}})
+	if ch.Act != state.ActMsg {
+		t.Errorf("echo -m: activity %d, want a message's", ch.Act)
 	}
 }

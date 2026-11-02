@@ -94,6 +94,12 @@ func TestPaste(t *testing.T) {
 	if len(w.Lines) != before+3 || !strings.HasSuffix(lastLine(w), "three") {
 		t.Fatalf("sent %d lines, last %q", len(w.Lines)-before, lastLine(w))
 	}
+	// A pasted command runs, like mIRC's.
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("four\n/echo -a pasted command\n"), Paste: true})
+	a.dlg.key(a, "y")
+	if got := lastLine(w); got != "pasted command" {
+		t.Fatalf("a pasted /echo: %q", got)
+	}
 	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("just one\n"), Paste: true})
 	if a.dlg != nil || string(w.Edit.Buf) != "just one" {
 		t.Fatalf("a one-line paste: dialog %T, editbox %q", a.dlg, string(w.Edit.Buf))

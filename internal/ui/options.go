@@ -143,12 +143,12 @@ func (a *App) openOptions(page int) {
 		o.pages[optOther].Items = append(o.pages[optOther].Items,
 			optItem{Label: "Option key as Alt (" + a.term.Name + ")...", Action: (*App).openOptionKey})
 	}
-	if !a.opts.Demo { // setting up and managing bouncers is a mock-up so far
+	if !a.opts.Demo { // the demo keeps its mock-up
 		notes := []string{"", "Address: " + a.bncAddress(), "User:    " + a.bnc.User}
 		if a.bnc.Pin != "" {
 			notes = append(notes, "Trusted: "+a.bnc.Pin)
 		}
-		notes = append(notes, "", "Setting up new bouncers is in the", "demo only (trout --demo).")
+		notes = append(notes, "", "Tools > Set Up Bouncer puts one on a server.")
 		o.pages[optBouncer] = optPage{Name: "Bouncer", Notes: notes, Items: []optItem{
 			{Label: "Manage bouncers...", Action: (*App).openSavedBouncers},
 		}}

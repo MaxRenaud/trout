@@ -466,7 +466,9 @@ func (a *App) drawWindow(c *Canvas, win *state.Window, x, y, w, h int) {
 	if win.Edit2On {
 		e2h = 1 + editHeight(&win.Edit2, w)
 	}
-	ph := max(1, h-1-eh-e2h)
+	// A line above the editbox and one under it: without the bottom one it
+	// looks cut off by the terminal, or like there's more below.
+	ph := max(1, h-2-eh-e2h)
 	left, right := x, x+w
 	if win.Kind == state.KChannel && a.showNicklist {
 		a.nickW = clamp(a.nickW, 8, w/3)
@@ -507,6 +509,9 @@ func (a *App) drawWindow(c *Canvas, win *state.Window, x, y, w, h int) {
 		if focus2 {
 			a.caretX, a.caretY = cx, cy
 		}
+	}
+	for i := x; i < x+w; i++ {
+		c.Set(i, y+h-1, '─', sep)
 	}
 }
 

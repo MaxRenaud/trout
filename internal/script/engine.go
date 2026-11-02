@@ -82,6 +82,7 @@ type Echo struct {
 	Window  string // "" for the status window
 	Color   int    // mIRC color 0-99, or -1 for the default
 	Text    string
+	Message bool // -m: "treated as a user message, not an event" (mIRC's help), for the window's activity
 }
 
 // Save is what to keep after a script changed it: the global variables,

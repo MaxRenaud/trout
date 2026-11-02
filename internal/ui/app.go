@@ -1241,6 +1241,10 @@ func (a *App) say(w *state.Window, text string) {
 		return
 	}
 	if !a.opts.Demo {
+		if a.connFor(w.Net) == nil { // say so here, or what you typed just vanishes
+			a.addLine(w, state.RoleInfo, "* Not connected to "+w.Net.Name)
+			return
+		}
 		a.privmsg(w, w.Name, text)
 		return
 	}

@@ -198,7 +198,7 @@ func (a *App) drawCustom(c *Canvas, win *state.Window, x, y, w, h int) {
 	eh := 0
 	if cu.Editbox {
 		eh = editHeight(&win.Edit, w)
-		ph = max(1, h-1-eh)
+		ph = max(1, h-2-eh) // lines above and under it, like a channel's
 	}
 	right := x + w
 	if cu.SideW > 0 {
@@ -221,6 +221,7 @@ func (a *App) drawCustom(c *Canvas, win *state.Window, x, y, w, h int) {
 	sep := Style{FG: t.Lines, BG: t.TextBG}
 	for i := x; i < x+w; i++ {
 		c.Set(i, y+ph, '─', sep)
+		c.Set(i, y+h-1, '─', sep)
 	}
 	cx, cy := a.drawWinEdit(c, &win.Edit, 1, x, y+ph+1, w, eh, true)
 	a.caretX, a.caretY = cx, cy

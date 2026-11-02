@@ -783,7 +783,8 @@ func (r *run) cmdEcho(fr *frame, rest string) error {
 	if len(words) == 0 {
 		return errorf("/echo: insufficient parameters")
 	}
-	r.actions = append(r.actions, Action{Echo: &Echo{Network: net, Window: win, Color: color, Text: strings.Join(words, " ")}})
+	r.actions = append(r.actions, Action{Echo: &Echo{Network: net, Window: win, Color: color, Text: strings.Join(words, " "),
+		Message: strings.Contains(sw, "m")}})
 	return nil
 }
 

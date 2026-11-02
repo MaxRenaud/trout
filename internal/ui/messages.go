@@ -92,8 +92,9 @@ func nickRune(r rune) bool {
 }
 
 // pasteLines handles a paste with line breaks in it. Like mIRC, each line
-// becomes a message, after asking; the first line joins what's already
-// typed.
+// is sent as if typed, after asking: lines starting with / run as
+// commands (mIRC runs them; scripts guard against it with $inpaste). The
+// first line joins what's already typed.
 func (a *App) pasteLines(w *state.Window, text string) tea.Cmd {
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 	var lines []string
@@ -108,12 +109,13 @@ func (a *App) pasteLines(w *state.Window, text string) tea.Cmd {
 		return nil
 	}
 	lines[0] = string(e.Buf) + lines[0]
-	if !a.confirmPaste { // Options > Other
+	send := func(a *App) tea.Cmd {
 		e.Take()
-		for _, l := range lines {
-			a.say(w, l)
-		}
-		return nil
+		e.Buf = []rune(strings.Join(lines, "\n"))
+		return a.submit(w)
+	}
+	if !a.confirmPaste { // Options > Other
+		return send(a)
 	}
 	preview := []string{fmt.Sprintf("Paste %d lines to %s?", len(lines), w.Name), ""}
 	for i, l := range lines[:min(3, len(lines))] {
@@ -127,10 +129,7 @@ func (a *App) pasteLines(w *state.Window, text string) tea.Cmd {
 	d.Buttons, d.Cancel = []string{"Yes", "No"}, 1
 	d.OnClose = func(a *App, button int) tea.Cmd {
 		if button == 0 {
-			e.Take()
-			for _, l := range lines { // as text, not commands
-				a.say(w, l)
-			}
+			return send(a)
 		}
 		return nil
 	}
