@@ -51,6 +51,18 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 			a.closeWindow(q)
 		}
 		return nil, true
+	case "tips": // mIRC's /tips [on|off]: Options > Display's Tips
+		switch strings.ToLower(arg) {
+		case "on", "off":
+			a.tips = strings.EqualFold(arg, "on")
+			a.saveSettings()
+		case "":
+		default:
+			need()
+			return nil, true
+		}
+		a.addLine(w, state.RoleInfo, "* Tips are "+map[bool]string{true: "on", false: "off"}[a.tips])
+		return nil, true
 	case "beep": // the terminal bell, which is trout's only sound
 		a.bellDue = true
 		return nil, true

@@ -13,6 +13,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
+	"github.com/MaxRenaud/trout/internal/termkeys"
 )
 
 // realApp is a real-mode App with one network and a #go channel, fed raw
@@ -142,6 +143,61 @@ func TestBell(t *testing.T) {
 	run(cmd)
 	if out.String() != "\a" {
 		t.Fatalf("a private message in the background wrote %q, want a bell", out.String())
+	}
+}
+
+// Tips are the terminal's notifications, mIRC's tips: for highlights and
+// private messages while the terminal isn't in front.
+func TestTips(t *testing.T) {
+	a, n, _ := realApp(t)
+	var out bytes.Buffer
+	a.bellOut, a.beep, a.notify = &out, false, termkeys.NotifyOSC777
+	if !a.tips {
+		t.Fatal("tips are off by default")
+	}
+	say := func(line string) string {
+		t.Helper()
+		out.Reset()
+		m, _ := ircmsg.ParseLine(line)
+		_, cmd := a.Update(ircLineMsg{n, m})
+		if cmd != nil {
+			if b, ok := cmd().(tea.BatchMsg); ok {
+				for _, c := range b {
+					if c != nil {
+						c()
+					}
+				}
+			}
+		}
+		return out.String()
+	}
+	a.activate(n.Find(state.KChannel, "#go"))
+	if got := say(":bob!b@h PRIVMSG #go :max: look"); got != "" {
+		t.Fatalf("a tip while the terminal is in front: %q", got)
+	}
+	a.Update(tea.BlurMsg{})
+	if got, want := say(":bob!b@h PRIVMSG #go :max: \x02look\x02 here"), "\x1b]777;notify;#go;<bob> max: look here\a"; got != want {
+		t.Fatalf("highlight: %q, want %q", got, want)
+	}
+	if got := say(":bob!b@h PRIVMSG #go :max: again"); got != "" {
+		t.Fatalf("a second tip from the same window straight away: %q", got)
+	}
+	if got, want := say(":carol!c@h PRIVMSG max :psst"), "\x1b]777;notify;carol;<carol> psst\a"; got != want {
+		t.Fatalf("private message: %q, want %q", got, want)
+	}
+	if got := say(":dave!d@h PRIVMSG #go :hello all"); got != "" {
+		t.Fatalf("a tip for a plain channel message: %q", got)
+	}
+	a.command(n.Status(), "tips off")
+	if a.tips || lastLine(n.Status()) != "* Tips are off" {
+		t.Fatalf("/tips off: tips %v, status says %q", a.tips, lastLine(n.Status()))
+	}
+	if got := say(":erin!e@h PRIVMSG max :hey"); got != "" {
+		t.Fatalf("a tip with tips off: %q", got)
+	}
+	a.tips, a.notify = true, termkeys.NotifyNone
+	if got := say(":frank!f@h PRIVMSG max :hey"); got != "" {
+		t.Fatalf("a tip in a terminal that can't show one: %q", got)
 	}
 }
 

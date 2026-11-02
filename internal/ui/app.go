@@ -134,6 +134,15 @@ type App struct {
 	itermRestore string
 	bellDue      bool
 	lastBell     time.Time
+	// Tips are mIRC's notifications, the terminal's here (termkeys.Notify):
+	// on for highlights and private messages when the terminal isn't in
+	// front; tipsDue waits for the frame's end like the bell.
+	tips    bool
+	notify  termkeys.Notify
+	inTmux  bool
+	tipsDue []string
+	lastTip map[*state.Window]time.Time
+	tipN    int
 
 	find      *finder                  // Ctrl+F's highlighted match
 	findText  string                   // the last search, to search again
@@ -295,6 +304,7 @@ func Run(opts Options) error {
 	env := termkeys.SystemEnv()
 	a.term, a.termHome = termkeys.Detect(env), env.Home
 	a.termColors = termkeys.Colors(env.Getenv)
+	a.notify, a.inTmux = termkeys.NotifyFor(env.Getenv), env.Getenv("TMUX") != ""
 	_, err := p.Run()
 	a.stopITermProfile() // back to the tab's own profile
 	a.local.Stop()       // trout's own soju, if it started one
@@ -473,7 +483,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
 	}
 	a.saveSettings()
-	return a, tea.Batch(cmd, a.syncRead(), a.bell())
+	return a, tea.Batch(cmd, a.syncRead(), a.bell(), a.flushTips())
 }
 
 func (a *App) key(k tea.KeyMsg) tea.Cmd {

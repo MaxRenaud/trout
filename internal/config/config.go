@@ -244,6 +244,10 @@ type Settings struct {
 	TreebarWidth  int    `toml:"treebar-width"`
 	NicklistWidth int    `toml:"nicklist-width"`
 	Beep          bool   `toml:"beep"` // on highlights and private messages, when not looking
+	// Tips are mIRC's tips (Options > Display): the terminal's
+	// notifications, for highlights and private messages while it isn't
+	// in front.
+	Tips bool `toml:"tips"`
 	// Colors are the Colors dialog's choices: palette numbers by kind of
 	// text, like "action=6 notice=5"; the scheme's colors otherwise.
 	Colors string `toml:"colors,omitempty"`
@@ -326,7 +330,7 @@ type Settings struct {
 
 func DefaultSettings() Settings {
 	return Settings{Theme: "classic", Toolbar: true, Switchbar: true, Treebar: true, Nicklist: true,
-		Timestamps: true, ModePrefix: true, LineMarker: true, TreebarWidth: 20, NicklistWidth: 18, Beep: true,
+		Timestamps: true, ModePrefix: true, LineMarker: true, TreebarWidth: 20, NicklistWidth: 18, Beep: true, Tips: true,
 		DCCGet: "ask", DCCAutoAsked: true, DCCWarn: true, DCCChat: "ask", DCCIgnoreMode: "ignore", DCCTimeout: 300,
 		TimestampFormat: "[HH:nn]", NoticesActive: true, ConfirmPaste: true, PrefixOwn: true, PopFavorites: true,
 		CmdPrefix: "/", Buffer: 500, CheckUpdates: true, PrivateTo: "windows", ShowAddress: true}

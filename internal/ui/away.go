@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/MaxRenaud/trout/internal/irc"
 	"github.com/MaxRenaud/trout/internal/state"
+	"github.com/MaxRenaud/trout/internal/termkeys"
 )
 
 // Away, WHO and WHOIS, and the bell.
@@ -183,6 +185,63 @@ func (a *App) beepFor(w *state.Window, l state.Line) {
 	if (own || a.beep && ((l.Role == state.RoleHighlight && !l.NoBeep) || private)) && (w != a.active || !a.focused) {
 		a.bellDue = true
 	}
+	if l.Role == state.RoleHighlight || private {
+		title := "trout"
+		if w.Kind == state.KChannel || w.Kind == state.KQuery || w.Kind == state.KChat {
+			title = w.Name
+		}
+		a.tipFor(w, title, l)
+	}
+}
+
+// tipGap keeps a busy window to one tip in a while.
+const tipGap = 10 * time.Second
+
+// tipFor shows a line as a tip, the terminal's notification, like mIRC's
+// tips: only while the terminal isn't in front (mIRC's only appear while
+// it isn't the active application), and only where the terminal can show
+// one (termkeys.NotifyFor).
+func (a *App) tipFor(w *state.Window, title string, l state.Line) {
+	if !a.tips || a.focused || a.notify == termkeys.NotifyNone || a.hideLines || l.Text == "" {
+		return
+	}
+	if t, ok := a.lastTip[w]; ok && time.Since(t) < tipGap {
+		return
+	}
+	if a.lastTip == nil {
+		a.lastTip = map[*state.Window]time.Time{}
+	}
+	a.lastTip[w] = time.Now()
+	if len(a.nets) > 2 { // the bouncer's own and more than one network
+		title += " (" + w.Net.Name + ")"
+	}
+	a.tipN++
+	a.tipsDue = append(a.tipsDue, a.notify.Sequence(a.tipN, title, stripCodes(l.Text), a.inTmux))
+}
+
+// flushTips writes the tips due, like bell.
+func (a *App) flushTips() tea.Cmd {
+	if len(a.tipsDue) == 0 {
+		return nil
+	}
+	tips := strings.Join(a.tipsDue, "")
+	a.tipsDue = nil
+	out := a.bellOut
+	if out == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		io.WriteString(out, tips)
+		return nil
+	}
+}
+
+// tipsLabel is Options > Display's Tips checkbox.
+func (a *App) tipsLabel() string {
+	if a.notify == termkeys.NotifyNone {
+		return "Tips (this terminal can't show them)"
+	}
+	return "Tips for highlights and private messages"
 }
 
 // bell is the beep, if one is due. Writing BEL beside Bubble Tea's

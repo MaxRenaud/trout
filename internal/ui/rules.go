@@ -357,6 +357,7 @@ func (a *App) privateElsewhere(n *state.Network, from, target, text string, mine
 		if a.beep && (w != a.active || !a.focused) {
 			a.bellDue = true // a private message, like a query's
 		}
+		a.tipFor(w, from, l)
 	}
 	a.addLineL(w, l)
 }

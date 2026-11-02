@@ -251,7 +251,7 @@ func (a *App) notifySeen(n *state.Network, nick string, online bool, addr string
 	a.queueScript(cmd)
 	if !halted {
 		a.addLine(where, state.RoleHighlight, text)
-		a.beepFor(where, state.Line{Role: state.RoleHighlight})
+		a.beepFor(where, state.Line{Role: state.RoleHighlight, Text: text})
 	}
 	ev.Halted = halted
 	a.queueScript(a.scriptAfter(ev))

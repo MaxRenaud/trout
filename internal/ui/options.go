@@ -105,6 +105,7 @@ func (a *App) openOptions(page int) {
 			{Label: "Sort switchbar buttons", Bool: &a.sortSwitch},
 			{Label: "Fill the switchbar", Bool: &a.fillSwitch},
 			{Label: "Highlight the active window's button too", Bool: &a.hiActive},
+			{Label: a.tipsLabel(), Bool: &a.tips},
 		}},
 		optBouncer: {Name: "Bouncer", Items: a.bouncerItems(), Notes: []string{
 			"",

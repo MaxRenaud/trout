@@ -130,13 +130,18 @@ of your profile with the left Option key as Alt while trout runs; in kitty and G
 adds one line to their config; elsewhere it shows the setting to change. Ctrl+J also
 starts a new line in the editbox.
 
-**tmux** works. For the mouse, focus (for the bell) and 24-bit color, put this in
-`~/.tmux.conf` (the last line names your outer terminal's `TERM`):
+**Tips** (mIRC's notifications): while the terminal isn't in front, highlights and
+private messages show as desktop notifications in iTerm2, Ghostty, kitty, WezTerm and foot.
+Turn them off in Options > Display or with `/tips off`.
+
+**tmux** works. For the mouse, focus (for the bell and tips), tips and 24-bit color, put
+this in `~/.tmux.conf` (the last line names your outer terminal's `TERM`):
 
 ```
 set -g mouse on
 set -s focus-events on
 set -s escape-time 10
+set -g allow-passthrough on
 set -as terminal-features ',xterm-256color:RGB'
 ```
 

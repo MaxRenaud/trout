@@ -82,7 +82,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `ui/localbnc.go` starts it before connecting and `ui.Run` stops it.
 - `internal/termkeys`: which terminal this is, whether its Option key sends Alt, and the
   fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `optionkey.go`
-  asks at startup.
+  asks at startup. `notify.go` is how it shows a notification (OSC 9, 777 or kitty's 99),
+  for tips (`ui/away.go`'s `tipFor`, beside the bell).
 - `internal/script`: mIRC scripting (aliases, events, variables, identifiers, hash
   tables, timers, regex, popups, files, the Users list), pure: events in, actions out;
   `ui/scripts.go` hooks it into the client (`docs/scripting.md` is what users get,
