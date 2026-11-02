@@ -253,13 +253,13 @@ func TestPhoneCertificate(t *testing.T) {
 	// A trusted bouncer works in browsers too: Browser switches the code to
 	// gamja's page, with the user but never the password.
 	d := a.dlg.(*phoneBox)
-	if got := d.buttonLabels(a); !slices.Equal(got, []string{"Close", "Leave Out Password", "Browser"}) {
+	if got := d.buttonLabels(a); !slices.Equal(got, []string{"Close", "Browser"}) {
 		t.Fatalf("buttons: %q", got)
 	}
 	a.password = "secret"
-	d.press(a, 2)
+	d.press(a, 1)
 	want := "https://trout-irc.github.io/?server=wss://203.0.113.9:8443/socket&nick=max"
-	if got := d.link(a); got != want || !d.withPassword {
+	if got := d.link(a); got != want {
 		t.Errorf("web link %q, want %q", got, want)
 	}
 	if text := strings.Join(strings.Fields(strings.ReplaceAll(dialogText(a, d), "▀", "")), " "); !strings.Contains(text, "gamja") ||
@@ -267,7 +267,7 @@ func TestPhoneCertificate(t *testing.T) {
 		t.Errorf("browser:\n%s", text)
 	}
 	d.press(a, 1)
-	if want := "https://trout-irc.github.io/goguma#ircs://max:secret@203.0.113.9:6697"; d.web || d.link(a) != want {
+	if want := "https://trout-irc.github.io/goguma#ircs://max@203.0.113.9:6697"; d.web || d.link(a) != want {
 		t.Errorf("Goguma again: %q", d.link(a))
 	}
 }

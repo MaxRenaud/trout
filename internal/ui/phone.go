@@ -20,12 +20,11 @@ import (
 // the same, to compare, which trout gets by connecting with its pin. A
 // bouncer with a Let's Encrypt certificate needs none of that.
 type phoneBox struct {
-	withPassword bool
-	web          bool           // the code is gamja's page in a browser, for a trusted bouncer
-	cert         irc.ServerCert // once read
-	known        bool
-	checking     bool
-	err          string
+	web      bool           // the code is gamja's page in a browser, for a trusted bouncer
+	cert     irc.ServerCert // once read
+	known    bool
+	checking bool
+	err      string
 }
 
 type phoneCertMsg struct {
@@ -64,7 +63,7 @@ func (a *App) openPhone() tea.Cmd {
 		a.openDialog(m)
 		return nil
 	}
-	d := &phoneBox{withPassword: true, checking: true}
+	d := &phoneBox{checking: true}
 	a.openDialog(d)
 	addr, _, _ := irc.ParseAddress(a.bnc.Address)
 	cfg := irc.Config{Addr: addr, TLS: true, Pin: a.bnc.Pin, Dial: a.dialer(false)}
@@ -109,14 +108,12 @@ func webLink(a *App) string {
 // found"). Browsers never send what follows the # to a server.
 const gogumaPage = webPage + "goguma#"
 
-// ircLink is the bouncer as an IRC URL: ircs://user[:password]@host:port.
+// ircLink is the bouncer as an IRC URL: ircs://user@host:port. Never the
+// password: Goguma fills in only the server and nick from a link (checked
+// in its source, connect.dart's _populateFromUri), and asks for it.
 func (d *phoneBox) ircLink(a *App) string {
 	hostport, _, _ := irc.ParseAddress(a.bnc.Address)
-	u := url.User(a.bnc.User)
-	if d.withPassword && a.password != "" {
-		u = url.UserPassword(a.bnc.User, a.password)
-	}
-	return "ircs://" + u.String() + "@" + hostport
+	return "ircs://" + url.User(a.bnc.User).String() + "@" + hostport
 }
 
 // link is what the code holds: the IRC link on the Goguma page, or
@@ -217,38 +214,26 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		}
 	}
 	row++
-	if d.withPassword {
-		text("The code has your bouncer password in it.", face)
-	} else {
-		text("Goguma will ask for your bouncer password.", face)
-	}
+	text("Goguma asks for your bouncer password.", face)
 	a.dlgButtons(c, x, y+h-3, w, d.buttonLabels(a), 0)
 }
 
 func (d *phoneBox) buttonLabels(*App) []string {
-	pw := "Put In Password"
-	if d.withPassword {
-		pw = "Leave Out Password"
-	}
 	switch {
 	case d.web:
 		return []string{"Close", "Goguma"}
 	case d.known && d.cert.Trusted: // browsers trust it too: gamja works
-		return []string{"Close", pw, "Browser"}
+		return []string{"Close", "Browser"}
 	}
-	return []string{"Close", pw}
+	return []string{"Close"}
 }
 
 func (d *phoneBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, i) }
 func (d *phoneBox) typing() bool                      { return false }
 
 func (d *phoneBox) press(a *App, i int) tea.Cmd {
-	switch {
-	case i == 1 && d.web, i == 2:
+	if i == 1 {
 		d.web = !d.web
-		return nil
-	case i == 1:
-		d.withPassword = !d.withPassword
 		return nil
 	}
 	a.dlg = nil

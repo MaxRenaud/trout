@@ -21,8 +21,9 @@ func TestPhoneQR(t *testing.T) {
 	if p := a.phoneProblem(); p != nil {
 		t.Fatalf("a TLS bouncer isn't phone-ready: %q", p)
 	}
-	d := &phoneBox{withPassword: true, known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567"}}
-	if got := d.link(a); got != gogumaPage+"ircs://max:abcdefghijkmnpqrstuvwxyz@203.0.113.40:6697" {
+	d := &phoneBox{known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567"}}
+	// Never the password, though trout has it: Goguma ignores it.
+	if got := d.link(a); got != gogumaPage+"ircs://max@203.0.113.40:6697" {
 		t.Fatalf("link %q", got)
 	}
 	code, err := qr.Encode(d.link(a), qr.L)
@@ -50,10 +51,6 @@ func TestPhoneQR(t *testing.T) {
 		}
 	}
 
-	d.withPassword = false
-	if got := d.link(a); got != gogumaPage+"ircs://max@203.0.113.40:6697" {
-		t.Fatalf("without the password: %q", got)
-	}
 	// The rest say why instead of showing a code.
 	for _, tc := range []struct {
 		bnc  config.Bouncer

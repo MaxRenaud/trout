@@ -410,11 +410,12 @@ test checks soju lets the page's origin in and refuses another.
 
 There's no trout for phones: Goguma (App Store, F-Droid, Google Play) speaks soju's
 extensions and its push notifications (`soju.im/webpush`, on in soju by default). Tools >
-Connect a Phone (`ui/phone.go`) shows a QR code of `ircs://user:password@host:port` for the
+Connect a Phone (`ui/phone.go`) shows a QR code of `ircs://user@host:port` for the
 bouncer in use, on trout's page beside gamja's (`https://trout-irc.github.io/goguma#ircs://...`):
 a phone's camera opens any https link, but shows nothing for an ircs:// one unless Goguma is
 installed (an iPhone says "No usable data found"). The page has a button that opens Goguma
-and links to get it; the link after the # never reaches a server. Goguma doesn't know trout's pin:
+and links to get it; the link after the # never reaches a server. No password: Goguma
+fills in only the server and nick from a link, and asks. Goguma doesn't know trout's pin:
 unless Let's Encrypt vouches for the bouncer, the first time it shows the certificate's
 SHA-1 and asks, so the dialog shows that SHA-1 (`irc.ReadCert`, fetched through the pin) to
 compare before Accept Always, and where to get a certificate Goguma trusts.
