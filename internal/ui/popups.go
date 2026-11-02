@@ -194,7 +194,7 @@ func (a *App) commandsMenu() []MenuItem {
 // menuBarName is a menubar entry's name: Commands is the menubar popup's
 // first line, like mIRC's.
 func (a *App) menuBarName(i int) string {
-	if i == 4 && a.scripts != nil {
+	if i == menuCommands && a.scripts != nil {
 		return cmp.Or(a.scripts.MenubarTitle(), menuBarNames[i])
 	}
 	return menuBarNames[i]

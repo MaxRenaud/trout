@@ -24,7 +24,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/update"
 )
 
-// installWizard is Tools > Set Up Bouncer for real (the demo keeps
+// installWizard is Bouncer > Set Up Bouncer for real (the demo keeps
 // setupWizard, the mock-up with VPS providers): soju on a Linux server you
 // can SSH into, by internal/install. The same steps update or uninstall
 // one it set up, or get it a certificate (Bouncers > Server and Remove):
@@ -178,7 +178,7 @@ func (a *App) offerUpdate() {
 		}, Buttons: []string{"Update", "Not Now"}, Cancel: 1,
 			OnClose: func(a *App, button int) tea.Cmd {
 				if button != 0 {
-					a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: update "+name+" any time from Tools > Bouncers > Update")
+					a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: update "+name+" any time from Bouncer > Bouncers > Update")
 					return nil
 				}
 				return a.openReinstall(bnc, "update")

@@ -52,11 +52,25 @@ type Region struct {
 	Net        *state.Network
 }
 
-var menuBarNames = [...]string{"File", "View", "Favorites", "Tools", "Commands", "Window", "Help"}
+// menuBarNames are mIRC's menus, and Bouncer: not mIRC's, but trout's
+// main idea, which would otherwise be spread over Tools and Options.
+var menuBarNames = [...]string{"File", "View", "Favorites", "Tools", "Bouncer", "Commands", "Window", "Help"}
+
+const (
+	menuFile = iota
+	menuView
+	menuFavorites
+	menuTools
+	menuBouncer
+	menuCommands
+	menuWindow
+	menuHelp
+)
 
 // menuMnemonics holds each menubar entry's Alt key, which is also the
-// letter drawn underlined ("F&avorites").
-const menuMnemonics = "fvatcwh"
+// letter drawn underlined ("F&avorites"). Bouncer's is E: Alt+B is the
+// Address Book, like mIRC's.
+const menuMnemonics = "fvatecwh"
 
 // An empty label is a separator.
 var toolButtons = []string{"Connect", "Options", "", "Favorites", "Channels", "Scripts", "",

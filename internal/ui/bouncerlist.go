@@ -8,7 +8,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
-// savedBouncersBox is Tools > Bouncers for real: the bouncers in
+// savedBouncersBox is Bouncer > Bouncers for real: the bouncers in
 // config.toml, to switch between, add, edit and remove, and, on ones
 // trout set up, Server: update soju, or get it a trusted certificate.
 // (The demo has bouncerBox, its mock-up.)

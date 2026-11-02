@@ -277,34 +277,25 @@ func (a *App) menuBarItems(i int) []MenuItem {
 		return func(*App) tea.Cmd { *p = !*p; return nil }
 	}
 	switch i {
-	case 0:
+	case menuFile:
 		// Like mIRC, these are about the active window's network; soju's own
-		// status window is the bouncer connection.
+		// status window is the bouncer connection. No Save Settings: trout
+		// saves every change as it's made, and the item said otherwise.
 		connect, disconnect := MenuItem{Label: "Connect"}, MenuItem{Label: "Disconnect"}
-		save := MenuItem{Label: "Save Settings", Disabled: a.cfg == nil}
 		if !a.opts.Demo {
 			n := a.active.Net
 			connect.Action = func(a *App) tea.Cmd { return a.connectNet(n) }
 			disconnect.Action = func(a *App) tea.Cmd { a.disconnectNet(n); return nil }
 			connect.Disabled, disconnect.Disabled = a.connected(n), !a.connected(n)
 		}
-		if a.cfg != nil { // settings save as they change; this says where
-			save.Action = func(a *App) tea.Cmd {
-				a.cfg.Settings, a.saved = a.settings(), a.settings()
-				a.saveConfig()
-				a.addLine(a.active, state.RoleInfo, "* Settings saved to "+a.cfg.Path)
-				return nil
-			}
-		}
 		return []MenuItem{connect, disconnect,
 			{Label: "Select Server...", Action: func(a *App) tea.Cmd { a.openServers(); return nil }}, sep,
 			{Label: "New Window", Sub: []MenuItem{
-				{Label: "Server...", Disabled: a.opts.Demo, Action: func(a *App) tea.Cmd { a.openDialog(a.networkForm(nil, nil)); return nil }},
+				{Label: "Server...", Disabled: a.opts.Demo, Action: func(a *App) tea.Cmd { a.openAddNetwork(nil); return nil }},
 				{Label: "Channel...", Action: a.commandPrompt("Join Channel", "Channel:", "join", "#")},
 				{Label: "Query...", Action: a.commandPrompt("Query User", "Nick:", "query", "")}}}, sep,
-			save, sep,
 			{Label: "Exit", Action: func(a *App) tea.Cmd { return a.quit() }}}
-	case 1:
+	case menuView:
 		return []MenuItem{{Label: "Menubar", Check: true, Disabled: true},
 			{Label: "Toolbar", Check: a.showToolbar, Action: toggle(&a.showToolbar)},
 			{Label: "Switchbar", Check: a.showSwitchbar, Action: toggle(&a.showSwitchbar)},
@@ -312,7 +303,7 @@ func (a *App) menuBarItems(i int) []MenuItem {
 			{Label: "Nicklist", Check: a.showNicklist, Action: toggle(&a.showNicklist)},
 			{Label: "Timestamps", Check: a.stamps, Action: toggle(&a.stamps)}, sep,
 			{Label: "Themes", Sub: a.themeItems()}}
-	case 2:
+	case menuFavorites:
 		n, w := a.active.Net, a.active
 		add := MenuItem{Label: "Add to Favorites", Disabled: w.Kind != state.KChannel || a.opts.Demo,
 			Action: func(a *App) tea.Cmd {
@@ -326,26 +317,17 @@ func (a *App) menuBarItems(i int) []MenuItem {
 			items = append(items, MenuItem{Label: ch, Action: func(a *App) tea.Cmd { a.join(n, ch); return nil }})
 		}
 		return items
-	case 3:
-		items := []MenuItem{{Label: "Address Book...", Action: func(a *App) tea.Cmd { a.openAddressBook(); return nil }}, sep,
+	case menuTools:
+		return []MenuItem{{Label: "Address Book...", Action: func(a *App) tea.Cmd { a.openAddressBook(); return nil }}, sep,
 			{Label: "Channels List...", Key: "Alt+L", Action: func(a *App) tea.Cmd { return a.openChannelsList(false) }},
 			{Label: "URLs List...", Action: func(a *App) tea.Cmd { a.openURLsList(); return nil }},
-			{Label: "Scripts Editor...", Key: "Alt+R", Action: func(a *App) tea.Cmd { a.openScripts(); return nil }}, sep}
-		if a.opts.Demo { // bouncer setup is a mock-up so far
-			items = append(items,
-				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openSetup(); return nil }},
-				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openBouncers(); return nil }})
-		} else {
-			items = append(items,
-				MenuItem{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openInstall(); return nil }},
-				MenuItem{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openSavedBouncers(); return nil }},
-				MenuItem{Label: "Connect a Phone...", Action: (*App).openPhone})
-		}
-		return append(items,
-			MenuItem{Label: "Options...", Key: "Alt+O", Action: func(a *App) tea.Cmd { a.openOptions(optDisplay); return nil }})
-	case 4:
+			{Label: "Scripts Editor...", Key: "Alt+R", Action: func(a *App) tea.Cmd { a.openScripts(); return nil }}, sep,
+			{Label: "Options...", Key: "Alt+O", Action: func(a *App) tea.Cmd { a.openOptions(optDisplay); return nil }}}
+	case menuBouncer:
+		return a.bouncerMenu()
+	case menuCommands:
 		return a.commandsMenu()
-	case 5:
+	case menuWindow:
 		items := []MenuItem{{Label: "Order...", Action: func(a *App) tea.Cmd { a.openOrder(); return nil }}, sep}
 		for n, w := range a.order() {
 			label := w.Name
@@ -411,4 +393,22 @@ func (a *App) windowMenu(w *state.Window, x, y int) {
 	}
 	a.closeMenus()
 	a.pushMenu(items, x, y)
+}
+
+// bouncerMenu is the menubar's Bouncer menu: the bouncer in use, then
+// the others. The demo keeps its mock-ups.
+func (a *App) bouncerMenu() []MenuItem {
+	sep := MenuItem{Sep: true}
+	settings := func(a *App) tea.Cmd { a.openBouncerSettings(bncNetworks); return nil }
+	if a.opts.Demo {
+		return []MenuItem{{Label: "Settings...", Action: settings},
+			{Label: "Networks...", Action: func(a *App) tea.Cmd { a.openServers(); return nil }}, sep,
+			{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openSetup(); return nil }},
+			{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openBouncers(); return nil }}}
+	}
+	return []MenuItem{{Label: "Settings...", Action: settings},
+		{Label: "Networks...", Action: func(a *App) tea.Cmd { a.openServers(); return nil }},
+		{Label: "Connect a Phone...", Action: (*App).openPhone}, sep,
+		{Label: "Set Up Bouncer...", Action: func(a *App) tea.Cmd { a.openInstall(); return nil }},
+		{Label: "Bouncers...", Action: func(a *App) tea.Cmd { a.openSavedBouncers(); return nil }}}
 }

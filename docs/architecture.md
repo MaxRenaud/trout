@@ -75,7 +75,7 @@ file, so unknown keys are an error rather than silently dropped. Passwords go in
 `credentials` next to it, by bouncer name; trout writes it 0600 and, like SSH, won't read
 it if others can. Flags and `TROUT_*` variables override the config for one run.
 
-With no bouncer configured, trout opens the Connect dialog; Tools > Bouncers adds, edits
+With no bouncer configured, trout opens the Connect dialog; Bouncer > Bouncers adds, edits
 and switches between saved ones. OK saves the bouncer (a new one is named after its host)
 and its password, makes it active, and reconnects from scratch. A bouncer with a
 `password-command` and no saved password runs the command with the UI suspended
@@ -88,13 +88,35 @@ The IRC side of the UI acts on networks, and trout asks soju to do it:
 | In trout | Sent to soju |
 |---|---|
 | File > Connect / Disconnect, status popup | `BouncerServ network update <name> -enabled true/false` |
-| File > Select Server: Add / Edit / Delete | `network create` / `network update` / `network delete`; SASL with `sasl set-plain -network` |
+| File > Select Server: Add / Edit / Delete | `network create` / `network update` / `network delete`; SASL with `sasl set-plain -network`; On connect is `-connect-command` (repeated; `""` clears them) |
 | `/server host` | focuses the network soju has on that host, or creates one (never repoints the current one, unlike mIRC) |
 | Channel popup > Detach | `channel update <#chan> -detached true`; soju parts it on our side, `/join` reattaches |
 | Unknown Certificate / Certificate Changed > Trust | `network update <name> -certfp <sha-512>` |
+| Bouncer > Settings, as it opens | `network status`, `channel status`, `user status` (admins only: the error says you aren't one), then `server status` |
+| Settings > Channels: Detach / Attach / Options | `channel update <#chan>/<network> -detached`, `-relay-detached`, `-reattach-on`, `-detach-on`, `-detach-after` |
+| Settings > Account | `user update -nick` / `-realname` / `-password` (and the password trout keeps, if it keeps one) |
+| Settings > Users (admins) | `user create`, `user update <name> -admin / -enabled / -password`, `user delete <name>` then again with soju's confirmation token |
 
 On soju's own status window, Connect and Disconnect are the bouncer connection itself.
-Bouncers live under Tools > Bouncers (config.toml's list: Use / Add / Edit / Remove).
+Bouncers live under Bouncer > Bouncers (config.toml's list: Use / Add / Edit / Remove).
+
+The Bouncer menu isn't mIRC's: the bouncer is trout's main idea, and its items would
+otherwise be spread over Tools and Options. Bouncer > Settings (`ui/bncsettings.go`) is
+the Options dialog's shape for what soju keeps. soju lists networks, channels and users
+but never says a network's connect commands or a channel's detach and relay options, so
+those forms start at "unchanged" and only send what you change. A list reply has no end
+marker, so `servList` sends `help help` after the command and stops at its answer: soju
+answers a connection's commands in order.
+
+Select Server's Add (and File > New Window > Server) starts from a list of networks
+(`ui/networks.go`): netsplit.de's 25 biggest whose address takes TLS on 6697 with a
+certificate soju can check, checked 2026-11-02. mIRC's own list is hundreds of networks,
+server by server and mostly without TLS. Undernet, EFnet, QuakeNet, IRCnet and GameSurge
+are left out for their TLS (none, self-signed, or certificates for another name, which a
+pin can't fix behind a round-robin address); Other... or `/server` adds them.
+
+There's no File > Save Settings: trout saves every change as it's made (`saveSettings`
+after each Update), and the menu item suggested otherwise.
 
 trout never guesses at the outcome: soju reports network changes through
 `soju.im/bouncer-networks` notifications (`state` connected / connecting / disconnected,
@@ -282,7 +304,7 @@ Like mIRC's Options dialog, with what fits a terminal and a bouncer:
   window, private messages in their own windows, one (Messages) window, or the active one.
 - **Display:** bars, line marker and shading, nick colors, scheme, Colors (with the
   switchbar's activity colors), switchbar sort and fill, highlight the active button.
-- **Bouncer:** Tools > Bouncers.
+- **Bouncer:** Bouncer > Bouncers.
 - **DCC:** the download folder, get / chat ask-accept-ignore, auto-get what you asked for,
   close Get windows when done, the privacy notice, trusted users (taken without asking),
   folders by file type, file types to ignore (mIRC's default list) or the only ones to
@@ -301,7 +323,7 @@ Known slash commands map to IRC (`/join`, `/part`, `/msg`, `/me`, `/topic`, `/mo
 
 ## Setting soju up on your server
 
-Tools > Set Up Bouncer (and Set One Up on the first-run Connect dialog) installs soju on a
+Bouncer > Set Up Bouncer (and Set One Up on the first-run Connect dialog) installs soju on a
 Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/install.go`):
 
 - **SSH is the system `ssh`** (Windows 10+ has OpenSSH too), run with BatchMode, so
@@ -327,7 +349,7 @@ Linux server you can SSH into (`internal/install`, the wizard in `internal/ui/in
 - **Check** logs in from here with the pin and the password. If that fails it looks on
   the server for what's missing; if the server's fine, it's the provider's firewall.
 - **Then** the bouncer is saved (its `ssh` host marks it as trout's, for Update and
-  Uninstall in Tools > Bouncers), and trout moves the old bouncer's networks over. Last,
+  Uninstall in Bouncer > Bouncers), and trout moves the old bouncer's networks over. Last,
   it offers a trusted certificate.
 
 Moving networks happens here and when you switch bouncers (Bouncers > Use, This Computer),

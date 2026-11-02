@@ -18,7 +18,7 @@ import (
 // Let's Encrypt can vouch for it instead, IP address and all: trout puts
 // trout-cert on the server (setup.sh's cert mode), which gets the
 // certificate for soju's own key and renews it with a timer, so the pin
-// stays good. Asking is the setup wizard's last step and Tools > Bouncers
+// stays good. Asking is the setup wizard's last step and Bouncer > Bouncers
 // > Server > Certificate; neither is mIRC's.
 
 // letsEncrypt is config.Bouncer.Cert for a Let's Encrypt certificate.
@@ -144,7 +144,7 @@ func (a *App) askCert(b config.Bouncer, back func(*App), offered bool) {
 			}
 			if offered {
 				a.addLine(a.home.Status(), state.RoleInfo, "* Bouncer: get "+b.Name+
-					" a certificate phones trust any time from Tools > Bouncers > Server > Certificate")
+					" a certificate phones trust any time from Bouncer > Bouncers > Server > Certificate")
 			}
 			reopen(a)
 			return nil
@@ -215,7 +215,7 @@ func (a *App) certChecked(m certCheckedMsg) {
 	if m.err != nil {
 		return
 	}
-	fix := "the server couldn't renew it. Tools > Bouncers > Server > Certificate > Set Up Again tries now and says why."
+	fix := "the server couldn't renew it. Bouncer > Bouncers > Server > Certificate > Set Up Again tries now and says why."
 	switch left := time.Until(m.cert.NotAfter); {
 	case !m.cert.Trusted:
 		a.addLine(a.home.Status(), state.RoleQuit, "* Bouncer: phones and web browsers won't trust "+m.name+"'s certificate "+

@@ -634,3 +634,65 @@ func TestHopLive(t *testing.T) {
 		t.Fatal("/hop didn't keep the window")
 	}
 }
+
+// TestBouncerSettingsLive opens Bouncer > Settings on the dev soju as
+// tester, who isn't an admin: soju's real answers fill the pages, and
+// setting a channel's options and a network's connect commands works.
+//
+//	go test -tags integration ./internal/ui -run TestBouncerSettingsLive -v
+func TestBouncerSettingsLive(t *testing.T) {
+	a, pump := liveApp(t)
+	pump("DevNet's #dev", func() bool {
+		for _, n := range a.nets[1:] {
+			if w := n.Find(state.KChannel, "#dev"); w != nil && w.Joined {
+				return true
+			}
+		}
+		return false
+	})
+	a.openBouncerSettings(bncNetworks)
+	pump("the settings' answers", func() bool { return a.bset.asked == 0 })
+	o := a.dlg.(*optionsBox)
+	nets := strings.Join(o.pages[bncNetworks].Notes, "\n")
+	if !strings.Contains(nets, "DevNet: connected") || !strings.Contains(nets, "TroutNet: connected") {
+		t.Errorf("Networks:\n%s", nets)
+	}
+	if !slices.ContainsFunc(a.bset.channels, func(c chanStatus) bool { return c.key() == "#dev/DevNet" }) {
+		t.Errorf("channels: %+v", a.bset.channels)
+	}
+	if a.bset.admin || !strings.Contains(strings.Join(o.pages[bncUsers].Notes, " "), "Only the bouncer's admins") {
+		t.Errorf("tester as an admin? %+v", o.pages[bncUsers])
+	}
+
+	status := a.home.Status()
+	before := len(status.Lines)
+	replied := func(want string) func() bool {
+		return func() bool {
+			for _, l := range status.Lines[before:] {
+				if strings.Contains(l.Text, want) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	a.serv(a.home, status, false, "channel", "update", "#dev/DevNet", "-relay-detached", "default", "-detach-after", "0")
+	pump("soju to update #dev", replied(`updated channel "#dev"`))
+	dev := a.nets[slices.IndexFunc(a.nets, func(n *state.Network) bool { return n.Name == "DevNet" })]
+	f := a.networkForm(dev, nil)
+	f.Fields[8].Edit.Buf = []rune("-")
+	if _, err := a.saveNetwork(dev, formVals(f)); err != nil {
+		t.Fatal(err)
+	}
+	pump("soju to update DevNet", func() bool { return strings.Contains(lastLine(dev.Status()), `updated network "DevNet"`) })
+	for _, l := range status.Lines[before:] {
+		if strings.Contains(l.Text, "error") || strings.Contains(l.Text, "help [command]") {
+			t.Errorf("status: %q", l.Text)
+		}
+	}
+	for _, n := range a.nets {
+		if n.Find(state.KQuery, "BouncerServ") != nil {
+			t.Fatalf("the settings opened a BouncerServ query on %s", n.Name)
+		}
+	}
+}

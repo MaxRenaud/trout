@@ -201,7 +201,7 @@ func TestUpdateFails(t *testing.T) {
 // checkbox, saved in config.toml, like mIRC's.
 func TestUpdateMenus(t *testing.T) {
 	a, _ := updateApp(t, update.Archive, "v0.4.0", nil)
-	if !slices.ContainsFunc(a.menuBarItems(6), func(m MenuItem) bool { return m.Label == "Check for Updates..." }) {
+	if !slices.ContainsFunc(a.menuBarItems(menuHelp), func(m MenuItem) bool { return m.Label == "Check for Updates..." }) {
 		t.Error("the Help menu has no Check for Updates")
 	}
 	a.openOptions(optOther)

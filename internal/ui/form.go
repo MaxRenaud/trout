@@ -40,6 +40,19 @@ type formField struct {
 	// Group makes checkboxes radio buttons: turning one on turns off the
 	// others with the same Group.
 	Group string
+	// Choices makes it a drop-down of these, Pick the one shown: Space,
+	// the arrows or a click step through them, in one row.
+	Choices []string
+	Pick    int
+}
+
+func newChoice(label string, choices []string, pick int) *formField {
+	return &formField{Label: label, Choices: choices, Pick: pick}
+}
+
+// step moves a choice field d places, wrapping around.
+func (fl *formField) step(d int) {
+	fl.Pick = (fl.Pick + d + len(fl.Choices)) % len(fl.Choices)
 }
 
 func newRadio(group, label string, on bool) *formField {
@@ -140,6 +153,23 @@ func (f *formBox) draw(a *App, c *Canvas, x, y, w, h int) {
 			continue
 		}
 		c.Text(tx, row, lw, fl.Label, face)
+		if fl.Choices != nil {
+			st := Style{FG: t.TextFG, BG: t.TextBG}
+			if i == f.focus {
+				st = Style{FG: t.MenuSelText, BG: t.MenuSel}
+			}
+			cw := 2
+			for _, ch := range fl.Choices {
+				cw = max(cw, runewidth.StringWidth(ch)+4)
+			}
+			cw = min(cw, bw)
+			c.Fill(bx, row, cw, 1, st)
+			c.Text(bx+1, row, cw-3, fl.Choices[fl.Pick], st)
+			c.Set(bx+cw-2, row, '▾', st)
+			a.addRegion(Region{X: bx, Y: row, W: cw, H: 1, Kind: HitDlg, S: "field", I: i})
+			row += f.step()
+			continue
+		}
 		a.drawEditBox(c, &fl.Edit, bx, row, bw, i == f.focus, fl.Mask)
 		a.addRegion(Region{X: bx, Y: row, W: bw, H: 1, Kind: HitDlg, S: "field", I: i})
 		row += f.step()
@@ -170,6 +200,9 @@ func (f *formBox) press(a *App, i int) tea.Cmd {
 		vals[j] = string(fl.Edit.Buf)
 		if fl.Check && fl.On {
 			vals[j] = "1"
+		}
+		if fl.Choices != nil {
+			vals[j] = fl.Choices[fl.Pick]
 		}
 	}
 	cmd, err := f.OnOK(a, vals)
@@ -208,6 +241,14 @@ func (f *formBox) key(a *App, k string) tea.Cmd {
 	}
 	if fl := f.Fields[f.focus]; fl.Check {
 		return nil
+	} else if fl.Choices != nil {
+		switch k {
+		case "left":
+			fl.step(-1)
+		case "right":
+			fl.step(1)
+		}
+		return nil
 	}
 	e := &f.Fields[f.focus].Edit
 	switch k {
@@ -230,8 +271,12 @@ func (f *formBox) key(a *App, k string) tea.Cmd {
 // typed is text typed or pasted while the form is open.
 func (f *formBox) typed(a *App, rs []rune) tea.Cmd {
 	if f.focus < len(f.Fields) {
-		if fl := f.Fields[f.focus]; fl.Check {
-			if string(rs) == " " {
+		if fl := f.Fields[f.focus]; fl.Check || fl.Choices != nil {
+			switch {
+			case string(rs) != " ":
+			case fl.Choices != nil:
+				fl.step(1)
+			default:
 				f.toggle(fl)
 			}
 			return nil
@@ -255,6 +300,10 @@ func (f *formBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 		fl := f.Fields[r.I]
 		if fl.Check {
 			f.toggle(fl)
+			return nil
+		}
+		if fl.Choices != nil {
+			fl.step(1)
 			return nil
 		}
 		clickEditBox(&fl.Edit, m.X-r.X, fl.Mask)

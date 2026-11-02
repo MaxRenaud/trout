@@ -105,7 +105,7 @@ func TestThemes(t *testing.T) {
 	}
 
 	// View > Themes lists them all, Dark checked; picking Nord saves "nord".
-	view := a.menuBarItems(1)
+	view := a.menuBarItems(menuView)
 	sub := view[len(view)-1].Sub
 	var labels []string
 	for _, it := range sub {

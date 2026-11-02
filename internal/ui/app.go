@@ -87,6 +87,7 @@ type App struct {
 	// list soju reports; every network has its own connection.
 	cfg         *config.Config
 	bnc         config.Bouncer // the bouncer in use
+	bset        *bncState      // what Bouncer > Settings last heard
 	password    string
 	saved       config.Settings  // as last written to config.toml
 	stopped     bool             // not connected and not retrying, until File > Connect

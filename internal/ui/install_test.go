@@ -158,7 +158,7 @@ func wizard(t *testing.T, a *App) *installWizard {
 }
 
 // TestInstallWizard sets soju up on a server where sudo needs no password,
-// from Tools > Set Up Bouncer to the new bouncer in config.toml, with the
+// from Bouncer > Set Up Bouncer to the new bouncer in config.toml, with the
 // old bouncer's networks queued to move.
 func TestInstallWizard(t *testing.T) {
 	srv := &fakeServer{sudo: "nopasswd"}
@@ -194,7 +194,7 @@ func TestInstallWizard(t *testing.T) {
 	}
 	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if a.dlg != nil || !slices.ContainsFunc(lineTexts(a.home.Status()), func(l string) bool {
-		return strings.Contains(l, "Tools > Bouncers > Server > Certificate")
+		return strings.Contains(l, "Bouncer > Bouncers > Server > Certificate")
 	}) {
 		t.Fatalf("Not Now: %T, %q", a.dlg, lineTexts(a.home.Status()))
 	}
@@ -361,7 +361,7 @@ func TestInstallSSHNeedsYou(t *testing.T) {
 }
 
 // TestUninstall removes a bouncer trout set up, history and all, from
-// Tools > Bouncers.
+// Bouncer > Bouncers.
 func TestUninstall(t *testing.T) {
 	srv := &fakeServer{sudo: "nopasswd"}
 	a, _ := installApp(t, srv)

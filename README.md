@@ -55,17 +55,17 @@ Flags and environment variables override the config: `--addr` / `TROUT_ADDR`,
 
 ## Getting a bouncer
 
-Tools > Set Up Bouncer installs soju for you: on a Linux server you can SSH into (it uses
+Bouncer > Set Up Bouncer installs soju for you: on a Linux server you can SSH into (it uses
 your own `ssh`, so `~/.ssh/config` and your agent just work, and sudo, a sudo password or a
 command you run yourself for root), or on a new server it makes at Hetzner Cloud,
 DigitalOcean or Google Cloud (pick a region, see the price, Create Server). It makes a TLS
 key and pins it, so there's no domain to buy, checks the bouncer by logging in, and moves
-your networks onto it. Tools > Bouncers updates or removes it later, deleting the server
+your networks onto it. Bouncer > Bouncers updates or removes it later, deleting the server
 too.
 
 Phones and web browsers don't know that pinned key, so last of all it offers a certificate
 from [Let's Encrypt](https://letsencrypt.org), which vouches for IP addresses too (later:
-Tools > Bouncers > Server > Certificate). trout puts a small helper, trout-cert, on the
+Bouncer > Bouncers > Server > Certificate). trout puts a small helper, trout-cert, on the
 server; it gets the certificate for the same key, so the pin still holds, and a timer renews
 it every few days. Let's Encrypt checks the server over port 80, so that port has to be open
 to everyone, in the server's firewall and at your provider (trout opens it in ufw and
@@ -75,7 +75,7 @@ firewalld). Getting one accepts Let's Encrypt's
 ![Set Up a Bouncer: a new Hetzner server, soju installed, networks moved over](docs/gifs/setup.gif)
 
 This Computer runs soju right here instead, while trout is open, for when there's no
-server. Tools > Connect a Phone shows a QR code that opens your bouncer in
+server. Bouncer > Connect a Phone shows a QR code that opens your bouncer in
 [Goguma](https://goguma.im) (iPhone and Android), which gets soju's push notifications;
 without a Let's Encrypt certificate, it shows the SHA-1 Goguma asks you to accept. With
 one, its Browser button gives a link to [gamja](https://codeberg.org/emersion/gamja), soju's
@@ -87,7 +87,10 @@ any browser.
 - mIRC's layout: menubar, toolbar, switchbar, treebar, nicklist, the editbox, Windows 98
   dialogs, and mIRC's colors and formatting codes (Ctrl+B, Ctrl+K, Ctrl+U...).
 - The bouncer's networks as mIRC's servers: Connect, Disconnect, Select Server and
-  `/server` go through soju.
+  `/server` go through soju, with a list of 25 big networks to add from. The Bouncer
+  menu has its settings: networks and their on-connect commands, channels (detach and
+  what you hear while detached), your names and password, and users if you're its
+  admin.
 - History: windows fill in from the bouncer, read markers sync with your other clients,
   Ctrl+F can search the bouncer's whole history.
 - Channel Central (modes, bans, exceptions, invites, topics), the Channels List,

@@ -12,7 +12,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/irc"
 )
 
-// phoneBox is Tools > Connect a Phone: a QR code that opens Goguma, the
+// phoneBox is Bouncer > Connect a Phone: a QR code that opens Goguma, the
 // phone IRC client that speaks soju's extensions and push notifications,
 // with the bouncer in use filled in: an ircs:// link, which Goguma
 // registers on iOS and Android, behind gogumaPage. Goguma asks before trusting a certificate
@@ -43,7 +43,7 @@ func (a *App) phoneProblem() []string {
 	case a.bnc.Local:
 		return []string{"The This Computer bouncer runs only while trout is open,",
 			"on this computer: a phone can't reach it.",
-			"", "Put a bouncer on a server with Tools > Set Up Bouncer."}
+			"", "Put a bouncer on a server with Bouncer > Set Up Bouncer."}
 	case err != nil:
 		return []string{"The bouncer's address doesn't work: " + err.Error()}
 	case !useTLS:
@@ -191,7 +191,7 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		text(d.link(a), bold)
 		row++
 		text("It asks for your bouncer password. If it can't connect, update the bouncer "+
-			"(Tools > Bouncers > Server > Update).", face)
+			"(Bouncer > Bouncers > Server > Update).", face)
 		a.dlgButtons(c, x, y+h-3, w, d.buttonLabels(a), 0)
 		return
 	}
@@ -210,7 +210,7 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		text(d.cert.SHA1, bold)
 		if b := a.bnc; b.SSH != "" && b.Cert == "" && certProblem(b) == "" {
 			row++
-			text("Or get one Goguma trusts: Tools > Bouncers > Server > Certificate.", face)
+			text("Or get one Goguma trusts: Bouncer > Bouncers > Server > Certificate.", face)
 		}
 	}
 	row++

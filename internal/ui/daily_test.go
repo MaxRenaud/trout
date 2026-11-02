@@ -471,7 +471,7 @@ func TestButtonMnemonics(t *testing.T) {
 	// The Servers dialog has no fields: A alone is Add..., Alt+L Delete.
 	a.openServers()
 	plain('a')
-	if f, ok := a.dlg.(*formBox); !ok || f.Title != "Add Network" {
+	if l, ok := a.dlg.(*listBox); !ok || l.Title != "Add Network" {
 		t.Fatalf("A in Servers opened %T, not Add Network", a.dlg)
 	}
 	a.dlg = nil

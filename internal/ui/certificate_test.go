@@ -238,7 +238,7 @@ func TestPhoneCertificate(t *testing.T) {
 		return strings.Join(strings.Fields(text), " ")
 	}
 	text := open()
-	for _, want := range []string{"Accept Always if its SHA1 is:", cert.SHA1, "Tools > Bouncers > Server > Certificate"} {
+	for _, want := range []string{"Accept Always if its SHA1 is:", cert.SHA1, "Bouncer > Bouncers > Server > Certificate"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("self-signed: no %q in\n%s", want, text)
 		}

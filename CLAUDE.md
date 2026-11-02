@@ -40,8 +40,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/ui`: everything on screen, plus `irc.go`, which turns IRC events into state and
   slash commands into IRC. `app.go` has the App, keys and mouse. `connect.go` has the
   Connect dialog, certificate trust, bouncer switching and settings saving;
-  `bouncerlist.go` is Tools > Bouncers; `soju.go` manages soju's networks through
-  BouncerServ (Connect/Disconnect, the Servers dialog, `/server`, Detach), and `netcert.go`
+  `bouncerlist.go` is Bouncer > Bouncers; `soju.go` manages soju's networks through
+  BouncerServ (Connect/Disconnect, the Servers dialog, `/server`, Detach, `servList` for
+  replies of several lines), `networks.go` is Add Network's list, `bncsettings.go` Bouncer >
+  Settings (networks, channels, account, users, server), and `netcert.go`
   asks about a network's certificate soju can't check (pinned with `-certfp`); `read.go` catches
   up on history and syncs read markers with soju; `find.go` is Ctrl+F; `away.go` has away,
   WHO, WHOIS formatting and the bell; `prompts.go` has the Commands menu prompts, URLs List
@@ -53,7 +55,7 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `upload.go` (Send File through the bouncer's file host); `winopts.go` a window's own
   options and Window > Order; `editwin.go` the multi-line and second editboxes;
   `proxy.go` Options > Connect > Proxy; `form.go` is the text-field dialog they and Kick
-  (why) use; `phone.go` Tools > Connect a Phone (a QR code for Goguma); `scripts.go`
+  (why) use; `phone.go` Bouncer > Connect a Phone (a QR code for Goguma); `scripts.go`
   scripts: the engine's hooks, its Host and `/load`, and `scriptsock.go` scripts'
   sockets (the network side of `/sockopen`); `scripteditor.go` the Scripts Editor
   (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files);
@@ -137,9 +139,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `tier2_test.go` for the Address Book rules, perform and the Tier 2 options;
   `tier3_test.go` for window options, editboxes, hotlinks, Order, DCC options and proxy.
 - `connect_test.go` walks first run, failed logins, certificate trust, settings saving and
-  Tools > Bouncers against a temp config, and soju network management against a scripted
+  Bouncer > Bouncers against a temp config, and soju network management against a scripted
   soju (`fakeSoju`); `TestCatchUp` covers history gaps, missed private messages and read
-  markers. `live_test.go` does the same against the dev soju as the `tester` user (not
+  markers; `bncsettings_test.go` walks Bouncer > Settings the same way, as an admin and
+  not. `live_test.go` does the same against the dev soju as the `tester` user (not
   `trout`, so it stays out of your session), including two clients sharing a read marker;
   `control_live_test.go` has `tester2` and `tester3` join as raw IRC to test auto-op and
   protect, and logs in through a small SOCKS5 proxy.

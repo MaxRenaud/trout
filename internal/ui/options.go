@@ -47,6 +47,7 @@ type optPage struct {
 // optionsBox is a small take on mIRC's Options dialog (Alt+O): categories
 // on the left, settings on the right. Changes apply as you click them.
 type optionsBox struct {
+	Title   string // "" for trout Options
 	pages   []optPage
 	page    int
 	sel     int
@@ -148,8 +149,9 @@ func (a *App) openOptions(page int) {
 		if a.bnc.Pin != "" {
 			notes = append(notes, "Trusted: "+a.bnc.Pin)
 		}
-		notes = append(notes, "", "Tools > Set Up Bouncer puts one on a server.")
+		notes = append(notes, "", "The Bouncer menu has the rest.")
 		o.pages[optBouncer] = optPage{Name: "Bouncer", Notes: notes, Items: []optItem{
+			{Label: "Bouncer settings...", Action: func(a *App) { a.openBouncerSettings(bncNetworks) }},
 			{Label: "Manage bouncers...", Action: (*App).openSavedBouncers},
 		}}
 	}
@@ -173,9 +175,10 @@ func (a *App) connectPage(n *state.Network) optPage {
 		id = a.nets[1]
 	}
 	nick, real := cmp.Or(id.Nick, id.Attrs["nickname"]), id.Attrs["realname"]
+	toConnect := func(a *App) { a.openOptions(optConnect) }
 	return optPage{Name: "Connect", Items: []optItem{
-		{Label: "Nickname: " + nick + "...", Action: func(a *App) { a.openIdentity("Nickname", "-nick", nick) }},
-		{Label: "Real name: " + cmp.Or(real, "(none)") + "...", Action: func(a *App) { a.openIdentity("Real name", "-realname", real) }},
+		{Label: "Nickname: " + nick + "...", Action: func(a *App) { a.openIdentity("Nickname", "-nick", nick, toConnect) }},
+		{Label: "Real name: " + cmp.Or(real, "(none)") + "...", Action: func(a *App) { a.openIdentity("Real name", "-realname", real, toConnect) }},
 		{Label: "Servers, and a network's own names...", Action: (*App).openServers},
 		{Label: "Perform on connect (" + id.Name + ")...", Action: func(a *App) { a.openPerform(id) }},
 		{Label: a.proxyLabel(), Action: (*App).openProxy},
@@ -187,7 +190,7 @@ func (a *App) connectPage(n *state.Network) optPage {
 // openIdentity asks for your nickname or real name for every network,
 // which the bouncer keeps (BouncerServ user update), then shows Connect
 // again.
-func (a *App) openIdentity(what, flag, value string) {
+func (a *App) openIdentity(what, flag, value string, back func(*App)) {
 	a.openDialog(&formBox{Title: what, Buttons: []string{"OK", "Cancel"},
 		Lines:  []string{"Used on every network, except one with its own", "(Select Server > Edit)."},
 		Fields: []*formField{newField(what+":", value, false)},
@@ -209,10 +212,10 @@ func (a *App) openIdentity(what, flag, value string) {
 					n.Attrs[key] = val
 				}
 			}
-			a.openOptions(optConnect)
+			back(a)
 			return nil, nil
 		},
-		OnCancel: func(a *App) tea.Cmd { a.openOptions(optConnect); return nil }})
+		OnCancel: func(a *App) tea.Cmd { back(a); return nil }})
 }
 
 // openStampFormat asks for the timestamp format, in mIRC's notation.
@@ -272,7 +275,7 @@ func (a *App) openDownloadDir() {
 		OnCancel: func(a *App) tea.Cmd { a.openOptions(optDCC); return nil }})
 }
 
-func (o *optionsBox) title() string { return "trout Options" }
+func (o *optionsBox) title() string { return cmp.Or(o.Title, "trout Options") }
 
 // size fits the longest page: its items and notes, plus the frame.
 func (o *optionsBox) size(a *App) (int, int) {

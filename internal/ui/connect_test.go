@@ -106,7 +106,7 @@ func TestConnectFlow(t *testing.T) {
 		t.Fatalf("saved theme %q after F2, want dark", got)
 	}
 
-	// Adding a second bouncer in Tools > Bouncers switches to it and starts
+	// Adding a second bouncer in Bouncer > Bouncers switches to it and starts
 	// over; lines from the old connections don't land anywhere.
 	a.openSavedBouncers()
 	typeText("a")
@@ -196,12 +196,17 @@ func TestSojuNetworks(t *testing.T) {
 
 	// Add a network with a SASL login: created disabled, login set, then
 	// enabled, and its window focused once soju has it.
+	// Add... is the list of networks first; picking one fills in the form.
 	a.openServers()
 	a.dlg.key(a, "insert")
+	l := a.dlg.(*listBox)
+	l.Sel = slices.Index(l.Keys, "OFTC")
+	a.dlg.key(a, "enter")
 	f := a.dlg.(*formBox)
-	for i, v := range []string{"OFTC", "irc.oftc.net", "", "", "", "", "max", `pa"ss word`} {
-		f.Fields[i].Edit.Buf = []rune(v)
+	if got := string(f.Fields[1].Edit.Buf); string(f.Fields[0].Edit.Buf) != "OFTC" || got != "ircs://irc.oftc.net" {
+		t.Fatalf("picked OFTC: the form has %q, %q", string(f.Fields[0].Edit.Buf), got)
 	}
+	f.Fields[6].Edit.Buf, f.Fields[7].Edit.Buf = []rune("max"), []rune(`pa"ss word`)
 	a.dlg.key(a, "enter")
 	if a.dlg != nil {
 		t.Fatalf("Add didn't close: %q", f.Note)

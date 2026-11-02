@@ -150,7 +150,7 @@ func TestScriptsHooks(t *testing.T) {
 		t.Fatal("no Wave in the nicklist popup")
 	}
 	expect("a nicklist popup item", "PRIVMSG #go :\x01ACTION waves at bob\x01")
-	for _, it := range a.menuBarItems(4) {
+	for _, it := range a.menuBarItems(menuCommands) {
 		if it.Label == "Say hi" {
 			it.Action(a)
 		}

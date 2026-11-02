@@ -92,7 +92,7 @@ func TestFrames(t *testing.T) {
 
 	a.themeIdx = 1
 	a.activate(a.nets[0].Wins[0])
-	a.openMenuBar(5)
+	a.openMenuBar(menuWindow)
 	frame("dark status + Window menu")
 
 	a.themeIdx = 0
@@ -250,6 +250,14 @@ func TestFrames(t *testing.T) {
 		{"dcc privacy", func() {
 			a.openDialog(a.dccPrivacyBox(&transfer{net: a.nets[0], nick: "xdcc", file: "pack.bin"}, nil))
 		}},
+		{"bouncer settings", func() {
+			a.bset = &bncState{networks: []string{"Libera.Chat (ircs://irc.libera.chat:6697) [connected as max]: 3 channels",
+				"OFTC (ircs://irc.oftc.net:6697) [disconnected]: connection refused"},
+				channels: []chanStatus{{"#go-nuts", "Libera.Chat", "joined"}, {"#old", "OFTC", "parted, detached"}}}
+			a.openDialog(&optionsBox{Title: bncSettingsTitle, pages: a.bncPages()})
+		}},
+		{"bouncer menu", func() { a.openMenuBar(menuBouncer) }},
+		{"add network: list", func() { a.openAddNetwork(nil) }},
 		{"connect a phone", func() {
 			a.bnc, a.password = config.Bouncer{Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x"}, "abcdefghijkmnpqrstuvwxyz"
 			a.openDialog(&phoneBox{known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567"}})

@@ -35,6 +35,42 @@ type servCmd struct {
 	// onLine, if set, takes a reply of several lines one at a time, until
 	// it says it's done.
 	onLine func(text string) (done bool)
+	// For servList: the marker command sent after this one, whose echo is
+	// dropped too, and what to do with an error reply (the marker's reply
+	// still ends it).
+	extra       string
+	extraEchoed bool
+	onError     func(text string)
+}
+
+// servListEnd is BouncerServ's reply to "help help", which servList sends
+// after a command whose reply is a list of unknown length: soju answers in
+// order, so it marks the end.
+const servListEnd = "help [command]: print help message"
+
+// servList sends BouncerServ a command on the bouncer's own connection and
+// hands done the lines it answers with, or err, quietly.
+func (a *App) servList(args []string, done func(lines []string, err string)) bool {
+	if !a.serv(a.home, a.home.Status(), true, args...) {
+		return false
+	}
+	c := a.serving[len(a.serving)-1]
+	var lines []string
+	c.onLine = func(text string) bool {
+		if text == servListEnd {
+			done(lines, "")
+			return true
+		}
+		lines = append(lines, text)
+		return false
+	}
+	c.onError = func(text string) {
+		c.onLine = func(text string) bool { return text == servListEnd }
+		done(nil, text)
+	}
+	c.extra, c.extraEchoed = "help help", !a.echoed(a.home)
+	a.sendNet(a.home, "PRIVMSG", "BouncerServ", c.extra)
+	return true
 }
 
 // serv sends BouncerServ a command on n's connection: the home one for
@@ -75,9 +111,15 @@ func (a *App) servReply(n *state.Network, m ircmsg.Message) bool {
 	}
 	from, target, text := m.Nick(), m.Params[0], m.Params[1]
 	if strings.EqualFold(from, n.Nick) && strings.EqualFold(target, "BouncerServ") {
-		i := slices.IndexFunc(a.serving, func(c *servCmd) bool { return c.conn == n && !c.echoed && c.text == text })
+		i := slices.IndexFunc(a.serving, func(c *servCmd) bool {
+			return c.conn == n && (!c.echoed && c.text == text || !c.extraEchoed && c.extra == text)
+		})
 		if i >= 0 {
-			a.serving[i].echoed = true
+			if c := a.serving[i]; !c.echoed && c.text == text {
+				c.echoed = true
+			} else {
+				c.extraEchoed = true
+			}
 		}
 		return i >= 0
 	}
@@ -89,6 +131,11 @@ func (a *App) servReply(n *state.Network, m ircmsg.Message) bool {
 		return false
 	}
 	c := a.serving[i]
+	if c.onError != nil && strings.HasPrefix(text, "error") {
+		c.onError(text)
+		c.onError = nil
+		return true
+	}
 	if c.onLine != nil && !strings.HasPrefix(text, "error") {
 		if c.onLine(text) {
 			a.serving = slices.Delete(a.serving, i, i+1)
@@ -291,7 +338,12 @@ func (a *App) networkForm(n *state.Network, back modal) *formBox {
 		newField("Server pass:", "", true),
 		newField("SASL account:", "", false),
 		newField("SASL pass:", "", true),
+		newField("On connect:", "", false),
 	}
+	// soju doesn't say what a network's connect commands are, only takes
+	// new ones.
+	f.Lines = append(f.Lines, "On connect: raw IRC lines split by |, sent when the",
+		"bouncer connects. Empty keeps what it has; - removes them.")
 	if n == nil {
 		f.focus = 1
 	}
@@ -307,6 +359,10 @@ func (a *App) saveNetwork(n *state.Network, vals []string) (tea.Cmd, error) {
 	}
 	name, addr, nick, user, real := vals[0], vals[1], vals[2], vals[3], vals[4]
 	pass, acct, acctPass := vals[5], vals[6], vals[7]
+	var onConnect []string // nil: keep what soju has
+	if len(vals) > 8 {
+		onConnect = connectCommands(vals[8])
+	}
 	if addr == "" {
 		return nil, errors.New("type the network's address, like ircs://irc.libera.chat")
 	}
@@ -343,6 +399,7 @@ func (a *App) saveNetwork(n *state.Network, vals []string) (tea.Cmd, error) {
 		if acct != "" {
 			args = append(args, "-enabled", "false")
 		}
+		args = appendConnectCommands(args, onConnect)
 		a.serv(a.home, home, false, args...)
 		if acct != "" {
 			a.serv(a.home, home, false, "sasl", "set-plain", "-network", name, acct, acctPass)
@@ -376,6 +433,7 @@ func (a *App) saveNetwork(n *state.Network, vals []string) (tea.Cmd, error) {
 	if pass != "" {
 		args = append(args, "-pass", pass)
 	}
+	args = appendConnectCommands(args, onConnect)
 	if len(args) == 3 {
 		if acct == "" {
 			return nil, nil // nothing changed
@@ -387,9 +445,39 @@ func (a *App) saveNetwork(n *state.Network, vals []string) (tea.Cmd, error) {
 	return nil, nil
 }
 
+// connectCommands is the network form's On connect field: commands split
+// by | (mIRC's separator), [""] for "-" (soju's way to remove them all), or
+// nil when it's empty.
+func connectCommands(field string) []string {
+	switch field = strings.TrimSpace(field); field {
+	case "":
+		return nil
+	case "-":
+		return []string{""}
+	}
+	var cmds []string
+	for c := range strings.SplitSeq(field, "|") {
+		if c = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(c), "/")); c != "" {
+			cmds = append(cmds, c)
+		}
+	}
+	return cmds
+}
+
+func appendConnectCommands(args, cmds []string) []string {
+	for _, c := range cmds {
+		args = append(args, "-connect-command", c)
+	}
+	return args
+}
+
 // serversBox is File > Select Server: soju's networks in a list, like
-// mIRC's server list, with buttons down the right.
-type serversBox struct{ sel, top int }
+// mIRC's server list, with buttons down the right. back, if set, is what
+// Close goes back to (Bouncer > Settings).
+type serversBox struct {
+	sel, top int
+	back     func(*App)
+}
 
 var serverButtons = []string{"Connect", "Disconnect", "Add...", "Edit...", "Delete", "Close"}
 
@@ -474,6 +562,9 @@ func (d *serversBox) press(a *App, button string) tea.Cmd {
 	}
 	if button == "Close" {
 		a.dlg = nil
+		if d.back != nil {
+			d.back(a)
+		}
 		return nil
 	}
 	if a.opts.Demo {
@@ -484,7 +575,7 @@ func (d *serversBox) press(a *App, button string) tea.Cmd {
 	}
 	switch {
 	case button == "Add...":
-		a.openDialog(a.networkForm(nil, d))
+		a.openAddNetwork(d)
 	case n == nil:
 	case button == "Connect":
 		a.dlg = nil
@@ -531,7 +622,7 @@ func (d *serversBox) key(a *App, k string) tea.Cmd {
 	case "insert":
 		return d.press(a, "Add...")
 	case "esc":
-		a.dlg = nil
+		return d.press(a, "Close")
 	}
 	return nil
 }
@@ -551,7 +642,7 @@ func (d *serversBox) mouse(a *App, m tea.MouseMsg, r Region, double bool) tea.Cm
 	case r.S == "button":
 		return d.press(a, serverButtons[r.I])
 	case r.S == "close":
-		a.dlg = nil
+		return d.press(a, "Close")
 	}
 	return nil
 }
