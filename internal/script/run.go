@@ -283,7 +283,39 @@ func (r *run) command(fr *frame, text string) error {
 	if strings.HasPrefix(name, "%") && (rest == "=" || strings.HasPrefix(rest, "= ")) {
 		return r.assign(fr, name[1:], strings.TrimSpace(strings.TrimPrefix(rest, "=")))
 	}
+	if strings.EqualFold(name, "clear") && (noAlias || r.e.alias(fr.file, name) == nil) {
+		// A custom window's here; any other is the client's.
+		line, err := r.eval(fr, rest)
+		if err != nil || r.cmdClear(fr, line) {
+			return err
+		}
+		cmd := "/" + iff(quiet, ".", "") + "clear"
+		if line != "" {
+			cmd += " " + line
+		}
+		r.actions = append(r.actions, Action{Command: cmd, Network: fr.network, Window: fr.window})
+		return nil
+	}
 	switch strings.ToLower(name) {
+	case "window", "aline", "iline", "rline", "dline", "cline", "sline", "renwin", "loadbuf", "savebuf", "filter":
+		line, err := r.eval(fr, rest)
+		if err != nil {
+			return err
+		}
+		switch cmd := strings.ToLower(name); cmd {
+		case "window":
+			return r.cmdWindow(fr, line)
+		case "renwin":
+			return r.cmdRenwin(line)
+		case "loadbuf":
+			return r.cmdLoadbuf(fr, line)
+		case "savebuf":
+			return r.cmdSavebuf(fr, line)
+		case "filter":
+			return r.cmdFilter(fr, line)
+		default:
+			return r.cmdLine(fr, cmd, line)
+		}
 	case "set":
 		return r.cmdSet(fr, rest)
 	case "var":
@@ -735,6 +767,13 @@ func (r *run) cmdEcho(fr *frame, rest string) error {
 	case strings.Contains(sw, "s"):
 	case strings.Contains(sw, "a"):
 		net, win = r.h.Active()
+		if strings.HasPrefix(win, "@") && len(words) > 0 {
+			r.echoWindow(win, color, strings.Join(words, " "))
+			return nil
+		}
+	case len(words) > 1 && strings.HasPrefix(words[0], "@"):
+		r.echoWindow(words[0], color, strings.Join(words[1:], " "))
+		return nil
 	case len(words) > 1 && (isChannel(words[0]) || strings.HasPrefix(words[0], "=") || r.h.HasWindow(fr.network, words[0])):
 		net, win = fr.network, words[0]
 		words = words[1:]
@@ -816,7 +855,8 @@ var engineCommands = []string{"set", "var", "unset", "unsetall", "inc", "dec", "
 	"writeini", "remini", "flushini", "remove", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
 	"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
 	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel",
-	"sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename"}
+	"sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename",
+	"window", "aline", "iline", "rline", "dline", "cline", "sline", "renwin", "loadbuf", "savebuf", "filter", "clear"}
 
 // Commands is the scripting commands the engine runs itself, sorted, for
 // the Scripts Editor's Help. (The client's own commands work in scripts

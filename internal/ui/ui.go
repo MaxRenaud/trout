@@ -35,6 +35,9 @@ const (
 	HitURL
 	HitTransfer // a Get window's Cancel or Open Folder button
 	HitNickText // a nick in a channel's text: S is the nick
+	HitCustom   // a custom window's listbox line (I, -1 for none); S "side" for its side listbox
+	HitCustomScroll
+	HitSideScroll
 )
 
 // Region is a clickable area recorded while drawing. Later regions sit on
@@ -276,10 +279,10 @@ func (a *App) switchLayout(y int) (btns []switchBtn, rows int) {
 	var items []item
 	longest := 0
 	for _, w := range a.switchOrder() {
-		name := w.Name
-		if w.Kind == state.KStatus {
-			name = w.Net.Name
+		if !onBar(w) {
+			continue
 		}
+		name := barName(w)
 		items = append(items, item{w, name, w.Kind != state.KStatus && w == a.active})
 		longest = max(longest, runewidth.StringWidth(name))
 	}
@@ -425,7 +428,7 @@ func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
 		if n.Collapsed {
 			continue
 		}
-		kids := n.Wins[1:]
+		kids := slices.DeleteFunc(slices.Clone(n.Wins[1:]), func(w *state.Window) bool { return !onBar(w) })
 		for i, win := range kids {
 			if row >= y+h {
 				break
@@ -435,7 +438,7 @@ func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
 				branch = "└─"
 			}
 			c.Text(x+2, row, 2, branch, lines)
-			item(win, x+4, win.Name)
+			item(win, x+4, barName(win))
 			row++
 		}
 	}
@@ -450,6 +453,10 @@ func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
 func (a *App) drawWindow(c *Canvas, win *state.Window, x, y, w, h int) {
 	if win.Kind == state.KTransfer { // no text or editbox, like mIRC's
 		a.drawTransfer(c, win, x, y, w, h)
+		return
+	}
+	if win.Kind == state.KCustom {
+		a.drawCustom(c, win, x, y, w, h)
 		return
 	}
 	t := a.theme()
@@ -803,6 +810,8 @@ func (a *App) winTitle(w *state.Window) string {
 			return fmt.Sprintf("%s (%d%%)", w.Name, tr.got*100/tr.size)
 		}
 		return w.Name
+	case state.KCustom:
+		return customTitle(w)
 	case state.KChannel:
 		s := fmt.Sprintf("%s [%d] [+%s]", w.Name, len(w.Nicks), w.Modes)
 		if w.Topic != "" {

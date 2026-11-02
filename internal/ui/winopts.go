@@ -43,6 +43,9 @@ func (a *App) setWinOpts(w *state.Window, edit func(*config.WindowOpts)) {
 
 // stampsFor is whether w shows timestamps: its own choice, or Options.
 func (a *App) stampsFor(w *state.Window) bool {
+	if w.Kind == state.KCustom { // a script's lines are as it wrote them, like mIRC's
+		return false
+	}
 	switch a.winOpts(w).Timestamps {
 	case "on":
 		return true

@@ -566,7 +566,7 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 			a.openScriptsTab(edPopups)
 			return nil
 		case ch == 'q': // the second editbox, like mIRC
-			if a.active.Kind != state.KTransfer {
+			if a.active.Kind != state.KTransfer && a.active.Kind != state.KCustom {
 				a.toggleEdit2(a.active)
 			}
 			return nil
@@ -580,6 +580,11 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	}
 	if a.nickFocus {
 		if cmd, ok := a.nickKey(s); ok {
+			return cmd
+		}
+	}
+	if w := a.active; w.Kind == state.KCustom {
+		if cmd, ok := a.customKey(w, s); ok {
 			return cmd
 		}
 	}
@@ -834,7 +839,8 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 	}
 	if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft {
 		r, ok := a.hit(m.X, m.Y)
-		if ok && r.S == "thumb" && (r.Kind == HitMsgScroll || r.Kind == HitNickScroll || r.Kind == HitDlg) {
+		if ok && r.S == "thumb" && (r.Kind == HitMsgScroll || r.Kind == HitNickScroll || r.Kind == HitDlg ||
+			r.Kind == HitCustomScroll || r.Kind == HitSideScroll) {
 			a.drag, a.thumbKind, a.thumbGrab = dragThumb, r.Kind, m.Y-r.Y
 			return nil
 		}
@@ -911,6 +917,12 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			w.Scroll += d
 		case HitNick, HitNickScroll:
 			w.NickTop -= d
+		case HitCustom, HitCustomScroll, HitSideScroll:
+			if r.S == "side" || r.Kind == HitSideScroll {
+				w.Custom.SideTop -= d
+			} else {
+				w.Scroll -= d // a listbox's first line
+			}
 		}
 		return nil
 	case tea.MouseButtonLeft, tea.MouseButtonRight:
@@ -956,9 +968,18 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		a.drag = dragTree
 	case HitNickSplit:
 		a.drag = dragNick
+	case HitCustom:
+		return a.customClick(w, r, double, right, m.X, m.Y)
+	case HitCustomScroll:
+		w.Scroll += scrollStep(r.I, a.msgH)
+	case HitSideScroll:
+		w.Custom.SideTop += scrollStep(r.I, a.msgH)
 	case HitMsg, HitURL, HitNickText:
 		a.nickFocus = false
 		switch {
+		case w.Kind == state.KCustom && (right || double) && r.Kind != HitURL:
+			// A custom window's dclick, or its rclick and popup.
+			return a.customTextClick(w, double, m.X, m.Y)
 		case right && r.Kind == HitNickText: // a nick hotlink's popup
 			a.nickMenu(w, r.S, m.X, m.Y)
 		case m.Ctrl && m.Button == tea.MouseButtonLeft: // copy with codes, like mIRC
@@ -1046,6 +1067,10 @@ func (a *App) dragThumbTo(y int) {
 		a.active.Scroll = g.total - g.visible - top
 	case HitNickScroll:
 		a.active.NickTop = top
+	case HitCustomScroll:
+		a.active.Scroll = top
+	case HitSideScroll:
+		a.active.Custom.SideTop = top
 	case HitDlg:
 		switch d := a.dlg.(type) {
 		case *listBox:
@@ -1134,7 +1159,7 @@ func (a *App) submit(w *state.Window) tea.Cmd {
 		return nil
 	}
 	w.Scroll = 0
-	if w.Kind == state.KTransfer { // nothing to say to a download
+	if w.Kind == state.KTransfer || w.Kind == state.KCustom && !w.Custom.Editbox { // nothing to type in
 		return nil
 	}
 	// A multi-line editbox sends each line as if typed on its own.
@@ -1151,6 +1176,14 @@ func (a *App) submit(w *state.Window) tea.Cmd {
 		}
 		if cmd, ok := strings.CutPrefix(line, cmp.Or(a.cmdPrefix, "/")); ok { // Options > Other
 			cmds = append(cmds, a.typedCommand(w, cmd))
+			continue
+		}
+		if w.Kind == state.KCustom {
+			// Its default command (/window's /command) gets the text, like
+			// mIRC's; without one, only on INPUT sees it.
+			if c := strings.TrimPrefix(w.Custom.Command, "/"); c != "" {
+				cmds = append(cmds, a.typedCommand(w, c+" "+line))
+			}
 			continue
 		}
 		a.say(w, line)
@@ -1302,7 +1335,11 @@ func (a *App) demoCommand(w *state.Window, line string) tea.Cmd {
 func (a *App) order() []*state.Window {
 	var out []*state.Window
 	for _, n := range a.nets {
-		out = append(out, n.Wins...)
+		for _, w := range n.Wins {
+			if w.Custom == nil || !w.Custom.Hidden { // a custom window opened -h isn't anywhere
+				out = append(out, w)
+			}
+		}
 	}
 	return out
 }
@@ -1314,6 +1351,9 @@ func (a *App) activate(w *state.Window) {
 	}
 	a.active = w
 	a.nickFocus = false
+	if w.Custom != nil {
+		w.Custom.Minimized, w.Custom.Highlight = false, 0
+	}
 	if a.find != nil && a.find.win != w {
 		a.find = nil
 	}
@@ -1355,9 +1395,12 @@ func (a *App) closeWindow(w *state.Window) {
 		a.chatClose(w)
 	}
 	a.removeWindow(w)
-	if w.Kind == state.KQuery || w.Kind == state.KChat { // on CLOSE:?: and on CLOSE:=:
-		a.queueScript(a.scriptEvent(script.Event{Kind: "CLOSE", Network: w.Net.Name,
-			Nick: strings.TrimPrefix(w.Name, "="), Target: w.Name}))
+	if w.Kind == state.KQuery || w.Kind == state.KChat || w.Kind == state.KCustom { // on CLOSE:?: =: and @:
+		ev := script.Event{Kind: "CLOSE", Network: w.Net.Name, Nick: strings.TrimPrefix(w.Name, "="), Target: w.Name}
+		if w.Kind == state.KCustom {
+			ev.Nick = ""
+		}
+		a.queueScript(a.scriptEvent(ev))
 	}
 }
 

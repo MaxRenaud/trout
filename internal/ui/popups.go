@@ -165,6 +165,10 @@ func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
 // textMenu is the popup for right-clicking a window's text: the status,
 // channel or query popup. In a query, $1 is who it's with, like mIRC.
 func (a *App) textMenu(w *state.Window, x, y int) {
+	if w.Kind == state.KCustom {
+		a.customMenu(w, 0, x, y)
+		return
+	}
 	kind := map[state.Kind]string{state.KStatus: "status", state.KChannel: "channel", state.KQuery: "query"}[w.Kind]
 	if kind == "" {
 		return

@@ -491,6 +491,9 @@ func (a *App) scriptWindow(network, window string) *state.Window {
 	if window == "" {
 		return n.Status()
 	}
+	if w := a.customWin(window); w != nil && strings.HasPrefix(window, "@") {
+		return w
+	}
 	for _, w := range n.Wins {
 		if n.Same(w.Name, window) {
 			return w

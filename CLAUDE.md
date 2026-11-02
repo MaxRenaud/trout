@@ -85,8 +85,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   asks at startup. `notify.go` is how it shows a notification (OSC 9, 777 or kitty's 99),
   for tips (`ui/away.go`'s `tipFor`, beside the bell).
 - `internal/script`: mIRC scripting (aliases, events, variables, identifiers, hash
-  tables, timers, regex, popups, files, the Users list), pure: events in, actions out;
-  `ui/scripts.go` hooks it into the client (`docs/scripting.md` is what users get,
+  tables, timers, regex, popups, files, the Users list), pure: events in, actions out
+  (custom windows change through the host as a script runs, like mIRC's);
+  `ui/scripts.go` hooks it into the client, and `window.go` with `ui/customwin.go` are custom
+  `@windows` (`docs/scripting.md` is what users get,
   `tmp/scripting.md` the design). Its tests are
   user-journey transcripts in `testdata/journeys/`, `spec_test.go` (from the help file),
   `mirc_test.go` (against real mIRC, `-tags mirc`) and `corpus_test.go` (real scripts in

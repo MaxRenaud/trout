@@ -386,6 +386,8 @@ func (a *App) windowMenu(w *state.Window, x, y int) {
 		items = []MenuItem{clear, {Sep: true}, connect, disconnect, save}
 	case state.KChat:
 		items = []MenuItem{clear, closeAs("Close"), {Sep: true}, save}
+	case state.KCustom:
+		items = []MenuItem{clear, closeAs("Close"), {Sep: true}, save}
 	case state.KTransfer:
 		tr := a.transferFor(w)
 		items = []MenuItem{
@@ -404,7 +406,7 @@ func (a *App) windowMenu(w *state.Window, x, y int) {
 		whois := MenuItem{Label: "Whois", Action: func(a *App) tea.Cmd { a.sendTo(w, "WHOIS", w.Name); return nil }}
 		items = []MenuItem{clear, closeAs("Close"), {Sep: true}, whois, save}
 	}
-	if w.Kind != state.KTransfer {
+	if w.Kind != state.KTransfer && w.Kind != state.KCustom {
 		items = append(append(items, MenuItem{Sep: true}), a.winOptItems(w)...)
 	}
 	a.closeMenus()

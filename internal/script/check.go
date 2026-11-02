@@ -24,10 +24,8 @@ var (
 	// custom windows: a script using them loads (the rest of it works),
 	// with a Problem, and the client says so when it gets to them, rather
 	// than sending them to the server.
-	windows     = "custom windows aren't supported"
+	windows     = "picture windows aren't supported"
 	unsupported = map[string]string{
-		"window": windows, "aline": windows, "cline": windows, "dline": windows, "iline": windows,
-		"rline": windows, "sline": windows, "renwin": windows, "loadbuf": windows, "filter": windows,
 		"drawtext": windows, "drawline": windows, "drawrect": windows, "drawdot": windows,
 		"drawfill": windows, "drawpic": windows, "drawsave": windows, "drawcopy": windows,
 		"drawreplace": windows, "drawscroll": windows, "drawsize": windows,

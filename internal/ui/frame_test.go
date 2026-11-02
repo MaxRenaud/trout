@@ -230,6 +230,23 @@ func TestFrames(t *testing.T) {
 			a.transfers = append(a.transfers, tr)
 			a.activate(tr.win)
 		}},
+		{"custom window: listbox", func() {
+			n := a.nets[0]
+			line := func(text string, color int, sel bool) state.Line {
+				return state.Line{Role: state.RoleNormal, Text: text, Color: color, Sel: sel}
+			}
+			w := n.Add(&state.Window{Kind: state.KCustom, Name: "@clones", Custom: &state.Custom{Listbox: true, SideW: 12,
+				Side: []state.Line{line("3 hosts", 0, false), line("2 nicks", 0, true)}}})
+			w.Lines = []state.Line{line("*!*@host1.example: bob, bobby, b0b", 0, false),
+				line("*!*@host2.example: ann, anne", 5, true), line("*!*@\x02bold\x02.example: zed", 0, false)}
+			a.activate(w)
+		}},
+		{"custom window: text", func() {
+			n := a.nets[0]
+			w := n.Add(&state.Window{Kind: state.KCustom, Name: "@hl", Custom: &state.Custom{Editbox: true, Title: "highlights"}})
+			w.Lines = []state.Line{{Text: "#trout <bob> max: look at this", Color: 5}, {Text: "#go <ann> max, ping"}}
+			a.activate(w)
+		}},
 		{"dcc privacy", func() {
 			a.openDialog(a.dccPrivacyBox(&transfer{net: a.nets[0], nick: "xdcc", file: "pack.bin"}, nil))
 		}},

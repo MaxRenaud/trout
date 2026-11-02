@@ -308,8 +308,16 @@ func firstWord(s string) string {
 
 // windowLoc matches on OPEN's, CLOSE's and INPUT's location: ? a query, #
 // a channel (INPUT), = a DCC chat, @ a custom window, ! a fileserver, * any
-// window.
+// window; or windows by name, like the help's on 1:INPUT:#mIRC:.
 func windowLoc(loc, window string) bool {
+	if len(loc) > 1 {
+		for name := range strings.SplitSeq(loc, ",") {
+			if window != "" && wildMatch(name, window, false) {
+				return true
+			}
+		}
+		return false
+	}
 	kind := "?"
 	switch {
 	case window == "":

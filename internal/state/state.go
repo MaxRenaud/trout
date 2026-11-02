@@ -17,6 +17,7 @@ const (
 	KQuery
 	KTransfer // a DCC Get window, like mIRC's: a download's progress
 	KChat     // a DCC chat, =nick like mIRC
+	KCustom   // a script's @window, like mIRC's custom windows
 )
 
 // Activity is unseen activity in a window, shown as switchbar and treebar
@@ -68,6 +69,7 @@ type Line struct {
 	// is a rule that highlights without the bell.
 	Color  int
 	NoBeep bool
+	Sel    bool // selected, in a custom window's listbox
 }
 
 // ListEntry is one entry of a channel's ban, exception or invite list.
@@ -122,8 +124,32 @@ type Window struct {
 
 	// Joined is false for a channel window you've left or been kicked from.
 	Joined bool
+	// Custom is a custom window's settings (KCustom).
+	Custom *Custom
 	// names collects a NAMES reply until RPL_ENDOFNAMES.
 	names []Nick
+}
+
+// Custom is a script's @window's settings, mIRC's /window switches. Its
+// lines are the window's Lines, or a list to pick from when Listbox.
+type Custom struct {
+	Listbox    bool
+	SideW      int    // a side listbox this many characters wide
+	Side       []Line // its lines
+	SideTop    int    // the side listbox's first line in view
+	Editbox    bool
+	Sort       bool // lines kept in order (the scripts keep them so)
+	SortSide   bool
+	HidePrefix bool // the switchbar says the name without its @
+	Hidden     bool // not shown anywhere
+	NoButton   bool // not on the switchbar or treebar
+	Minimized  bool // not looked at since it opened minimized
+	AnyConn    bool
+	Title      string // after the name in the title bar
+	Command    string // what typed text goes to
+	Popup      string
+	Buffer     int
+	Highlight  int // its button's color: 1 message, 2 highlight
 }
 
 type Network struct {

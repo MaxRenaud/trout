@@ -1,0 +1,143 @@
+Custom windows: a highlights log (and on INPUT for windows by name), a listbox with mouse events, and what mIRC
+7.86 did where its help is silent (tmp/win-oracle.mrc): new windows come to
+the front unless minimized, -n duplicates, sorting, selection, /filter,
+/savebuf and /loadbuf, $window, $line, $fline and $sline, and the errors.
+
+-- log.mrc --
+on *:TEXT:*trout*:#:{
+  if (!$window(@hl)) window -nk0 @hl
+  aline -h @hl $chan < $+ $nick $+ > $1-
+  if ($line(@hl,0) > 2) dline @hl 1
+}
+alias hl echo -a $window(@hl) $window(@hl).state $window(@hl).sbtext lines= $+ $line(@hl,0)
+on *:INPUT:#trout,@x:echo -s input in $target
+-- list.mrc --
+alias friends {
+  window -l @friends
+  aline -s @friends carol
+  aline @friends alice
+  aline 4 @friends bob
+  echo -s active= $+ $active type= $+ $window(@friends).type lb= $+ $window(@friends).lb
+}
+menu @friends {
+  dclick:echo -s query $line(@friends,$1)
+  lbclick:echo -s picked $sline(@friends,1) at $sline(@friends,1).ln of $sline(@friends,0)
+  Remove:dline @friends $sline(@friends,1).ln
+}
+on *:CLOSE:@:echo -s closed $target
+-- edge.mrc --
+alias sorted {
+  window -s @s
+  aline @s pear | aline @s Apple | aline @s banana
+  aline -n @s pear | aline -n @s PEAR
+}
+alias lines {
+  window @t
+  aline @t one | aline @t two | aline 4 @t three
+  iline @t 2 inserted | rline @t 3 replaced | iline @t 99 last
+  echo -s n= $+ $line(@t,0) l2= $+ $line(@t,2) c1= $+ $line(@t,1).color c4= $+ $line(@t,4).color none= $+ $line(@t,50)
+  echo -s fline= $+ $fline(@t,*R*,0) first= $+ $fline(@t,*r*,1) text= $+ $fline(@t,*r*,1).text
+  dline @t 2-3 | dline @t 50 | dline @t 3-1
+  echo @t echoed
+  echo 4 @nope nothing, and no error
+  sline @t 1
+  echo -s sline-in-text= $+ $sline(@t,0)
+}
+alias bufs {
+  window -n @a
+  aline @a x1 | aline @a y2
+  window -n @f
+  filter -ww @a @f *1*
+  echo -s filtered= $+ $filtered
+  savebuf @a buf.txt
+  window -n @g
+  loadbuf @g buf.txt
+  filter -wwc @a @f *
+  echo -s windows= $+ $window(0) first= $+ $window(1) wild= $+ $window(@?,0) minimized= $+ $window(@a).state
+}
+alias errs1 aline @nope text
+alias errs2 window nopfx
+alias errs3 iline @a 0 x
+alias errs4 renwin @zz @yy
+alias errs5 window -p @pic
+alias names {
+  renwin @a @b new topic here
+  echo -s renamed= $+ $window(@b) old= $+ $window(@a) title= $+ $window(@b).title
+  window -a @b
+  echo -s active= $+ $active
+  window -c @b
+  echo -s closed= $+ $window(@b)
+}
+-- transcript --
+me trout
+chan #trout @trout bob
+active #trout
+< :bob!b@h PRIVMSG #trout :trout is great
+< :bob!b@h PRIVMSG #trout :I like trout
+< :ann!a@h PRIVMSG #trout :trout again
+/hl
+= status: input in #trout
+= #trout: @hl minimized hl lines=2
+type hello
+= status: input in #trout
+> /say hello
+show @hl
+| @hl 1: #trout <bob> I like trout
+| @hl 2: #trout <ann> trout again
+/friends
+= status: input in #trout
+= status: active=@friends type=listbox lb=1
+show @friends
+| @friends 1*: carol
+| @friends 2: alice
+| @friends 3: bob (4)
+click @friends 2
+= status: picked alice at 2 of 1
+dclick @friends 3
+= status: query bob
+pick @friends Remove
+show @friends
+| @friends 1: carol
+| @friends 2: bob (4)
+close @friends
+= status: closed @friends
+show @friends
+| @friends isn't open
+/sorted
+show @s
+| @s 1: Apple
+| @s 2: banana
+| @s 3: pear
+| @s 4: PEAR
+/lines
+= status: n=5 l2=inserted c1=1 c4=4 none=
+= status: fline=3 first=2 text=inserted
+= status: sline-in-text=
+show @t
+| @t 1: one
+| @t 2: three (4)
+| @t 3: last
+| @t 4: echoed
+/bufs
+= status: filtered=1
+= status: windows=6 first=@hl wild=5 minimized=minimized
+show @f
+| @f 1: x1
+| @f 2: y2
+show @g
+| @g 1: x1
+| @g 2: y2
+/errs1
+= status: * /aline: invalid window (line 30, edge.mrc)
+/errs2
+= status: * /window: invalid parameters (line 31, edge.mrc)
+/errs3
+= status: * /iline: invalid parameters (line 32, edge.mrc)
+/errs4
+= status: * /renwin: invalid window (line 33, edge.mrc)
+/errs5
+= status: * /window: picture windows aren't supported (line 34, edge.mrc)
+/names
+= status: renamed=@b old= title=new topic here
+= status: active=@b
+= status: closed=

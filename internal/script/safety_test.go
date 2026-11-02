@@ -472,11 +472,13 @@ func TestRenameOrder(t *testing.T) {
 func TestLookup(t *testing.T) {
 	for name, want := range map[string]string{
 		"$nick":    "$nick works in trout.",
-		"$window":  "isn't supported yet",
+		"$mouse":   "isn't supported yet",
+		"$window":  "works in trout",
 		"$dll":     "DLLs aren't supported",
 		"$frobble": "isn't an identifier",
 		"/hadd":    "a scripting command",
-		"aline":    "custom windows",
+		"aline":    "a scripting command",
+		"drawdot":  "picture windows",
 		"msg":      "as if you typed it",
 	} {
 		if got := Lookup(name); !strings.Contains(got, want) {

@@ -36,7 +36,7 @@ menu menubar {
 on ^*:PART:#:echo $chan custom part: $nick | haltdef
 on *:CONNECT:echo -s connected to $network
 on *:OPEN:?:*:msg $nick auto-reply
-alias windowy aline @x hi | splay ding.wav | echo -a after
+alias windowy drawdot @x 1 1 | splay ding.wav | echo -a after
 `
 
 // TestScriptsHooks loads a script and drives each of trout's hooks for it
@@ -97,7 +97,7 @@ func TestScriptsHooks(t *testing.T) {
 	a.scriptMem = map[string]string{"hooks.mrc": hookScript}
 	typed(w, "/load -rs hooks.mrc")
 	if !slices.ContainsFunc(w.Lines, func(l state.Line) bool { return l.Text == "* Loaded hooks.mrc" }) ||
-		lastLine(w) != "*   line 15: /aline: custom windows aren't supported" {
+		lastLine(w) != "*   line 15: /drawdot: picture windows aren't supported" {
 		t.Fatalf("loading: %q", lastLine(w))
 	}
 	if !slices.Contains(a.book().Scripts, "hooks.mrc") {
@@ -159,11 +159,11 @@ func TestScriptsHooks(t *testing.T) {
 
 	typed(w, "/windowy")
 	expect("mIRC's window and sound commands don't reach the server")
-	if got := lastLine(n.Status()); got != "* /aline: custom windows aren't supported" {
-		t.Errorf("/aline: %q", got)
+	if got := lastLine(n.Status()); got != "* /drawdot: picture windows aren't supported" {
+		t.Errorf("/drawdot: %q", got)
 	}
 	if got := lastLine(w); got != "after" {
-		t.Errorf("after /aline: %q", got)
+		t.Errorf("after /drawdot: %q", got)
 	}
 	typed(w, "/ping bob")
 	select {
@@ -898,7 +898,7 @@ func TestScriptsEditorMenus(t *testing.T) {
 
 	// Help: Search says what trout does with a name.
 	ed.helpTopic(a, "Search...")
-	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("$window")}
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("$mouse")}
 	a.dlg.key(a, "enter")
 	if m, ok := a.dlg.(*msgBox); !ok || !strings.Contains(m.Lines[0], "isn't supported yet") {
 		t.Errorf("Search: %#v", a.dlg)

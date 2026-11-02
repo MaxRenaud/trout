@@ -116,6 +116,54 @@ func (e *Engine) Popups(kind, network, window string, params []string, h Host) (
 	return out, r.finish()
 }
 
+// isMouseEvent reports whether a custom window's menu item is one of
+// mIRC's mouse events, which run on a click instead of showing.
+func isMouseEvent(label string) bool {
+	return slices.Contains([]string{"mouse", "sclick", "dclick", "uclick", "rclick", "lbclick", "leave", "drop"},
+		strings.ToLower(label))
+}
+
+// WindowEvent runs a custom window's mouse event from its menu (menu
+// @name with sclick:, dclick:, lbclick:, rclick:...), with params as $1-:
+// the line number, for the listbox's. The client sends sclick on a click,
+// dclick on a double click, lbclick when a listbox line is selected, and
+// rclick before the popup.
+func (e *Engine) WindowEvent(event, network, window string, params []string, h Host) []Action {
+	r := e.newRun(h)
+	kind := strings.ToLower(window)
+	for _, f := range e.scripts {
+		for _, pop := range f.popups {
+			if !slices.Contains(pop.kinds, kind) {
+				continue
+			}
+			for _, it := range pop.items {
+				if it.depth == 0 && strings.EqualFold(it.label, event) && it.body != nil {
+					r.steps = 0
+					fr := r.menuFrame(f, kind, network, window, params)
+					r.report(fr, r.block(fr, it.body))
+				}
+			}
+		}
+	}
+	return r.finish()
+}
+
+// HasWindowEvent reports whether any script has a custom window's mouse
+// event, so the client knows a double click does something.
+func (e *Engine) HasWindowEvent(event, window string) bool {
+	kind := strings.ToLower(window)
+	for _, f := range e.scripts {
+		for _, pop := range f.popups {
+			if slices.Contains(pop.kinds, kind) && slices.ContainsFunc(pop.items, func(it popupItem) bool {
+				return it.depth == 0 && strings.EqualFold(it.label, event)
+			}) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (r *run) menuFrame(f *file, kind, network, window string, params []string) *frame {
 	fr := &frame{file: f, network: network, window: window, params: params, typed: true, menu: kind}
 	if isChannel(window) {
@@ -131,6 +179,12 @@ func (r *run) menuItems(fr *frame, items []popupItem, i, depth int, id string) (
 		it := items[i]
 		if it.depth > depth {
 			// Deeper than its parent allows: skip it.
+			i++
+			continue
+		}
+		if depth == 0 && strings.HasPrefix(fr.menu, "@") && isMouseEvent(it.label) {
+			// A custom window's sclick, dclick...: not an item, but what a
+			// click runs (WindowEvent).
 			i++
 			continue
 		}

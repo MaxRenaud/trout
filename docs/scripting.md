@@ -156,6 +156,15 @@ popup items and typed lines, and in the alias such a line calls.
   certificate that doesn't check out), `/sockwrite`, `/sockread` into a `%variable`,
   `/sockclose`, `/sockmark`, `/sockrename`, `$sock()`, `$sockname`, `$sockerr`,
   `$sockbr`, and `$iptype`. A web API or a whois server is a few lines, like mIRC's.
+- **Custom windows**: `@windows` of text or a listbox (`/window -l`), with a side
+  listbox (`-lN`), an editbox (`-e`) and its default command, sorted (`-s`), opened
+  minimized (`-n`), hidden (`-h`) or without a button (`-w0`, `-k0` for one without its
+  `@`); `/aline`, `/iline`, `/rline`, `/dline`, `/cline`, `/sline` (with `-s`, `-a`,
+  `-n`, `-h`, `-l`), `/echo @name`, `/clear`, `/renwin`, `/loadbuf`, `/savebuf` and
+  `/filter`; `$window`, `$line`, `$fline`, `$sline` and `$filtered`. A `menu @name`
+  section is its popup, and its `sclick`, `dclick`, `lbclick` and `rclick` items run on
+  clicks (`$1` is the line), Up, Down and Enter in a listbox; `on INPUT:@name:` and
+  `on CLOSE:@:` work too. Checked against mIRC 7.86 where its help is silent.
 
 A script's commands run as if you typed them: `/msg`, `/mode` and the rest go through
 trout's own commands, and anything trout doesn't know goes to the server.
@@ -167,8 +176,9 @@ trout's own commands, and anything trout doesn't know goes to the server.
   script runs.
 - **Sockets' binary variables** (`&binvar`), `/sockpause`, `/socklist` and STARTTLS
   (`-t`) give an error when reached.
-- **Loaded, with an error when reached**: custom `@windows` (`/window`, `/aline`...) and
-  the mIRC identifiers trout doesn't have yet. `/load` and the ✓ button list them.
+- **Loaded, with an error when reached**: picture windows (`/window -p`, `/drawdot` and
+  the other drawing commands), popup files given to `/window`, `/filter -a`, and the mIRC
+  identifiers trout doesn't have yet. `/load` and the ✓ button list them.
 - **Ignored**: sounds (`/splay`); `/beep` is the terminal's bell.
 - **`$?` in events**: input boxes only work in popups and typed lines.
 - **Regular expressions** are Go's (RE2): no lookarounds or backreferences. Using one is
@@ -184,6 +194,9 @@ trout's own commands, and anything trout doesn't know goes to the server.
   script, with mIRC's "No such identifier" message.
 - Timers run outside any script, so they can't call another script's `alias -l`.
 - `isop` counts owners and admins (`~`, `&`) as ops.
+- Custom windows are always full size, like trout's other windows: their positions,
+  sizes, fonts and icons are left out, and `$window().x`, `.y`, `.w` and `.h` are 0.
+  `/savebuf` and `/filter` only read custom windows (the bouncer keeps the others' logs).
 - A socket that fails says so in mIRC's terms (`$sockerr` 3, or 4 for a name that doesn't
   resolve, and Windows' error numbers in `$sock().wserr`), whatever the system.
 

@@ -129,6 +129,7 @@ type Engine struct {
 	tables     map[string]*table    // hash tables, by lower-case name
 	timers     []*timer
 	regml      regexMatches // the last matches, for $regml
+	filtered   int          // how many lines the last /filter found: $filtered
 	regexes    map[string]*compiledRegex
 	handles    map[string]*handle // /fopen's files, by lower-case name
 	ferr       bool               // $ferr: the last file access failed

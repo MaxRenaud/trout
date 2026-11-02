@@ -420,7 +420,7 @@ alias t {
 		// runs to the end of the word.
 		{"unknown identifier", `alias t echo -a x $nosuch y`, "", []string{"#trout: x y"}},
 		{"text after a name", `alias t echo -a $1! $1's $me! $me's $len(ab)x`, "a b", []string{"#trout: a! a's 2"}},
-		{"mIRC's but not trout's", `alias t echo -a $window(@x)`, "", []string{": * $window isn't supported yet (line 1, t.mrc)"}},
+		{"mIRC's but not trout's", `alias t echo -a $mouse`, "", []string{": * $mouse isn't supported yet (line 1, t.mrc)"}},
 		{"nothing to echo", `alias t echo -a $null`, "", []string{": * /echo: insufficient parameters (line 1, t.mrc)"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {

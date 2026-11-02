@@ -295,6 +295,47 @@ func (j *journey) step(l string) {
 		j.record(actions, halted)
 	case l == "reload":
 		j.load(false)
+	case strings.HasPrefix(l, "show "):
+		// show @name: the window's lines, as "| @name 2*: text (4)" (*
+		// selected, then its color), then "| @name side 1: ..."
+		name := l[5:]
+		w := j.host.CustomWindow(name)
+		if w == nil {
+			j.out = append(j.out, "| "+name+" isn't open")
+			return
+		}
+		for _, side := range []bool{false, true} {
+			for i, wl := range w.Lines(side) {
+				s := "| " + name + iff(side, " side ", " ") + itoa(i+1) + iff(wl.Sel, "*", "") + ": " + wl.Text
+				if wl.Color >= 0 {
+					s += " (" + itoa(wl.Color) + ")"
+				}
+				j.out = append(j.out, s)
+			}
+		}
+	case strings.HasPrefix(l, "click "), strings.HasPrefix(l, "dclick "):
+		// click @name N: the user selects a listbox line (lbclick), or
+		// clicks a text window's (sclick); dclick double-clicks it.
+		w := strings.Fields(l)
+		event := w[0]
+		if win := j.host.CustomWindow(w[1]); event == "click" && win != nil {
+			event = "sclick"
+			if win.Opts().Listbox {
+				event = "lbclick"
+				lines := slices.Clone(win.Lines(false))
+				for i := range lines {
+					lines[i].Sel = i+1 == atoi(w[2])
+				}
+				win.SetLines(false, lines)
+			}
+		}
+		j.record(j.e.WindowEvent(event, j.host.net, w[1], w[2:], j.host), false)
+	case strings.HasPrefix(l, "close "):
+		// close @name: the user closes it: on CLOSE, like the client.
+		name := l[6:]
+		j.host.CloseWindow(name)
+		actions, halted := j.e.Dispatch(Event{Kind: "CLOSE", Network: j.host.net, Target: name}, j.host)
+		j.record(actions, halted)
 	case strings.HasPrefix(l, "menu "):
 		w := strings.Fields(l)
 		items, actions := j.e.Popups(w[1], j.host.net, j.host.active, w[2:], j.host)
@@ -389,6 +430,82 @@ type fakeHost struct {
 	queries         []string
 	info            NetInfo
 	now             time.Time
+	wins            []*fakeWin // custom windows, in the order they opened
+}
+
+// fakeWin is a custom window, kept like the client keeps them.
+type fakeWin struct {
+	name        string
+	lines, side []WinLine
+	opts        WinOpts
+}
+
+func (w *fakeWin) Lines(side bool) []WinLine {
+	if side {
+		return w.side
+	}
+	return w.lines
+}
+
+func (w *fakeWin) SetLines(side bool, l []WinLine) {
+	if side {
+		w.side = l
+	} else {
+		w.lines = l
+	}
+}
+
+func (w *fakeWin) Opts() WinOpts     { return w.opts }
+func (w *fakeWin) SetOpts(o WinOpts) { w.opts = o }
+
+func (h *fakeHost) CustomWindows() []string {
+	var names []string
+	for _, w := range h.wins {
+		names = append(names, w.name)
+	}
+	return names
+}
+
+func (h *fakeHost) findWin(name string) int {
+	return slices.IndexFunc(h.wins, func(w *fakeWin) bool { return strings.EqualFold(w.name, name) })
+}
+
+func (h *fakeHost) CustomWindow(name string) Window {
+	if i := h.findWin(name); i >= 0 {
+		return h.wins[i]
+	}
+	return nil
+}
+
+func (h *fakeHost) OpenWindow(name string, o WinOpts) Window {
+	w := &fakeWin{name: name, opts: o}
+	h.wins = append(h.wins, w)
+	return w
+}
+
+func (h *fakeHost) CloseWindow(name string) {
+	if i := h.findWin(name); i >= 0 {
+		h.wins = slices.Delete(h.wins, i, i+1)
+		if strings.EqualFold(h.active, name) {
+			h.active = ""
+		}
+	}
+}
+
+func (h *fakeHost) ActivateWindow(name string) {
+	if i := h.findWin(name); i >= 0 {
+		h.active = h.wins[i].name
+		h.wins[i].opts.Minimized, h.wins[i].opts.Hidden = false, false
+	}
+}
+
+func (h *fakeHost) RenameWindow(old, name string) {
+	if i := h.findWin(old); i >= 0 {
+		if strings.EqualFold(h.active, old) {
+			h.active = name
+		}
+		h.wins[i].name = name
+	}
 }
 
 func (h *fakeHost) Me(string) string           { return h.me }
