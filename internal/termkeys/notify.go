@@ -95,4 +95,3 @@ func clean(s string, limit int) string {
 	}
 	return b.String()
 }
-
