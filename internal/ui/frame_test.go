@@ -259,6 +259,10 @@ func TestFrames(t *testing.T) {
 			a.openDialog(&phoneBox{known: true, cert: irc.ServerCert{SHA1: "0123456789abcdef0123456789abcdef01234567",
 				Issuer: "Let's Encrypt", Trusted: true}})
 		}},
+		{"connect a phone: browser", func() {
+			a.bnc, a.password = config.Bouncer{Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x", SSH: "vps", Cert: letsEncrypt}, ""
+			a.openDialog(&phoneBox{web: true, known: true, cert: irc.ServerCert{Issuer: "Let's Encrypt", Trusted: true}})
+		}},
 		{"bouncers: server", func() {
 			a.openServer(config.Bouncer{Name: "vps", Address: "ircs://203.0.113.40:6697", User: "max", Pin: "SHA256:x",
 				SSH: "max@203.0.113.40", SojuVersion: "v0.10.0"}, nil)

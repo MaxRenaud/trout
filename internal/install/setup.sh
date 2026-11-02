@@ -194,6 +194,8 @@ listen unix+admin:///run/soju/admin
 tls /etc/soju/tls.crt /etc/soju/tls.key
 hostname $TROUT_HOST
 http-ingress $TROUT_INGRESS
+# gamja, soju's web client, on trout's page (WebSockets from there).
+http-origin trout-irc.github.io
 db sqlite3 /var/lib/soju/soju.db
 file-upload fs /var/lib/soju/uploads
 client-cert-auth true

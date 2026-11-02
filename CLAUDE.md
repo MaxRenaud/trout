@@ -155,7 +155,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   runner. With `-tags proxmox`, `install/proxmox_test.go` installs on all six Proxmox
   templates through every root tier, and `ui/proxmox_test.go` drives the wizard for real.
   Only touch VMs in the trout-test pool (IDs 9900-9999). With `-tags docker`,
-  `install/docker_test.go` installs in a privileged systemd container (`dev/systemd`), which
+  `install/docker_test.go` installs in a privileged systemd container (`dev/systemd`) and checks
+  soju takes gamja's page's WebSockets (http-origin), which
   is arm64 on this Mac, or armv7l (32-bit Raspberry Pi OS's kind) under QEMU with
   `TROUT_DOCKER_ARCH=arm`, which can't sandbox systemd units, so the test turns that off.
   `TestMoveNetworksLive` moves tester's networks to a throwaway soju user it deletes

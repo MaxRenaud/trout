@@ -249,4 +249,25 @@ func TestPhoneCertificate(t *testing.T) {
 	if !strings.Contains(text, "Goguma trusts the bouncer's certificate (Let's Encrypt vouches for it).") || strings.Contains(text, "SHA1") {
 		t.Errorf("trusted:\n%s", text)
 	}
+
+	// A trusted bouncer works in browsers too: Browser switches the code to
+	// gamja's page, with the user but never the password.
+	d := a.dlg.(*phoneBox)
+	if got := d.buttonLabels(a); !slices.Equal(got, []string{"Close", "Leave Out Password", "Browser"}) {
+		t.Fatalf("buttons: %q", got)
+	}
+	a.password = "secret"
+	d.press(a, 2)
+	want := "https://trout-irc.github.io/?server=wss://203.0.113.9:8443/socket&nick=max"
+	if got := d.link(a); got != want || !d.withPassword {
+		t.Errorf("web link %q, want %q", got, want)
+	}
+	if text := strings.Join(strings.Fields(strings.ReplaceAll(dialogText(a, d), "▀", "")), " "); !strings.Contains(text, "gamja") ||
+		strings.Contains(text, "secret") {
+		t.Errorf("browser:\n%s", text)
+	}
+	d.press(a, 1)
+	if d.web || !strings.HasPrefix(d.link(a), "ircs://max:secret@") {
+		t.Errorf("Goguma again: %q", d.link(a))
+	}
 }

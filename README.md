@@ -77,7 +77,10 @@ firewalld). Getting one accepts Let's Encrypt's
 This Computer runs soju right here instead, while trout is open, for when there's no
 server. Tools > Connect a Phone shows a QR code that opens your bouncer in
 [Goguma](https://goguma.im) (iPhone and Android), which gets soju's push notifications;
-without a Let's Encrypt certificate, it shows the SHA-1 Goguma asks you to accept.
+without a Let's Encrypt certificate, it shows the SHA-1 Goguma asks you to accept. With
+one, its Browser button gives a link to [gamja](https://codeberg.org/emersion/gamja), soju's
+web client, on trout's page ([trout-irc.github.io](https://trout-irc.github.io)), for
+any browser.
 
 ## What's in it
 

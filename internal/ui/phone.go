@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"net"
 	"net/url"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 // bouncer with a Let's Encrypt certificate needs none of that.
 type phoneBox struct {
 	withPassword bool
+	web          bool           // the code is gamja's page in a browser, for a trusted bouncer
 	cert         irc.ServerCert // once read
 	known        bool
 	checking     bool
@@ -83,8 +85,29 @@ func (a *App) phoneCert(m phoneCertMsg) {
 	m.box.cert, m.box.known = m.cert, true
 }
 
-// link is the bouncer as an IRC URL: ircs://user[:password]@host:port.
+// webPage is gamja, soju's web client, built unchanged on GitHub Pages
+// (github.com/trout-irc/trout-irc.github.io); setup.sh's http-origin lets
+// it use the bouncer's WebSocket on soju's https port.
+const webPage = "https://trout-irc.github.io/"
+
+// webLink is gamja's page for the bouncer: ?server= its WebSocket, with
+// the user name filled in. Never the password: gamja takes none in links.
+func webLink(a *App) string {
+	hostport, _, _ := irc.ParseAddress(a.bnc.Address)
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	// : and / can stay as they are in a query, so it's readable to type.
+	return webPage + "?server=wss://" + net.JoinHostPort(host, "8443") + "/socket&nick=" + url.QueryEscape(a.bnc.User)
+}
+
+// link is the bouncer as an IRC URL: ircs://user[:password]@host:port,
+// or gamja's page.
 func (d *phoneBox) link(a *App) string {
+	if d.web {
+		return webLink(a)
+	}
 	hostport, _, _ := irc.ParseAddress(a.bnc.Address)
 	u := url.User(a.bnc.User)
 	if d.withPassword && a.password != "" {
@@ -154,6 +177,15 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		}
 	}
 	text("Scan it with your phone's camera.", bold)
+	if d.web {
+		text("It opens gamja, soju's web client, in the browser. On any computer, go to:", face)
+		text(d.link(a), bold)
+		row++
+		text("It asks for your bouncer password. If it can't connect, update the bouncer "+
+			"(Tools > Bouncers > Server > Update).", face)
+		a.dlgButtons(c, x, y+h-3, w, d.buttonLabels(a), 0)
+		return
+	}
 	text("It opens Goguma, an IRC client for soju with push notifications: "+
 		"App Store on iPhone, F-Droid or Google Play on Android.", face)
 	row++
@@ -182,17 +214,28 @@ func (d *phoneBox) draw(a *App, c *Canvas, x, y, w, h int) {
 }
 
 func (d *phoneBox) buttonLabels(*App) []string {
+	pw := "Put In Password"
 	if d.withPassword {
-		return []string{"Close", "Leave Out Password"}
+		pw = "Leave Out Password"
 	}
-	return []string{"Close", "Put In Password"}
+	switch {
+	case d.web:
+		return []string{"Close", "Goguma"}
+	case d.known && d.cert.Trusted: // browsers trust it too: gamja works
+		return []string{"Close", pw, "Browser"}
+	}
+	return []string{"Close", pw}
 }
 
 func (d *phoneBox) pressButton(a *App, i int) tea.Cmd { return d.press(a, i) }
 func (d *phoneBox) typing() bool                      { return false }
 
 func (d *phoneBox) press(a *App, i int) tea.Cmd {
-	if i == 1 {
+	switch {
+	case i == 1 && d.web, i == 2:
+		d.web = !d.web
+		return nil
+	case i == 1:
 		d.withPassword = !d.withPassword
 		return nil
 	}

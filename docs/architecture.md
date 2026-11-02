@@ -391,6 +391,21 @@ question, or Bouncers > Server > Certificate (`ui/certificate.go`), runs `setup.
 Its tests run Let's Encrypt's own test CA, pebble, in-process; `-tags cloud` gets a real
 certificate for a throwaway Hetzner server's IP.
 
+### gamja in a browser
+
+A trusted certificate is also what a browser needs to open a WebSocket to the bouncer
+(there's no click-through for wss://). gamja, soju's web client, is built unchanged at a
+pinned commit by github.com/trout-irc/trout-irc.github.io (its Actions workflow, with its
+AGPL source and license published next to it) and served at https://trout-irc.github.io/
+without a config.json, so `?server=wss://IP:8443/socket&nick=user` picks the bouncer. soju
+only takes WebSockets from its own origin unless told: setup.sh writes
+`http-origin trout-irc.github.io` (a host, not a URL: soju's file uploads match on the
+host alone). The page has an origin of its own (an org of its own, not Max's
+github.io) because gamja's "Remember me" keeps the password in that origin's storage, and
+because the origin is baked into every bouncer. Connect a Phone's Browser button
+(phone.go) shows the link for a bouncer whose certificate is trusted; the Docker install
+test checks soju lets the page's origin in and refuses another.
+
 ## Phones
 
 There's no trout for phones: Goguma (App Store, F-Droid, Google Play) speaks soju's

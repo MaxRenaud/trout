@@ -10,7 +10,10 @@
 package install
 
 import (
+	"bufio"
 	"context"
+	"crypto/tls"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -39,7 +42,7 @@ func TestDockerInstall(t *testing.T) {
 	}
 	docker("build", "-q", "--platform", platform, "-t", image, repo("dev/systemd"))
 	id := docker("run", "-d", "--platform", platform, "--privileged", "--cgroupns=host", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw",
-		"-p", "127.0.0.1::22", "-p", "127.0.0.1::6697", image)
+		"-p", "127.0.0.1::22", "-p", "127.0.0.1::6697", "-p", "127.0.0.1::8443", image)
 	t.Cleanup(func() { exec.Command("docker", "rm", "-f", id).Run() })
 	if arch == "arm" {
 		// QEMU's user-mode emulation can't make mount namespaces, so systemd
@@ -92,6 +95,14 @@ func TestDockerInstall(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// gamja's page can use soju's WebSocket (setup.sh's http-origin); other
+	// sites can't.
+	wsAddr := docker("port", id, "8443")
+	for origin, want := range map[string]string{"https://trout-irc.github.io": "101", "https://example.com": "403"} {
+		if got := wsStatus(t, wsAddr, origin); got != want {
+			t.Errorf("WebSocket from %s: %s, want %s", origin, got, want)
+		}
+	}
 	up, _ := Existing(r, f, "127.0.0.1", "max", in.Password, in.Pin, "update")
 	up.Dial = dial
 	for _, step := range []func(context.Context) error{up.StageFiles, up.Setup, up.Check} {
@@ -110,4 +121,25 @@ func TestDockerInstall(t *testing.T) {
 	if err := gone.Check(ctx); err == nil {
 		t.Fatal("Check passed after a purge")
 	}
+}
+
+// wsStatus opens a WebSocket to soju's /socket with origin as the page's,
+// and returns the HTTP status: 101 if soju lets it in.
+func wsStatus(t *testing.T, addr, origin string) string {
+	t.Helper()
+	c, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true}) // the self-signed cert; only the origin matters here
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	fmt.Fprintf(c, "GET /socket HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"+
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: %s\r\n\r\n", addr, origin)
+	line, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := strings.Fields(line); len(f) > 1 {
+		return f[1]
+	}
+	return line
 }
