@@ -6,8 +6,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -42,14 +44,21 @@ func echoServer(t *testing.T) string {
 
 // fakeProxy runs handshake on each connection, which returns where to
 // connect (or "" to refuse), then relays bytes both ways. It records what
-// each handshake asked for.
-func fakeProxy(t *testing.T, handshake func(c net.Conn, r *bufio.Reader) string) (addr string, asked *[]string) {
+// each handshake asked for; asked returns that so far (the proxy's
+// goroutine adds to it, so it's behind a mutex).
+func fakeProxy(t *testing.T, handshake func(c net.Conn, r *bufio.Reader) string) (addr string, asked func() []string) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { l.Close() })
-	asked = new([]string)
+	var mu sync.Mutex
+	var got []string
+	asked = func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(got)
+	}
 	go func() {
 		for {
 			c, err := l.Accept()
@@ -58,7 +67,9 @@ func fakeProxy(t *testing.T, handshake func(c net.Conn, r *bufio.Reader) string)
 			}
 			r := bufio.NewReader(c)
 			to := handshake(c, r)
-			*asked = append(*asked, to)
+			mu.Lock()
+			got = append(got, to)
+			mu.Unlock()
 			if to == "" {
 				c.Close()
 				continue
@@ -133,8 +144,8 @@ func TestSOCKS5(t *testing.T) {
 	roundTrip(t, d, echo)
 	_, port, _ := net.SplitHostPort(echo)
 	roundTrip(t, d, "localhost:"+port) // a name the proxy looks up
-	if len(*asked) != 2 {
-		t.Fatalf("proxy asked %v", *asked)
+	if got := asked(); len(got) != 2 {
+		t.Fatalf("proxy asked %v", got)
 	}
 	d.Password = "wrong"
 	if _, err := d.DialContext(t.Context(), "tcp", echo); err == nil || !strings.Contains(err.Error(), "login failed") {
