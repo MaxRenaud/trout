@@ -420,8 +420,11 @@ func (a *App) openAddUser() {
 			case v[1] == "":
 				return nil, errors.New("give them a password")
 			}
+			// "-admin=": user create's -admin is a plain bool flag, which
+			// takes no separate value (checked on soju 0.11.1; user
+			// update's takes one).
 			a.serv(a.home, a.home.Status(), false, "user", "create", "-username", name, "-password", v[1],
-				"-admin", fmt.Sprint(v[2] == "1"))
+				"-admin="+fmt.Sprint(v[2] == "1"))
 			return back(a), nil
 		},
 		OnCancel: back,

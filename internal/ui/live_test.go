@@ -696,3 +696,86 @@ func TestBouncerSettingsLive(t *testing.T) {
 		}
 	}
 }
+
+// TestBouncerSettingsAdminLive is Bouncer > Settings for an admin, on the
+// dev soju, as a throwaway admin user (the dev soju's own admin is your
+// trout session): Users and the server's stats fill in, and a user is
+// added, made an admin, and deleted with soju's confirmation token.
+//
+//	go test -tags integration ./internal/ui -run TestBouncerSettingsAdminLive -v
+func TestBouncerSettingsAdminLive(t *testing.T) {
+	sojuctl := func(args ...string) string {
+		out, _ := exec.Command("docker", append([]string{"compose", "-f", "../../dev/compose.yaml", "exec", "-T", "soju",
+			"sojuctl", "-config", "/etc/soju/config"}, args...)...).CombinedOutput()
+		return string(out)
+	}
+	n := strconv.FormatInt(time.Now().Unix()%100000, 10)
+	admin, other := "setadmin"+n, "setuser"+n
+	// sojuctl's -admin is a bare flag; BouncerServ's, which trout sends,
+	// takes true or false.
+	if out, err := exec.Command("docker", "compose", "-f", "../../dev/compose.yaml", "exec", "-T", "soju", "sojuctl",
+		"-config", "/etc/soju/config", "user", "create", "-username", admin, "-password", "setadmin", "-admin").CombinedOutput(); err != nil {
+		t.Fatalf("creating %s: %v\n%s", admin, err, out)
+	}
+	t.Cleanup(func() {
+		for _, u := range []string{other, admin} {
+			if f := strings.Fields(sojuctl("user", "delete", u)); len(f) > 0 && strings.HasPrefix(f[0], "To") {
+				sojuctl("user", "delete", u, strings.Trim(f[len(f)-1], `"`))
+			}
+		}
+	})
+	a, pump := liveAppWith(t, Options{
+		Bouncer:  config.Bouncer{Address: cmp.Or(os.Getenv("TROUT_ADDR"), "irc+insecure://127.0.0.1:6667"), User: admin},
+		Password: "setadmin",
+	})
+	pump("the bouncer", func() bool { return a.control != nil && a.home.Nick != "" })
+	settled := func(what string) *optionsBox {
+		t.Helper()
+		pump(what, func() bool { return a.bset != nil && a.bset.asked == 0 })
+		return a.dlg.(*optionsBox)
+	}
+	hasUser := func(name string) *userStatus {
+		for i, u := range a.bset.users {
+			if u.name == name {
+				return &a.bset.users[i]
+			}
+		}
+		return nil
+	}
+
+	a.openBouncerSettings(bncUsers)
+	o := settled("the settings' answers")
+	if !a.bset.admin || hasUser("tester") == nil || hasUser(admin) == nil || !strings.Contains(hasUser(admin).attrs, "admin") {
+		t.Fatalf("users: %+v", a.bset.users)
+	}
+	if !strings.Contains(strings.Join(o.pages[bncServer].Notes, " "), "users,") {
+		t.Errorf("server stats: %q", o.pages[bncServer].Notes)
+	}
+
+	a.openAddUser()
+	f := a.dlg.(*formBox)
+	f.Fields[0].Edit.Buf, f.Fields[1].Edit.Buf = []rune(other), []rune("pw")
+	f.press(a, 0)
+	settled("the new user")
+	if u := hasUser(other); u == nil || strings.Contains(u.attrs, "admin") {
+		t.Fatalf("after Add (note %q): %+v\n%s", f.Note, a.bset.users, dump(a.home.Status()))
+	}
+
+	a.openEditUser(*hasUser(other))
+	f = a.dlg.(*formBox)
+	f.toggle(f.Fields[0]) // an admin
+	f.press(a, 0)
+	settled("the edit")
+	if u := hasUser(other); u == nil || !strings.Contains(u.attrs, "admin") {
+		t.Fatalf("after Edit: %+v", a.bset.users)
+	}
+
+	a.deleteUser(other)
+	a.dlg.(*msgBox).OnClose(a, 0)
+	pump("the user to go", func() bool { return a.bset.asked == 0 && hasUser(admin) != nil && hasUser(other) == nil })
+	for _, l := range a.home.Status().Lines {
+		if strings.Contains(l.Text, "error") {
+			t.Errorf("status: %q", l.Text)
+		}
+	}
+}
