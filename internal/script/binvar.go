@@ -103,7 +103,7 @@ func (r *run) cmdBunset(fr *frame, rest string) error {
 	if err != nil {
 		return err
 	}
-	for _, w := range strings.Fields(line) {
+	for w := range strings.FieldsSeq(line) {
 		delete(r.bins, strings.ToLower(w))
 	}
 	return nil
@@ -363,7 +363,7 @@ func bfindIdent(r *run, fr *frame, c *call) (string, error) {
 	var needle []byte
 	text := c.prop == "text"
 	if !text {
-		for _, w := range strings.Fields(what) {
+		for w := range strings.FieldsSeq(what) {
 			v, ok := parseNum(w)
 			if !ok {
 				text = true
