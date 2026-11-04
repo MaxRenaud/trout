@@ -1,5 +1,5 @@
-# Scripting: an alias and an event typed into the Scripts Editor's
-# Remote tab, saved, then used in #go-nuts.
+# Scripting: two aliases and an event typed into the Scripts Editor's
+# Remote tab, saved, then used in #go-nuts, one asking in an input box.
 Output docs/gifs/scripts.gif
 Source dev/vhs/settings.tape
 
@@ -16,6 +16,8 @@ Set TypingSpeed 35ms
 Type "alias hello say Hello $1 $+ ! Welcome to $active ( $+ $nick($active,0) of us)"
 Enter
 Type "on *:INPUT:#:if ($1 == !time) { say It's $time here | halt }"
+Enter
+Type `alias greet say $?="Who are we greeting?" $+ : hi from trout`
 Sleep 1.2s
 Ctrl+S
 Sleep 1s
@@ -27,6 +29,14 @@ Sleep 600ms
 Enter
 Sleep 1.5s
 Type "!time"
+Sleep 600ms
+Enter
+Sleep 1.5s
+Type "/greet"
+Sleep 600ms
+Enter
+Sleep 1.2s
+Type "bob"
 Sleep 600ms
 Enter
 Sleep 3s
