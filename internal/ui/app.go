@@ -219,20 +219,21 @@ type App struct {
 	cloudTokens    map[string]string            // without a config (tests): cloud API tokens
 	dccSeq         int
 
-	urls         []seenURL                    // URLs List
-	ctcpSent     []time.Time                  // when trout answered CTCPs lately, for flood protection
-	isonOn       bool                         // the notify poll for networks without MONITOR is running
-	away         string                       // the away message, on every network
-	quietWho     map[string]bool              // WHOs trout sent itself, by whoKey
-	hopping      map[string]bool              // channels /hop is parting, to keep their windows
-	upAt         map[*state.Network]time.Time // when each connection came up, for the online timer
-	started      time.Time                    // when trout started: $uptime(mirc)
-	listFetch    map[string][]state.ListEntry // channel lists on their way, by listFetchKey
-	chanListBox  *listBox                     // Channel Central's open list, to refresh
-	chanListWin  *state.Window
-	chanListMode byte
-	invitedTo    map[*state.Network]string // the last channel invited to, for /join -i
-	whois        map[*state.Network]string // the nick whose WHOIS reply is coming in
+	urls          []seenURL                    // URLs List
+	ctcpSent      []time.Time                  // when trout answered CTCPs lately, for flood protection
+	isonOn        bool                         // the notify poll for networks without MONITOR is running
+	away          string                       // the away message, on every network
+	quietWho      map[string]bool              // WHOs trout sent itself, by whoKey
+	hopping       map[string]bool              // channels /hop is parting, to keep their windows
+	upAt          map[*state.Network]time.Time // when each connection came up, for the online timer
+	started       time.Time                    // when trout started: $uptime(mirc)
+	defenderNoted bool                         // the first /load on Windows said what Defender does
+	listFetch     map[string][]state.ListEntry // channel lists on their way, by listFetchKey
+	chanListBox   *listBox                     // Channel Central's open list, to refresh
+	chanListWin   *state.Window
+	chanListMode  byte
+	invitedTo     map[*state.Network]string // the last channel invited to, for /join -i
+	whois         map[*state.Network]string // the nick whose WHOIS reply is coming in
 
 	// Settings, reachable from the View menu and Tools > Options.
 	themeIdx                                int

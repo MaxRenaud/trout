@@ -329,7 +329,7 @@ func (a *App) settings() config.Settings {
 	return config.Settings{Theme: a.themeList()[a.themeIdx].name,
 		Toolbar: a.showToolbar, Switchbar: a.showSwitchbar, Treebar: a.showTreebar, Nicklist: a.showNicklist,
 		Timestamps: a.stamps, ModePrefix: a.modePrefix, LineMarker: a.showMarker, LineShading: a.shading,
-		NickColors: a.nickColors, TreebarWidth: a.treeW, NicklistWidth: a.nickW, Beep: a.beep, Tips: a.tips,
+		NickColors: a.nickColors, TreebarWidth: a.treeW, NicklistWidth: a.nickW, Beep: a.beep, Tips: a.tips, DefenderNoted: a.defenderNoted,
 		Colors:      a.colorsSetting(),
 		ConfirmExit: a.confirmExit, CmdPrefix: a.cmdPrefix, TabSuffix: a.tabSuffix, Buffer: state.MaxLines,
 		SortSwitch: a.sortSwitch, FillSwitch: a.fillSwitch, HiActive: a.hiActive,
@@ -348,7 +348,7 @@ func (a *App) applySettings(s config.Settings) {
 	a.showToolbar, a.showSwitchbar, a.showTreebar, a.showNicklist = s.Toolbar, s.Switchbar, s.Treebar, s.Nicklist
 	a.stamps, a.modePrefix, a.showMarker, a.shading = s.Timestamps, s.ModePrefix, s.LineMarker, s.LineShading
 	a.nickColors, a.treeW, a.nickW, a.beep = s.NickColors, s.TreebarWidth, s.NicklistWidth, s.Beep
-	a.tips = s.Tips
+	a.tips, a.defenderNoted = s.Tips, s.DefenderNoted
 	a.colors, a.dccClose = parseColors(s.Colors), s.DCCClose
 	a.confirmExit, a.cmdPrefix, a.tabSuffix = s.ConfirmExit, cmp.Or(s.CmdPrefix, "/"), s.TabSuffix
 	state.MaxLines = max(100, cmp.Or(s.Buffer, 500))

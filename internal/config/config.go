@@ -248,6 +248,9 @@ type Settings struct {
 	// notifications, for highlights and private messages while it isn't
 	// in front.
 	Tips bool `toml:"tips"`
+	// DefenderNoted: on Windows, the first /load said Defender may delete
+	// some scripts; it isn't said again.
+	DefenderNoted bool `toml:"defender-noted,omitempty"`
 	// Colors are the Colors dialog's choices: palette numbers by kind of
 	// text, like "action=6 notice=5"; the scheme's colors otherwise.
 	Colors string `toml:"colors,omitempty"`

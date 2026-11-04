@@ -73,3 +73,27 @@ alias up echo -s up $uptime(mirc,3) $iif($uptime(system) > $uptime(mirc),yes,no)
 		t.Errorf("$uptime: %q", got)
 	}
 }
+
+// TestDefenderNote: the first /load on Windows says what Defender does to
+// some scripts, once; the setting remembers it. Elsewhere it's not said.
+func TestDefenderNote(t *testing.T) {
+	defer func(g string) { goos = g }(goos)
+	for _, os := range []string{"linux", "windows"} {
+		goos = os
+		a := New(Options{Demo: true})
+		a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+		a.scriptMem = map[string]string{"a.mrc": "alias a echo -a a", "b.mrc": "alias b echo -a b"}
+		st := a.nets[0].Status()
+		a.activate(st)
+		load := func(f string) string {
+			a.edit(st).Buf = []rune("/load -rs " + f)
+			a.submit(st)
+			return lastLine(st)
+		}
+		first, second := load("a.mrc"), load("b.mrc")
+		noted := strings.Contains(first, "Microsoft Defender")
+		if noted != (os == "windows") || strings.Contains(second, "Defender") || a.settings().DefenderNoted != noted {
+			t.Errorf("%s: first %q, second %q, setting %v", os, first, second, a.settings().DefenderNoted)
+		}
+	}
+}

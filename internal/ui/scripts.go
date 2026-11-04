@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -337,6 +338,9 @@ func (a *App) scriptAdmin(line string, fromScript bool) (tea.Cmd, bool) {
 	}
 	switch strings.ToLower(name) {
 	case "load":
+		if !fromScript {
+			defer a.noteDefender()
+		}
 		if file == "" {
 			a.addLine(a.active, state.RoleInfo, "* /load: /load -rs <file>, a file in the scripts folder or a full path")
 			return nil, true
@@ -1043,4 +1047,21 @@ func (h scriptHost) Uptime(network, item string) time.Duration {
 		}
 	}
 	return time.Since(a.started)
+}
+
+// goos is runtime.GOOS, for the Windows-only note's test.
+var goos = runtime.GOOS
+
+// noteDefender says once, after the first /load you type on Windows, that
+// Microsoft Defender deletes scripts it takes for IRC worms: any with both
+// on START and /bwrite (found 2026-11-04; mIRC's get the same), which
+// would otherwise just vanish.
+func (a *App) noteDefender() {
+	if goos != "windows" || a.defenderNoted {
+		return
+	}
+	a.defenderNoted = true
+	a.addLine(a.active, state.RoleInfo, "* On Windows, Microsoft Defender deletes a script that has both on START "+
+		"and /bwrite, taking it for an IRC worm (mIRC's scripts too). If one disappears, it's in Defender's "+
+		"Protection history, where you can also exclude the scripts folder. trout won't say this again.")
 }
