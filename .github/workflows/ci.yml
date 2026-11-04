@@ -30,5 +30,11 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
+      # Script runs that ask ($?) go on a goroutine of their own, and
+      # connections have theirs: the race detector checks they keep to
+      # messages. Linux only: it needs cgo, and once is enough.
+      - name: race detector
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
       - name: go fix has nothing to change
         run: test -z "$(go fix -diff ./...)"

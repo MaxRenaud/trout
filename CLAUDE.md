@@ -14,6 +14,7 @@ go run ./cmd/trout --demo                          # fake world, no network: for
 TROUT_DEBUG=1 dev/trout                            # log raw IRC lines to trout-debug.log
 
 go test ./...                                      # unit and frame tests, no network
+go test -race ./...                                # the same with the race detector (CI runs it on Linux)
 go test -tags integration ./internal/ui -v         # needs the dev env
 dev/build-soju                                     # the soju trout installs on servers, and trout-cert
 go run github.com/goreleaser/goreleaser/v2@v2.19.0 release --snapshot --clean   # release archives in dist/, nothing published

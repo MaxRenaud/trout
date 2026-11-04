@@ -555,7 +555,8 @@ func (a *App) openReceived() tea.Cmd {
 // later runs cmd as if Update had returned it.
 func (a *App) later(cmd tea.Cmd) {
 	if cmd != nil {
-		go func() { a.send(cmd()) }()
+		send := a.send // the goroutine mustn't read the App
+		go func() { send(cmd()) }()
 	}
 }
 

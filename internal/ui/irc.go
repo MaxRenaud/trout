@@ -129,9 +129,10 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 		if a.away != "" {
 			a.sendAway(c)
 		}
+		send := a.send // the goroutine mustn't read the App
 		go func() {
-			err := c.Run(func(m ircmsg.Message) { a.send(ircLineMsg{n, m}) })
-			a.send(ircDownMsg{n, err})
+			err := c.Run(func(m ircmsg.Message) { send(ircLineMsg{n, m}) })
+			send(ircDownMsg{n, err})
 		}()
 		return cmd
 	case ircLineMsg:

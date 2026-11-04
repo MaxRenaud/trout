@@ -150,13 +150,14 @@ func (a *App) chatUpdate(msg tea.Msg) {
 		}
 		c.conn = msg.conn
 		a.addLine(c.win, state.RoleInfo, "* DCC chat with "+c.nick+" started")
+		send, conn := a.send, c.conn // the goroutine mustn't read the App
 		go func() {
-			s := bufio.NewScanner(c.conn)
+			s := bufio.NewScanner(conn)
 			s.Buffer(make([]byte, 4096), 64<<10)
 			for s.Scan() {
-				a.send(chatLineMsg{c, strings.TrimSuffix(s.Text(), "\r")})
+				send(chatLineMsg{c, strings.TrimSuffix(s.Text(), "\r")})
 			}
-			a.send(chatDownMsg{c, s.Err()})
+			send(chatDownMsg{c, s.Err()})
 		}()
 	case chatLineMsg:
 		c := msg.c
