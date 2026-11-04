@@ -90,8 +90,30 @@ var timeIdents = map[string]builtin{
 		}
 		return itoa(int(r.h.Now().Unix())), nil
 	},
+	// $ticks is milliseconds since the computer started, like mIRC's.
 	"ticks": func(r *run, fr *frame, c *call) (string, error) {
-		return itoa(int(r.h.Now().UnixMilli())), nil
+		return itoa(int(r.h.Uptime("", "system").Milliseconds())), nil
+	},
+	// $uptime(mirc|server|system,N): how long trout, the network's
+	// connection or the computer has been up, in milliseconds; N = 1 as
+	// $duration does it, 2 without the seconds, 3 in seconds. Anything
+	// else is 0 (checked in mIRC 7.86, tmp/uptime-oracle.mrc).
+	"uptime": func(r *run, fr *frame, c *call) (string, error) {
+		item := strings.ToLower(c.arg(0))
+		var d time.Duration
+		if item == "mirc" || item == "server" || item == "system" {
+			d = r.h.Uptime(fr.network, item)
+		}
+		secs := int(d / time.Second)
+		switch int(c.num(1)) {
+		case 1:
+			return duration(secs, 0), nil
+		case 2:
+			return duration(secs, 2), nil
+		case 3:
+			return itoa(secs), nil
+		}
+		return itoa(int(d.Milliseconds())), nil
 	},
 	"time": timeFormat("HH:nn:ss"),
 	"date": timeFormat("dd/mm/yyyy"),
@@ -218,7 +240,7 @@ func duration(secs, mode int) string {
 		name string
 		size int
 	}{{"wk", 604800}, {"day", 86400}, {"hr", 3600}, {"min", 60}, {"sec", 1}}
-	if mode == 2 {
+	if mode == 2 && secs >= 60 { // under a minute it keeps the seconds: 59secs (checked)
 		units = units[:4]
 	}
 	var parts []string

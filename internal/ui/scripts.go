@@ -1023,3 +1023,24 @@ func memDir(files map[string]string, dir string) ([]script.DirEntry, bool) {
 	}
 	return out, dir == "" || len(out) > 0
 }
+
+// Uptime is $uptime's: trout since it started, a network's connection
+// since it came up (0 while it's down), the computer since it booted
+// (trout's own if the system won't say).
+func (h scriptHost) Uptime(network, item string) time.Duration {
+	a := h.a
+	switch item {
+	case "server":
+		if n := h.net(network); n != nil {
+			if t, ok := a.upAt[n]; ok && a.connected(n) {
+				return time.Since(t)
+			}
+		}
+		return 0
+	case "system":
+		if d, ok := systemUptime(); ok {
+			return d
+		}
+	}
+	return time.Since(a.started)
+}

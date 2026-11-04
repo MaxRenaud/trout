@@ -1,5 +1,5 @@
 The client's identifiers and focus events, replaying what mIRC 7.86 did
-(tmp/misc-oracle*.mrc): $color's names and numbers, $rgb, $findfile (a
+(tmp/misc-oracle*.mrc): $color's names and numbers, $rgb, $uptime, $findfile (a
 folder's files by name, then its folders'), $lactive, on ACTIVE and on
 APPACTIVE. The host's colors are mIRC's defaults; its file names are lower
 case.
@@ -37,6 +37,13 @@ alias f1 {
   echo -s F7 ret=< $+ %y $+ >
   echo -s M1 mircini= $+ $mircini lactive=< $+ $lactive $+ > appactive= $+ $appactive
 }
+alias up {
+  echo -s U1 mirc= $+ $uptime(mirc) m1= $+ $uptime(mirc,1) m2= $+ $uptime(mirc,2) m3= $+ $uptime(MIRC,3) n4= $+ $uptime(mirc,4)
+  echo -s U2 server= $+ $uptime(server) s1= $+ $uptime(server,1) s2= $+ $uptime(server,2) s3= $+ $uptime(server,3)
+  echo -s U3 sys3= $+ $uptime(system,3) sys1= $+ $uptime(system,1) sys2= $+ $uptime(system,2) ticks= $+ $ticks
+  echo -s U4 bad= $+ $uptime(nonsense) none= $+ $uptime
+  echo -s U7 dur= $duration(90061) / $duration(90061,2) / $duration(90061,3) / $duration(59,2) / $duration(3600,2)
+}
 alias haltit {
   echo -s F7cmd $nopath($1-)
   halt
@@ -69,6 +76,12 @@ chan #trout @trout bob
 = status: F7cmd a.txt
 = status: F7 ret=<>
 = status: M1 mircini=mirc.ini lactive=<> appactive=$false
+/up
+= status: U1 mirc=3250 m1=3secs m2=3secs m3=3 n4=3250
+= status: U2 server=90061000 s1=1day 1hr 1min 1sec s2=1day 1hr 1min s3=90061
+= status: U3 sys3=542758 sys1=6days 6hrs 45mins 58secs sys2=6days 6hrs 45mins ticks=542758390
+= status: U4 bad=0 none=0
+= status: U7 dur= 1day 1hr 1min 1sec / 1day 1hr 1min / 25:01:01 / 59secs / 1hr
 focus #trout
 = status: A active=#trout lactive=@ff
 = status: A# channel #trout

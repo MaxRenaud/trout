@@ -579,6 +579,18 @@ func (h *fakeHost) Colors() Colors {
 }
 
 func (h *fakeHost) AppActive() bool { return h.appActive }
+
+// Uptime: trout up 3.25s, the network 90061s, the computer 6 days and a bit,
+// like the mIRC run tmp/uptime-oracle.mrc's numbers.
+func (h *fakeHost) Uptime(_, item string) time.Duration {
+	switch item {
+	case "mirc":
+		return 3250 * time.Millisecond
+	case "server":
+		return 90061 * time.Second
+	}
+	return 542758390 * time.Millisecond
+}
 func (h *fakeHost) LastActive() (string, string, bool) {
 	return h.net, h.lastActive, h.lastActive != "" || h.hadActive
 }

@@ -226,6 +226,7 @@ type App struct {
 	quietWho     map[string]bool              // WHOs trout sent itself, by whoKey
 	hopping      map[string]bool              // channels /hop is parting, to keep their windows
 	upAt         map[*state.Network]time.Time // when each connection came up, for the online timer
+	started      time.Time                    // when trout started: $uptime(mirc)
 	listFetch    map[string][]state.ListEntry // channel lists on their way, by listFetchKey
 	chanListBox  *listBox                     // Channel Central's open list, to refresh
 	chanListWin  *state.Window
@@ -343,6 +344,7 @@ func New(opts Options) *App {
 		hopping:     map[string]bool{},
 		namesOnJoin: map[*state.Window]bool{},
 		upAt:        map[*state.Network]time.Time{},
+		started:     time.Now(),
 		listFetch:   map[string][]state.ListEntry{},
 		invitedTo:   map[*state.Network]string{},
 		searching:   map[*state.Network]*goTo{},

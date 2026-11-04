@@ -17,7 +17,8 @@ func TestScriptClientIdents(t *testing.T) {
 	a.scriptMem = map[string]string{"c.mrc": `on *:ACTIVE:*:echo -s active $active last $lactive
 on *:APPACTIVE:echo -s app $appactive
 alias colors echo -s colors $color(normal) $color(action) $color(highlight).dd $color(1)
-alias files echo -s files $findfile(logs,*.txt,0) $findfile(logs,*.txt,1)`,
+alias files echo -s files $findfile(logs,*.txt,0) $findfile(logs,*.txt,1)
+alias up echo -s up $uptime(mirc,3) $iif($uptime(system) > $uptime(mirc),yes,no) $iif($calc($ticks - $uptime(system)) < 1000,yes,no) $uptime(server)`,
 		"logs/a.txt": "x", "logs/old/b.txt": "y"}
 	st := a.nets[0].Status()
 	a.activate(st)
@@ -63,5 +64,12 @@ alias files echo -s files $findfile(logs,*.txt,0) $findfile(logs,*.txt,1)`,
 	a.submit(st)
 	if got := last(); got != "files 2 logs/a.txt" {
 		t.Errorf("$findfile: %q", got)
+	}
+	// $uptime: trout's just started; the computer's been up longer, and
+	// $ticks is its uptime; the demo's network has no connection.
+	a.edit(st).Buf = []rune("/up")
+	a.submit(st)
+	if got := last(); got != "up 0 yes yes 0" {
+		t.Errorf("$uptime: %q", got)
 	}
 }

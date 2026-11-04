@@ -152,6 +152,9 @@ error.
 - **Colors and files**: `$color` (the Colors dialog's kinds of text, from your scheme),
   `$rgb`, `$findfile` (in the scripts folder, with a command or a `@window`),
   `$findfilen`, `$isdir`, and `$mircini` (a `mirc.ini` there, which trout doesn't read).
+- **Uptime**: `$uptime(mirc)` is trout's, `$uptime(server)` the network connection's, and
+  `$uptime(system)` (and `$ticks`) the computer's, in milliseconds or, with N, as
+  `$duration` does it.
 - **Identifiers**: about 200, among them the text, token, number, time and `$calc`
   families, `$nick`, `$chan`, `$address`, `$ial`, `$comchan`, `$chan(N)`, `$nick(#,N)`,
   `$hget`, `$hfind`, `$read`, `$readini`, `$ini`, `$regex`, `$regsubex`, `$timer`,

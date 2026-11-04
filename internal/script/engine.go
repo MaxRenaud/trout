@@ -55,6 +55,10 @@ type Host interface {
 	// false if there's been none.
 	AppActive() bool
 	LastActive() (network, window string, ok bool)
+	// Uptime is how long item has been up: "mirc" the client, "server"
+	// network's connection (0 if it's down), "system" the computer, for
+	// $uptime and $ticks.
+	Uptime(network, item string) time.Duration
 	Now() time.Time
 }
 
