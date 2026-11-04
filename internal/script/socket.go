@@ -183,26 +183,33 @@ func (r *run) cmdSockWrite(sw, line string) error {
 	if name == "" {
 		return errorf("/sockwrite: insufficient parameters")
 	}
+	count := -1 // -b: how many bytes to send
 	if strings.Contains(sw, "b") {
 		n, after, _ := strings.Cut(text, " ")
-		count, ok := parseNum(n)
+		v, ok := parseNum(n)
 		if !ok {
 			return errorf("/sockwrite: invalid parameters")
 		}
-		text = after
-		if int(count) < len(text) {
-			text = text[:int(count)]
+		count, text = int(v), after
+	}
+	var data []byte
+	if isBinvar(text) && !strings.Contains(text, " ") && !strings.Contains(sw, "t") {
+		b, ok := r.bin(text)
+		if !ok {
+			return errorf("/sockwrite: invalid parameters")
+		}
+		data = slices.Clone(b)
+	} else {
+		if strings.Contains(sw, "n") && !strings.HasSuffix(text, "\r\n") {
+			text += "\r\n"
+		}
+		data = []byte(text)
+		if strings.Contains(sw, "a") {
+			data = latin1(text)
 		}
 	}
-	if strings.HasPrefix(text, "&") && !strings.Contains(sw, "t") {
-		return errorf("/sockwrite: binary variables aren't supported")
-	}
-	if strings.Contains(sw, "n") && !strings.HasSuffix(text, "\r\n") {
-		text += "\r\n"
-	}
-	data := []byte(text)
-	if strings.Contains(sw, "a") {
-		data = latin1(text)
+	if count >= 0 && count < len(data) {
+		data = data[:count]
 	}
 	socks := r.e.socksMatching(name)
 	if len(socks) == 0 {
@@ -237,9 +244,9 @@ func latin1(text string) []byte {
 	return b
 }
 
-// cmdSockRead is /sockread [-fn] [numbytes] <%var>, in a socket event: a
-// line ending in LF (or CRLF) from the receive buffer, without it, or
-// with -f whatever's there.
+// cmdSockRead is /sockread [-fn] [numbytes] <%var|&binvar>, in a socket
+// event: a line ending in LF (or CRLF) from the receive buffer, without
+// it, or with -f whatever's there; into a &binvar, bytes.
 func (r *run) cmdSockRead(fr *frame, rest string) error {
 	// Outside a socket event that's the error, whatever the parameters
 	// (checked).
@@ -248,11 +255,32 @@ func (r *run) cmdSockRead(fr *frame, rest string) error {
 		return errorf("/sockread: socket unavailable")
 	}
 	sw, rest := switches(strings.TrimSpace(rest))
+	numbytes := -1 // for a binary variable
 	if w, after, _ := strings.Cut(rest, " "); isDigits(w) {
-		rest = strings.TrimSpace(after) // numbytes is for binary variables
+		numbytes, rest = atoi(w), strings.TrimSpace(after)
 	}
-	if strings.HasPrefix(rest, "&") {
-		return errorf("/sockread: binary variables aren't supported")
+	if isBinvar(rest) {
+		// Bytes, not lines: numbytes of them (4096 without, the help
+		// file's; not checked), or with -n a line with its ending.
+		n := min(len(s.buf), 4096)
+		if numbytes >= 0 {
+			n = min(len(s.buf), numbytes)
+		}
+		if strings.Contains(sw, "n") {
+			n = 0
+			if i := slices.Index(s.buf, '\n'); i >= 0 {
+				n = i + 1
+			} else if strings.Contains(sw, "f") {
+				n = len(s.buf)
+			}
+		}
+		r.sockReads++
+		r.sockBin = true
+		r.setBin(rest, slices.Clone(s.buf[:n]))
+		s.buf = slices.Clone(s.buf[n:])
+		s.rcvd += n
+		r.sockBR = n
+		return nil
 	}
 	if !strings.HasPrefix(rest, "%") {
 		return errorf("/sockread: insufficient parameters")
@@ -339,7 +367,8 @@ func (e *Engine) SockRead(id int, data []byte, h Host) []Action {
 	s.buf = append(s.buf, data...)
 	s.lastRead = h.Now()
 	for range 10000 {
-		r.sockReads = 0
+		// Each SOCKREAD is a run of its own: binary variables start afresh.
+		r.sockReads, r.sockBin, r.bins = 0, false, nil
 		before := len(s.buf)
 		r.sockEvent("SOCKREAD", s, 0)
 		if e.sockByID(id) == nil {
@@ -349,7 +378,9 @@ func (e *Engine) SockRead(id int, data []byte, h Host) []Action {
 			s.buf = nil
 			break
 		}
-		if len(s.buf) == before || !slices.Contains(s.buf, '\n') {
+		// Again while there's another line for a /sockread %var, or any
+		// bytes for a &binvar.
+		if len(s.buf) == before || len(s.buf) == 0 || !r.sockBin && !slices.Contains(s.buf, '\n') {
 			break
 		}
 	}

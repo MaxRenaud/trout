@@ -1,0 +1,137 @@
+Binary variables: what mIRC 7.86 did with /bset, /bcopy, /breplace, $bvar,
+$bfind, hashes and $encode (tmp/bin-oracle.mrc and bin-oracle2.mrc), and that
+they last for one run: an alias sees its caller's, a timer doesn't. /bread and
+/bwrite (b4) follow the help file: mIRC's test copy hangs loading a script with
+/bwrite in it.
+
+-- bin.mrc --
+alias fill { bset &shared 1 1 2 3 }
+alias b1 {
+  bset &a 1 65 66 67
+  echo -s 01 len= $+ $bvar(&a,0) vals= $+ $bvar(&a,1,3) one= $+ $bvar(&a,2) text= $+ $bvar(&a,1,3).text all= $+ $bvar(&a,1-)
+  bset &a 6 70
+  echo -s 02 len= $+ $bvar(&a,0) vals= $+ $bvar(&a,1,6) text= $+ $bvar(&a,1,6).text
+  bset -t &b 1 hello world
+  echo -s 03 len= $+ $bvar(&b,0) text= $+ $bvar(&b,1,$bvar(&b,0)).text past= $+ $bvar(&b,1,50).text start7= $+ $bvar(&b,7).text
+  bset -t &c 1 é
+  bset -ta &d 1 é
+  echo -s 04 utf8= $+ $bvar(&c,1,$bvar(&c,0)) ansi= $+ $bvar(&d,1,$bvar(&d,0)) ctext= $+ $bvar(&c,1,2).text dtext= $+ $bvar(&d,1,1).text
+  bset &n 1 65 0 66
+  echo -s 05 nulltext= $+ $bvar(&n,1,3).text
+  bset -c &a 2 90
+  echo -s 06 chop len= $+ $bvar(&a,0) vals= $+ $bvar(&a,1,$bvar(&a,0))
+  bset -z &z 4 65 66
+  echo -s 07 z len= $+ $bvar(&z,0)
+  bunset &a
+  echo -s 08 unset=< $+ $bvar(&a,0) $+ > missing=< $+ $bvar(&missing,1) $+ >
+  fill
+  echo -s 09 shared-from-alias len= $+ $bvar(&shared,0)
+  .timer 1 0 echo -s 10 timer-later=< $!+ $!bvar(&shared,0) $!+ >
+}
+alias b2 {
+  bset -t &b 1 hello world
+  bcopy &d2 1 &b 1 5
+  echo -s 11 bcopy text= $+ $bvar(&d2,1,$bvar(&d2,0)).text len= $+ $bvar(&d2,0)
+  bcopy &d2 3 &b 7 5
+  echo -s 12 bcopy-mid text= $+ $bvar(&d2,1,$bvar(&d2,0)).text len= $+ $bvar(&d2,0)
+  bset -t &d3 1 abcdefgh
+  bcopy -c &d3 2 &b 1 2
+  echo -s 13 bcopy-c text= $+ $bvar(&d3,1,$bvar(&d3,0)).text
+  bset -t &d4 1 abcdef
+  bcopy -z &d5 1 &d4 2 3
+  echo -s 14 bcopy-z src= $+ $bvar(&d4,1,6) dst= $+ $bvar(&d5,1,3).text
+  bset -t &r 1 hello world
+  breplace &r 111 48 108 76
+  echo -s 15 breplace text= $+ $bvar(&r,1,$bvar(&r,0)).text
+  echo -s 16 bfind o= $+ $bfind(&b,1,111) w= $+ $bfind(&b,1,w).text wor= $+ $bfind(&b,1,wor).text from6= $+ $bfind(&b,6,111) none= $+ $bfind(&b,1,zzz).text num= $+ $bfind(&b,1,104 101) two= $+ $bfind(&b,1,108 108) upper= $+ $bfind(&b,1,W)
+  bset &w 1 1 2 3 4
+  echo -s 17 word= $+ $bvar(&w,1).word nword= $+ $bvar(&w,1).nword long= $+ $bvar(&w,1).long nlong= $+ $bvar(&w,1).nlong
+  echo -s 18 range2= $+ $bvar(&b,2-) past=< $+ $bvar(&b,20) $+ > partial=< $+ $bvar(&b,10,5) $+ > partialtext= $+ $bvar(&b,10,5).text
+}
+alias b3 {
+  bset -t &u 1 héllo
+  echo -s 25 utf8-len= $+ $bvar(&u,0) text= $+ $bvar(&u,1,$bvar(&u,0)).text partial= $+ $bvar(&u,1,2).text
+  bset &big 1 1
+  bset &big 5000 2
+  echo -s 26 big len= $+ $bvar(&big,0)
+  bset -t &b 1 hello world
+  echo -s 27 sha1= $+ $sha1(&b,1) md5= $+ $md5(&b,1) crc= $+ $crc(&b,1)
+  noop $encode(&b,mb)
+  echo -s 29 encode text= $+ $bvar(&b,1,$bvar(&b,0)).text
+  noop $decode(&b,mb)
+  echo -s 30 decode text= $+ $bvar(&b,1,$bvar(&b,0)).text
+  bset -t &sp 1 a  b
+  echo -s 32 spaces len= $+ $bvar(&sp,0) vals= $+ $bvar(&sp,1,4)
+  bset &mix 1 72 -t i
+  echo -s 33 mix len= $+ $bvar(&mix,0) vals= $+ $bvar(&mix,1,5)
+  bset &e 1 300
+  echo -s 34 wraps= $+ $bvar(&e,1) name= $+ $bvar(&e)
+}
+alias b4 {
+  bset -t &b 1 hello world
+  write -c bin.bin
+  bwrite bin.bin 0 -1 &b
+  bread bin.bin 6 5 &rr
+  echo -s 40 bread= $+ $bvar(&rr,1,$bvar(&rr,0)).text len= $+ $bvar(&rr,0)
+  bwrite bin.bin -1 -1 !!
+  echo -s 41 appended= $+ $read(bin.bin,n,1)
+  bwrite bin.bin 0 2 HEy
+  echo -s 42 two= $+ $read(bin.bin,n,1)
+  bwrite -c bin.bin 0 3 &b
+  echo -s 43 chopped= $+ $read(bin.bin,n,1) size= $+ $file(bin.bin).size
+  btrunc bin.bin 2
+  echo -s 44 trunc= $+ $read(bin.bin,n,1) size= $+ $file(bin.bin).size
+  btrunc bin.bin 4
+  bread bin.bin 0 10 &t
+  echo -s 45 padded= $+ $bvar(&t,1,10)
+}
+alias e1 bset &e 0 65
+alias e2 bset &e 1
+alias e3 bcopy &new 1 &missing 1 3
+alias e4 echo -s $bvar(&b,1,2,3)
+-- transcript --
+me trout
+/b1
+= status: 01 len=3 vals=65 66 67 one=66 text=ABC all=65 66 67
+= status: 02 len=6 vals=65 66 67 0 0 70 text=ABC
+= status: 03 len=11 text=hello world past=hello world start7=w
+= status: 04 utf8=195 169 ansi=233 ctext=é dtext=é
+= status: 05 nulltext=A
+= status: 06 chop len=2 vals=65 90
+= status: 07 z len=0
+= status: 08 unset=<0> missing=<>
+= status: 09 shared-from-alias len=3
+= status: 10 timer-later=<0>
+/b2
+= status: 11 bcopy text=hello len=5
+= status: 12 bcopy-mid text=heworld len=7
+= status: 13 bcopy-c text=ahe
+= status: 14 bcopy-z src=97 0 0 0 101 102 dst=bcd
+= status: 15 breplace text=heLL0 w0rLd
+= status: 16 bfind o=5 w=7 wor=7 from6=8 none=0 num=1 two=3 upper=7
+= status: 17 word=513 nword=258 long=67305985 nlong=16909060
+= status: 18 range2=101 108 108 111 32 119 111 114 108 100 past=<> partial=<108 100> partialtext=ld
+/b3
+= status: 25 utf8-len=6 text=héllo partial=hÃ
+= status: 26 big len=5000
+= status: 27 sha1=2aae6c35c94fcfb415dbe95f408b9ce91ee846ed md5=5eb63bbbe01eeed093cb22bb8f5acdc3 crc=0D4A1185
+= status: 29 encode text=aGVsbG8gd29ybGQ=
+= status: 30 decode text=hello world
+= status: 32 spaces len=3 vals=97 32 98
+= status: 33 mix len=3 vals=72 45 105
+= status: 34 wraps=44 name=&e
+/b4
+= status: 40 bread=world len=5
+= status: 41 appended=hello world!!
+= status: 42 two=HEllo world!!
+= status: 43 chopped=hel size=3
+= status: 44 trunc=he size=2
+= status: 45 padded=104 101 0 0
+/e1
+= status: * /bset: invalid parameters (line 81, bin.mrc)
+/e2
+= status: * /bset: insufficient parameters (line 82, bin.mrc)
+/e3
+= status: * /bcopy: invalid parameters (line 83, bin.mrc)
+/e4
+= status: * Invalid parameters: $bvar (line 84, bin.mrc)

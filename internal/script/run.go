@@ -22,14 +22,16 @@ type run struct {
 	files     map[string]*pendingFile
 	errText   string // $error: the error an :error label caught
 	signals   []signal
-	depth     int     // nested /signal -n calls
-	quietCall bool    // the alias about to be called was called with a .
-	caret     bool    // running ^ handlers (DispatchBefore)
-	haltdef   bool    // a handler used /haltdef: the client's default is off
-	sock      *socket // the socket event's: $sockname
-	sockErr   string  // $sockerr, $null outside socket events
-	sockBR    int     // $sockbr
-	sockReads int     // /sockreads in this SOCKREAD event
+	depth     int               // nested /signal -n calls
+	quietCall bool              // the alias about to be called was called with a .
+	caret     bool              // running ^ handlers (DispatchBefore)
+	haltdef   bool              // a handler used /haltdef: the client's default is off
+	sock      *socket           // the socket event's: $sockname
+	sockErr   string            // $sockerr, $null outside socket events
+	sockBR    int               // $sockbr
+	sockReads int               // /sockreads in this SOCKREAD event
+	sockBin   bool              // one of them was into a &binvar
+	bins      map[string][]byte // binary variables (&name), lowercase: this run's only
 }
 
 // frame is an alias or event handler being run: its parameters, local
@@ -355,6 +357,20 @@ func (r *run) command(fr *frame, text string) error {
 		return &gotoErr{strings.ToLower(v)}
 	case "signal":
 		return r.cmdSignal(fr, rest)
+	case "bset":
+		return r.cmdBset(fr, rest)
+	case "bunset":
+		return r.cmdBunset(fr, rest)
+	case "bcopy":
+		return r.cmdBcopy(fr, rest)
+	case "breplace":
+		return r.cmdBreplace(fr, rest)
+	case "bread":
+		return r.cmdBread(fr, rest)
+	case "bwrite":
+		return r.cmdBwrite(fr, rest)
+	case "btrunc":
+		return r.cmdBtrunc(fr, rest)
 	case "sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename", "socklist", "sockpause":
 		return r.cmdSock(fr, strings.ToLower(name), rest)
 	case "auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel":
@@ -857,6 +873,7 @@ var engineCommands = []string{"set", "var", "unset", "unsetall", "inc", "dec", "
 	"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
 	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel",
 	"sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename",
+	"bset", "bunset", "bcopy", "breplace", "bread", "bwrite", "btrunc",
 	"window", "aline", "iline", "rline", "dline", "cline", "sline", "renwin", "loadbuf", "savebuf", "filter", "clear"}
 
 // Commands is the scripting commands the engine runs itself, sorted, for

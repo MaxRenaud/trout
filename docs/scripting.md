@@ -153,9 +153,13 @@ popup items and typed lines, and in the alias such a line calls.
   `/copy`, `/rename`, `/remove`).
 - **Several networks**: each network is a connection (`$cid`, `/scid`, `/scon`).
 - **Sockets**: connections out, plain or SSL (`/sockopen`, `-e`, and `-a` to accept a
-  certificate that doesn't check out), `/sockwrite`, `/sockread` into a `%variable`,
-  `/sockclose`, `/sockmark`, `/sockrename`, `$sock()`, `$sockname`, `$sockerr`,
+  certificate that doesn't check out), `/sockwrite`, `/sockread` into a `%variable` or a
+  `&binvar`, `/sockclose`, `/sockmark`, `/sockrename`, `$sock()`, `$sockname`, `$sockerr`,
   `$sockbr`, and `$iptype`. A web API or a whois server is a few lines, like mIRC's.
+- **Binary variables** (`&name`, for one run of a script, like mIRC's): `/bset`,
+  `/bunset`, `/bcopy`, `/breplace`, `/bread`, `/bwrite`, `/btrunc`, `$bvar` (with `.text`, `.word`,
+  `.nword`, `.long`, `.nlong`), `$bfind`, and `&binvars` in `$md5`, `$sha1`, `$crc` and
+  the rest (N = 1), `$encode`/`$decode` (`b`), and the socket commands.
 - **Custom windows**: `@windows` of text or a listbox (`/window -l`), with a side
   listbox (`-lN`), an editbox (`-e`) and its default command, sorted (`-s`), opened
   minimized (`-n`), hidden (`-h`) or without a button (`-w0`, `-k0` for one without its
@@ -174,8 +178,8 @@ trout's own commands, and anything trout doesn't know goes to the server.
 - **Not loaded at all**: scripts with dialogs, DLLs, COM objects, listening or UDP
   sockets (`/socklisten`, `/sockudp`), or `/run`. `/load` says why, and nothing of the
   script runs.
-- **Sockets' binary variables** (`&binvar`), `/sockpause`, `/socklist` and STARTTLS
-  (`-t`) give an error when reached.
+- **Sockets'** `/sockpause`, `/socklist` and STARTTLS (`-t`) give an error when
+  reached, as does `/bread -t`.
 - **Loaded, with an error when reached**: picture windows (`/window -p`, `/drawdot` and
   the other drawing commands), popup files given to `/window`, `/filter -a`, and the mIRC
   identifiers trout doesn't have yet. `/load` and the ✓ button list them.

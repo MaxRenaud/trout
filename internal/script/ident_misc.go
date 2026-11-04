@@ -128,15 +128,15 @@ var miscIdents = map[string]builtin{
 	"pi":        str("3.14159265358979323846"),
 	"bytes":     bytesIdent,
 	"base":      baseIdent,
-	"encode":    func(r *run, fr *frame, c *call) (string, error) { return codec(c, true) },
-	"decode":    func(r *run, fr *frame, c *call) (string, error) { return codec(c, false) },
+	"encode":    func(r *run, fr *frame, c *call) (string, error) { return codec(r, c, true) },
+	"decode":    func(r *run, fr *frame, c *call) (string, error) { return codec(r, c, false) },
 	"md5":       hashIdent(md5.New),
 	"sha1":      hashIdent(sha1.New),
 	"sha256":    hashIdent(sha256.New),
 	"sha384":    hashIdent(sha512.New384),
 	"sha512":    hashIdent(sha512.New),
-	// $crc(text, N) is a CRC-32: of text with N = 0, of a file (the
-	// default, N = 2).
+	// $crc(text, N) is a CRC-32: of text with N = 0, a binary variable
+	// with 1, a file (the default) with 2.
 	"crc": func(r *run, fr *frame, c *call) (string, error) {
 		data, ok := hashInput(r, c, 2)
 		if !ok {
@@ -375,35 +375,50 @@ func baseIdent(r *run, fr *frame, c *call) (string, error) {
 
 // codec is $encode and $decode with m (base64), a (base32), x (percent
 // encoding) or u (uuencode, the default).
-func codec(c *call, encode bool) (string, error) {
+func codec(r *run, c *call, encode bool) (string, error) {
 	opts := c.arg(1)
-	s := c.arg(0)
-	switch {
-	case strings.ContainsAny(opts, "bcelv"):
+	if strings.ContainsAny(opts, "celv") {
 		return "", errorf("$encode/$decode with ", opts, " isn't supported")
+	}
+	// b: a binary variable, encoded or decoded in place; it returns the
+	// new length (the help file's; not checked).
+	if strings.Contains(opts, "b") {
+		b, ok := r.bin(c.arg(0))
+		if !ok {
+			return "", errorf("$encode/$decode: invalid parameters")
+		}
+		out := codecBytes(b, opts, encode)
+		r.setBin(c.arg(0), out)
+		return itoa(len(out)), nil
+	}
+	return string(codecBytes([]byte(c.arg(0)), opts, encode)), nil
+}
+
+func codecBytes(s []byte, opts string, encode bool) []byte {
+	switch {
 	case strings.Contains(opts, "m"):
 		if encode {
-			return base64.StdEncoding.EncodeToString([]byte(s)), nil
+			return []byte(base64.StdEncoding.EncodeToString(s))
 		}
-		b, _ := base64.StdEncoding.DecodeString(s)
-		return string(b), nil
+		b, _ := base64.StdEncoding.DecodeString(string(s))
+		return b
 	case strings.Contains(opts, "a"):
 		if encode {
-			return base32.StdEncoding.EncodeToString([]byte(s)), nil
+			return []byte(base32.StdEncoding.EncodeToString(s))
 		}
-		b, _ := base32.StdEncoding.DecodeString(s)
-		return string(b), nil
+		b, _ := base32.StdEncoding.DecodeString(string(s))
+		return b
 	case strings.Contains(opts, "x"):
 		if encode {
-			return strings.ReplaceAll(url.QueryEscape(s), "+", "%20"), nil
+			return []byte(strings.ReplaceAll(url.QueryEscape(string(s)), "+", "%20"))
 		}
-		v, _ := url.PathUnescape(s)
-		return v, nil
+		v, _ := url.PathUnescape(string(s))
+		return []byte(v)
 	}
 	if encode {
-		return uuencode([]byte(s)), nil
+		return []byte(uuencode(s))
 	}
-	return string(uudecode(s)), nil
+	return uudecode(string(s))
 }
 
 // uuencode is one uuencoded line per 45 bytes, joined.
@@ -460,7 +475,11 @@ func hashInput(r *run, c *call, def int) (string, bool) {
 	if len(c.vals) > 1 {
 		n = int(c.num(1))
 	}
-	if n == 2 {
+	switch n {
+	case 1:
+		b, ok := r.bin(c.arg(0))
+		return string(b), ok
+	case 2:
 		return r.readFile(c.arg(0))
 	}
 	return c.arg(0), true

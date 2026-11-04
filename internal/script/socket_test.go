@@ -171,3 +171,44 @@ func TestIPType(t *testing.T) {
 		}
 	}
 }
+
+// TestSockBinvars reads into and writes from binary variables: /sockread
+// [numbytes] &binvar takes bytes, not lines (zero bytes too), SOCKREAD
+// fires again while any are left, and /sockwrite [-b numbytes] sends a
+// &binvar's bytes. Each SOCKREAD is its own run: its &binvars start empty.
+func TestSockBinvars(t *testing.T) {
+	e := New(Options{})
+	if p := e.Load("t.mrc", `alias go sockopen raw example.com 80
+on *:SOCKOPEN:raw:{
+  bset &req 1 1 2 0 3 4 5
+  sockwrite raw &req
+  sockwrite -b raw 2 &req
+}
+on *:SOCKREAD:raw:{
+  inc %reads
+  if ($bvar(&got,0)) set %leak yes
+  sockread 4 &got
+  set %got %got $bvar(&got,1,$bvar(&got,0)) / $sockbr
+}`); len(p) > 0 {
+		t.Fatal(p)
+	}
+	h := evalHost()
+	acts, _ := e.Alias("TestNet", "", "go", "", h)
+	id := acts[0].Sock.ID
+	var sent [][]byte
+	for _, a := range e.SockOpened(id, "93.184.215.14:80", nil, h) {
+		if a.Sock != nil && a.Sock.Data != nil {
+			sent = append(sent, a.Sock.Data)
+		}
+	}
+	if len(sent) != 2 || string(sent[0]) != "\x01\x02\x00\x03\x04\x05" || string(sent[1]) != "\x01\x02" {
+		t.Fatalf("sent %q", sent)
+	}
+	e.SockRead(id, []byte("ab\x00cdefghi"), h)
+	if got := evalIn(t, e, "%reads %got"); got != "3 97 98 0 99 / 4 100 101 102 103 / 4 104 105 / 2" {
+		t.Fatalf("reads: %q", got)
+	}
+	if leak := evalIn(t, e, "%leak"); leak != "" {
+		t.Fatal("a &binvar outlived its SOCKREAD")
+	}
+}
