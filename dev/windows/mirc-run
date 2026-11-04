@@ -51,6 +51,12 @@ Get-Content "$d\status.txt" -ErrorAction SilentlyContinue' | tr -d '\r')
 case $status in
 exited) ;;
 *)
+	# Defender deletes scripts it takes for IRC worms (any /bwrite is
+	# Worm:IRC/Generic), and mIRC then waits with nothing to run.
+	if [ "$($ssh 'Test-Path "$env:USERPROFILE\trout-oracle\oracle.mrc"' | tr -d '\r')" = False ]; then
+		echo "mirc-run: Windows Defender deleted the script (it flags /bwrite as Worm:IRC/Generic); exclude the trout-oracle folder in your profile from Defender, or check its Protection history" >&2
+		exit 1
+	fi
 	echo "mirc-run: mIRC didn't finish (${status:-no status}); is it registered, and does the script /exit -n?" >&2
 	exit 1
 	;;

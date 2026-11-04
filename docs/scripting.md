@@ -204,6 +204,10 @@ trout's own commands, and anything trout doesn't know goes to the server.
 - **`$?` in `^` events, `on INPUT` and CTCP handlers** is an error: they can't wait.
 - **Regular expressions** are Go's (RE2): no lookarounds or backreferences. Using one is
   an error, not a wrong match.
+- **On Windows, Microsoft Defender deletes** a script that has both `on *:START` and
+  `/bwrite` as `Worm:IRC/Generic` (found 2026-11-04; it does the same to mIRC's). `/load`
+  then can't find the file. Keep `/bwrite` in another file than your `on START`, or tell
+  Defender to leave trout's scripts folder alone.
 
 ## Where trout differs from mIRC
 
