@@ -291,6 +291,8 @@ type App struct {
 	isupport       map[*state.Network]map[string]string
 	socks          map[int]*scriptSock        // scripts' sockets, by the engine's ID
 	webGets        map[int]context.CancelFunc // scripts' $urlget requests, by id
+	scriptWait     *scriptRun                 // a script run waiting on an input box ($?)
+	scriptQueue    []func() []script.Action   // script runs waiting for it to finish
 	scriptCmds     []tea.Cmd                  // from script events in places that can't return a command
 	hideLines      bool
 	ctcpHalted     bool
@@ -484,6 +486,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.mouse(msg)
 	}
 	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds())
+	a.keepAsking()
 	if t := "trout - [" + a.winTitle(a.active) + "]"; t != a.title {
 		a.title = t
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))

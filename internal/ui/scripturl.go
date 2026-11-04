@@ -62,7 +62,7 @@ func (a *App) urlDone(m urlDoneMsg) tea.Cmd {
 		return nil
 	}
 	delete(a.webGets, m.id)
-	return a.runScript(a.scripts.URLDone(m.id, m.res, a.scriptHost()))
+	return a.scriptAsking(func() []script.Action { return a.scripts.URLDone(m.id, m.res, a.scriptHost()) })
 }
 
 // cancelURLs stops scripts' requests as trout quits.

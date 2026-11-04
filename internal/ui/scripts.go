@@ -536,7 +536,7 @@ func (a *App) scheduleScriptTick() tea.Cmd {
 
 func (a *App) scriptTick() tea.Cmd {
 	a.scriptTickAt = time.Time{}
-	return a.runScript(a.scripts.Tick(a.scriptHost()))
+	return a.scriptAsking(func() []script.Action { return a.scripts.Tick(a.scriptHost()) })
 }
 
 // scriptEvent dispatches an event trout makes itself (on OPEN, on CLOSE,
@@ -561,8 +561,10 @@ func (a *App) scriptAfter(ev script.Event) tea.Cmd {
 	if !a.scriptsOn() {
 		return nil
 	}
-	actions, _ := a.scripts.Dispatch(ev, a.scriptHost())
-	return a.runScript(actions)
+	return a.scriptAsking(func() []script.Action {
+		actions, _ := a.scripts.Dispatch(ev, a.scriptHost())
+		return actions
+	})
 }
 
 // handleIRC applies one message from network n to the UI state, with
@@ -614,8 +616,10 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		// A query window opened for this message: on OPEN, before on TEXT.
 		cmds = append(cmds, a.scriptAfter(open))
 	}
-	actions, _ := a.scripts.Dispatch(ev, h)
-	cmds = append(cmds, a.runScript(actions))
+	cmds = append(cmds, a.scriptAsking(func() []script.Action {
+		actions, _ := a.scripts.Dispatch(ev, h)
+		return actions
+	}))
 	if m.Command == "376" || m.Command == "422" {
 		// The end of the MOTD: on CONNECT, like mIRC's.
 		cmds = append(cmds, a.scriptEvent(script.Event{Kind: "CONNECT", Network: n.Name}))

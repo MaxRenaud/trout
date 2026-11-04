@@ -34,6 +34,6 @@ active #trout
 < :bob!b@h PRIVMSG #trout :hi
 = status: * $mouse isn't supported yet (line 2, good.mrc)
 < :bob!b@h PRIVMSG #trout :!q
-= status: * $?: input boxes only work in popups and typed commands (line 7, good.mrc)
+= status: * $?: input boxes don't work here (line 7, good.mrc)
 < :bob!b@h PRIVMSG #trout :!ok
 > /msg #trout still here

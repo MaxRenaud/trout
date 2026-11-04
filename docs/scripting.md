@@ -124,8 +124,12 @@ Slap!:/me slaps $$1 around a bit with a large trout
 ```
 
 `$?="question"` asks for something in an input box before the item runs; with `$$?`,
-leaving it empty (or Cancel) stops the command. `$!` is the last answer. They work in
-popup items and typed lines, and in the alias such a line calls.
+leaving it empty (or Cancel) stops the command. `$?*` hides what you type (a password)
+and `$?!` asks Yes or No (`$true` or `$false`). `$!` is the last answer. In events,
+timers and sockets they ask when the script gets there and wait for you, like mIRC's;
+other scripts' events wait their turn meanwhile. Only `^` events, `on INPUT` and a
+CTCP's handlers can't wait (trout needs their answer at once), so `$?` there is an
+error.
 
 ## What runs
 
@@ -190,7 +194,7 @@ trout's own commands, and anything trout doesn't know goes to the server.
   the other drawing commands), popup files given to `/window`, `/filter -a`, and the mIRC
   identifiers trout doesn't have yet. `/load` and the ✓ button list them.
 - **Ignored**: sounds (`/splay`); `/beep` is the terminal's bell.
-- **`$?` in events**: input boxes only work in popups and typed lines.
+- **`$?` in `^` events, `on INPUT` and CTCP handlers** is an error: they can't wait.
 - **Regular expressions** are Go's (RE2): no lookarounds or backreferences. Using one is
   an error, not a wrong match.
 

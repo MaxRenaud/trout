@@ -133,22 +133,23 @@ type Engine struct {
 	regml      regexMatches // the last matches, for $regml
 	filtered   int          // how many lines the last /filter found: $filtered
 	regexes    map[string]*compiledRegex
-	handles    map[string]*handle // /fopen's files, by lower-case name
-	ferr       bool               // $ferr: the last file access failed
-	feof       bool               // $feof: the last read reached the end
-	users      []*user            // the Users list
-	dlevel     int                // the default level, for users who aren't listed
-	usersDirty bool               // the Users list changed since the last Save
-	ctimer     string             // the timer running now
-	ltimer     string             // the last timer started
-	deaf       int                // the events not listened to: $remote's bits (1 ctcp, 2 named, 4 raw)
-	identWarn  bool               // an identifier that doesn't exist is an error
-	answers    []string           // input box answers for $?, from Answer
-	lastAnswer string             // $!
-	socks      []*socket          // /sockopen's sockets
-	sockSeq    int                // the last socket's ID
-	urls       []*urlGet          // $urlget's transfers, until their alias returns
-	urlSeq     int                // the last one's id (they start at 1025, like mIRC's)
+	handles    map[string]*handle  // /fopen's files, by lower-case name
+	ferr       bool                // $ferr: the last file access failed
+	feof       bool                // $feof: the last read reached the end
+	users      []*user             // the Users list
+	dlevel     int                 // the default level, for users who aren't listed
+	usersDirty bool                // the Users list changed since the last Save
+	ctimer     string              // the timer running now
+	ltimer     string              // the last timer started
+	deaf       int                 // the events not listened to: $remote's bits (1 ctcp, 2 named, 4 raw)
+	identWarn  bool                // an identifier that doesn't exist is an error
+	answers    []string            // input box answers for $?, from Answer
+	ask        func(Prompt) string // asks an input box there's no answer for, from SetAsk
+	lastAnswer string              // $!
+	socks      []*socket           // /sockopen's sockets
+	sockSeq    int                 // the last socket's ID
+	urls       []*urlGet           // $urlget's transfers, until their alias returns
+	urlSeq     int                 // the last one's id (they start at 1025, like mIRC's)
 }
 
 // Listen turns the three kinds of event on and off, like mIRC's /ctcps,

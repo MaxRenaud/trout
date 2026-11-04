@@ -318,14 +318,16 @@ func (e *Engine) RunMenu(id, kind, network, window string, params []string, h Ho
 type Prompt struct {
 	Text     string
 	Required bool
+	Masked   bool // $?*: a password, shown as dots
+	YesNo    bool // $?!: Yes or No, answered $true or $false
 }
 
-var promptRe = regexp.MustCompile(`(\$\$?)\?\*?(?:="([^"]*)")?`)
+var promptRe = regexp.MustCompile(`(\$\$?)\?([*!]?)(?:="([^"]*)")?`)
 
 func prompts(src string) []Prompt {
 	var out []Prompt
 	for _, m := range promptRe.FindAllStringSubmatch(src, -1) {
-		out = append(out, Prompt{Text: m[2], Required: m[1] == "$$"})
+		out = append(out, Prompt{Text: m[3], Required: m[1] == "$$", Masked: m[2] == "*", YesNo: m[2] == "!"})
 	}
 	return out
 }
@@ -373,6 +375,12 @@ func (e *Engine) calledPrompts(from *file, src string) []Prompt {
 
 // Answer gives the next command run the answers to its input boxes.
 func (e *Engine) Answer(answers []string) { e.answers = answers }
+
+// SetAsk sets how a script asks an input box ($?) that wasn't answered
+// beforehand, in an event or a timer: ask shows it and returns the
+// answer ("" for Cancel), however long that takes. nil makes $? there an
+// error.
+func (e *Engine) SetAsk(ask func(Prompt) string) { e.ask = ask }
 
 // MenubarTitle is the menubar popup's name in the menubar, from
 // popups.ini, or "".

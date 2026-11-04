@@ -95,8 +95,9 @@ func splitWords(s string) []string {
 		}
 		j := i
 		for j < len(s) && !isSpace(s[j]) {
-			if s[j] == '"' && j >= 2 && s[j-2:j] == "?=" {
-				// $?="Enter a channel:" is one word, spaces and all.
+			if s[j] == '"' && j >= 2 && (s[j-2:j] == "?=" || j >= 3 && (s[j-3:j] == "?*=" || s[j-3:j] == "?!=")) {
+				// $?="Enter a channel:" is one word, spaces and all ($?*= and
+				// $?!= too).
 				if end := strings.IndexByte(s[j+1:], '"'); end >= 0 {
 					j += end + 2
 					continue
@@ -219,10 +220,28 @@ func (r *run) evalIdentBody(fr *frame, s string) (string, error) {
 	case s == "!":
 		return r.e.lastAnswer, nil // the last input box's answer
 	case s[0] == '?':
-		// $?="question": an input box, answered before the command ran
-		// (see Prompt).
+		// $?="question": an input box. Popups and typed commands ask
+		// before running (see Prompt); anything else asks now, through
+		// the client's Ask, which waits for the answer like mIRC's.
 		if len(r.e.answers) == 0 {
-			return "", errorf("$?: input boxes only work in popups and typed commands")
+			if r.e.ask == nil {
+				return "", errorf("$?: input boxes don't work here")
+			}
+			p := Prompt{Masked: strings.HasPrefix(s[1:], "*"), YesNo: strings.HasPrefix(s[1:], "!")}
+			q := strings.TrimPrefix(strings.TrimPrefix(s[1:], "*"), "!")
+			if t, ok := strings.CutPrefix(q, "="); ok {
+				q = strings.TrimSuffix(strings.TrimPrefix(t, `"`), `"`)
+			} else {
+				q = ""
+			}
+			q, err := r.eval(fr, q)
+			if err != nil {
+				return "", err
+			}
+			p.Text = q
+			v := r.e.ask(p)
+			r.e.lastAnswer = v
+			return v, nil
 		}
 		v := r.e.answers[0]
 		r.e.answers, r.e.lastAnswer = r.e.answers[1:], v

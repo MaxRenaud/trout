@@ -120,14 +120,14 @@ func (a *App) sockMsg(msg tea.Msg) tea.Cmd {
 	case sockOpenedMsg:
 		return a.sockOpened(m)
 	case sockReadMsg:
-		return a.runScript(a.scripts.SockRead(m.id, m.data, h))
+		return a.scriptAsking(func() []script.Action { return a.scripts.SockRead(m.id, m.data, h) })
 	case sockWrittenMsg:
-		return a.runScript(a.scripts.SockWritten(m.id, m.n, m.err, h))
+		return a.scriptAsking(func() []script.Action { return a.scripts.SockWritten(m.id, m.n, m.err, h) })
 	case sockClosedMsg:
 		if sc := a.socks[m.id]; sc != nil {
 			delete(a.socks, m.id)
 			sc.close()
-			return a.runScript(a.scripts.SockClosed(m.id, m.err, h))
+			return a.scriptAsking(func() []script.Action { return a.scripts.SockClosed(m.id, m.err, h) })
 		}
 	}
 	return nil

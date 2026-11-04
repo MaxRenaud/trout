@@ -507,14 +507,14 @@ func TestInputBoxes(t *testing.T) {
 	if len(items) != 2 || items[0].Label != "Join channel" {
 		t.Fatalf("menubar = %+v", items)
 	}
-	if got := e.MenuPrompts(items[0].ID); !slices.Equal(got, []Prompt{{"Enter channel name:", true}}) {
+	if got := e.MenuPrompts(items[0].ID); !slices.Equal(got, []Prompt{{Text: "Enter channel name:", Required: true}}) {
 		t.Errorf("prompts = %+v", got)
 	}
 	e.Answer([]string{"trout"})
 	if a := e.RunMenu(items[0].ID, "menubar", "TestNet", "#trout", nil, evalHost()); len(a) != 1 || a[0].Echo.Text != "join #trout trout" {
 		t.Errorf("join: %+v", a)
 	}
-	if got := e.MenuPrompts(items[1].ID); !slices.Equal(got, []Prompt{{"Away message:", false}}) {
+	if got := e.MenuPrompts(items[1].ID); !slices.Equal(got, []Prompt{{Text: "Away message:"}}) {
 		t.Errorf("an alias's prompts = %+v", got)
 	}
 
@@ -538,8 +538,17 @@ func TestInputBoxes(t *testing.T) {
 	if got := e.CommandPrompts("aw", false); len(got) != 1 {
 		t.Errorf("typed alias = %+v", got)
 	}
-	// Without answers (in an event, say), it's an error.
-	if a, _ := e.Command("TestNet", "", "aw", false, evalHost()); len(a) != 1 || !strings.Contains(a[0].Echo.Text, "input boxes only work") {
+	// Without answers and no way to ask, it's an error.
+	if a, _ := e.Command("TestNet", "", "aw", false, evalHost()); len(a) != 1 || !strings.Contains(a[0].Echo.Text, "input boxes don't work here") {
 		t.Errorf("unanswered: %+v", a)
+	}
+	// With SetAsk, it asks then, with the question evaluated.
+	var asked []string
+	e.SetAsk(func(p Prompt) string { asked = append(asked, p.Text); return "lunch" })
+	defer e.SetAsk(nil)
+	e.Load("ask.mrc", `on *:TEXT:away?:#:me is away: $?="Why, $nick $+ ?" / $!`)
+	acts, _ := e.Dispatch(Event{Kind: "TEXT", Network: "TestNet", Nick: "bob", Target: "#trout", Chan: "#trout", Text: "away?"}, evalHost())
+	if len(asked) != 1 || asked[0] != "Why, bob?" || len(acts) != 1 || acts[0].Command != "/me is away: lunch / lunch" {
+		t.Errorf("asked %q, did %+v", asked, acts)
 	}
 }

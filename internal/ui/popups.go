@@ -211,31 +211,50 @@ func (a *App) askInputs(ps []script.Prompt, run func(a *App, answers []string) t
 	var ask func(i int)
 	ask = func(i int) {
 		p := ps[i]
-		f := &formBox{Title: "Input Request", Buttons: []string{"OK", "Cancel"},
-			Fields: []*formField{newField("", "", false)}}
-		if p.Text != "" {
-			f.Lines = []string{p.Text}
-		}
-		next := func(a *App, v string) tea.Cmd {
+		a.openDialog(promptBox(p, func(a *App, v string, cancelled bool) tea.Cmd {
+			if cancelled && p.Required {
+				return nil // $$?: the command doesn't run
+			}
 			answers = append(answers, v)
 			if i+1 < len(ps) {
 				ask(i + 1)
 				return nil
 			}
 			return run(a, answers)
-		}
-		f.OnOK = func(a *App, v []string) (tea.Cmd, error) {
-			a.dlg = nil
-			return next(a, v[0]), nil
-		}
-		f.OnCancel = func(a *App) tea.Cmd {
-			if p.Required {
-				return nil
-			}
-			return next(a, "")
-		}
-		a.openDialog(f)
+		}))
 	}
 	ask(0)
 	return nil
+}
+
+// promptBox is mIRC's input box for $?: a line to type in ($?* masks it),
+// or with $?! Yes and No, answered $true or $false. answer gets what was
+// typed, or "" and cancelled.
+func promptBox(p script.Prompt, answer func(a *App, v string, cancelled bool) tea.Cmd) modal {
+	if p.YesNo {
+		m := &msgBox{Title: "Input Request", Buttons: []string{"Yes", "No"}, Cancel: 1}
+		if p.Text != "" {
+			m.Lines = []string{p.Text}
+		}
+		m.OnClose = func(a *App, button int) tea.Cmd { return answer(a, boolText(button == 0), false) }
+		return m
+	}
+	f := &formBox{Title: "Input Request", Buttons: []string{"OK", "Cancel"},
+		Fields: []*formField{newField("", "", p.Masked)}}
+	if p.Text != "" {
+		f.Lines = []string{p.Text}
+	}
+	f.OnOK = func(a *App, v []string) (tea.Cmd, error) {
+		a.dlg = nil
+		return answer(a, v[0], false), nil
+	}
+	f.OnCancel = func(a *App) tea.Cmd { return answer(a, "", true) }
+	return f
+}
+
+func boolText(b bool) string {
+	if b {
+		return "$true"
+	}
+	return "$false"
 }
