@@ -292,6 +292,8 @@ type App struct {
 	socks          map[int]*scriptSock        // scripts' sockets, by the engine's ID
 	webGets        map[int]context.CancelFunc // scripts' $urlget requests, by id
 	scriptWait     *scriptRun                 // a script run waiting on an input box ($?)
+	activeSeen     *state.Window              // the active window at the end of the last Update
+	lastActive     *state.Window              // the one before it: $lactive
 	scriptQueue    []func() []script.Action   // script runs waiting for it to finish
 	scriptCmds     []tea.Cmd                  // from script events in places that can't return a command
 	hideLines      bool
@@ -455,8 +457,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ed, ok := a.dlg.(*scriptEditor); ok && !a.book().ScriptOpts.NoMonitor {
 			ed.reloadChanged(a)
 		}
+		cmd = a.appActive()
 	case tea.BlurMsg:
 		a.focused = false
+		cmd = a.appActive()
 	case readTickMsg:
 		a.readTick = false
 	case wizardTickMsg:
@@ -485,7 +489,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		cmd = a.mouse(msg)
 	}
-	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds())
+	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds(), a.activeChanged())
 	a.keepAsking()
 	if t := "trout - [" + a.winTitle(a.active) + "]"; t != a.title {
 		a.title = t

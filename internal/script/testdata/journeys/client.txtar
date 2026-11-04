@@ -1,0 +1,78 @@
+The client's identifiers and focus events, replaying what mIRC 7.86 did
+(tmp/misc-oracle*.mrc): $color's names and numbers, $rgb, $findfile (a
+folder's files by name, then its folders'), $lactive, on ACTIVE and on
+APPACTIVE. The host's colors are mIRC's defaults; its file names are lower
+case.
+
+-- client.mrc --
+alias c1 {
+  var %n background action ctcp highlight info info2 invite join kick mode nick normal notice notify other own part quit topic wallops whois editbox listbox gray title inactive treebar, %i 1, %o
+  while ($gettok(%n,%i,32)) {
+    var %o %o $v1 $+ = $+ $color($v1)
+    inc %i
+  }
+  echo -s C1 %o
+  echo -s C2 full= $+ $color(action text) upper= $+ $color(ACTION) dd= $+ $color(action).dd dd2= $+ $color(highlight).dd nonsense=< $+ $color(nonsense) $+ > editboxtext= $+ $color(editbox text)
+  echo -s C3 0= $+ $color(0) 2= $+ $color(2) 4= $+ $color(4) 16= $+ $color(16) 17= $+ $color(17) 98= $+ $color(98) 99=< $+ $color(99) $+ > 100= $+ $color(100)
+  echo -s R1 rgb= $+ $rgb(1,2,3) red= $+ $rgb(255,0,0) one= $+ $rgb(65793) big= $+ $rgb(300,0,0) zero= $+ $rgb(0) face= $+ $rgb(face) shadow= $+ $rgb(shadow)
+}
+alias r3 echo -s $rgb(1,2)
+alias setup {
+  write -c fft/a.txt x
+  write -c fft/b.log x
+  write -c fft/sub/c.txt x
+  write -c fft/sub/deep/d.txt x
+  write -c fft/z.txt x
+}
+alias f1 {
+  echo -s F1 count= $+ $findfile(fft,*.txt,0) first= $+ $nopath($findfile(fft,*.txt,1)) second= $+ $nopath($findfile(fft,*.txt,2)) third= $+ $nopath($findfile(fft,*.txt,3)) fourth= $+ $nopath($findfile(fft,*.txt,4)) none=< $+ $findfile(fft,*.zzz,1) $+ > multi= $+ $findfile(fft,*.txt;*.log,0) depth1= $+ $findfile(fft,*.txt,0,1) depth2= $+ $findfile(fft,*.txt,0,2) depth0= $+ $findfile(fft,*.txt,0,0)
+  echo -s F2 path= $+ $findfile(fft,a.txt,1) sub= $+ $findfile(fft\sub,*,1) nodir= $+ $findfile(nosuchdir,*,0) isdir= $+ $isdir(fft) $isdir(fft/a.txt) $isdir(nope)
+  var %x = $findfile(fft,*.txt,0,echo -s F3cmd $nopath($1-) n= $+ $findfilen)
+  echo -s F3 ret= $+ %x
+  echo -s F4 order: $nopath($findfile(fft,*,1)) $nopath($findfile(fft,*,2)) $nopath($findfile(fft,*,3)) findfilen= $+ $findfilen
+  window -l @ff
+  noop $findfile(fft,*.txt,0,@ff)
+  echo -s F6 lines= $+ $line(@ff,0) l1= $+ $nopath($line(@ff,1))
+  var %y = $findfile(fft,*.txt,0,haltit $1-)
+  echo -s F7 ret=< $+ %y $+ >
+  echo -s M1 mircini= $+ $mircini lactive=< $+ $lactive $+ > appactive= $+ $appactive
+}
+alias haltit {
+  echo -s F7cmd $nopath($1-)
+  halt
+}
+on *:ACTIVE:*:echo -s A active= $+ $active lactive= $+ $lactive
+on *:APPACTIVE:echo -s AA appactive= $+ $appactive
+-- chan.mrc --
+on *:ACTIVE:#:echo -s A# channel $active
+-- transcript --
+me trout
+chan #trout @trout bob
+/c1
+= status: C1 background=0 action=6 ctcp=4 highlight=5 info=2 info2=2 invite=3 join=3 kick=3 mode=3 nick=3 normal=1 notice=5 notify=7 other=6 own=1 part=3 quit=2 topic=3 wallops=5 whois=1 editbox=0 listbox=0 gray=14 title=6 inactive=0 treebar=0
+= status: C2 full=6 upper=6 dd=06 dd2=05 nonsense=<1> editboxtext=1
+= status: C3 0=16777215 2=8323072 4=255 16=71 17=8519 98=16777215 99=<0> 100=16777215
+= status: R1 rgb=197121 red=255 one=1,1,1 big=44 zero=0,0,0 face=15790320 shadow=10526880
+/r3
+= status: * Invalid parameters: $rgb (line 12, client.mrc)
+/setup
+/f1
+= status: F1 count=4 first=a.txt second=z.txt third=c.txt fourth=d.txt none=<> multi=5 depth1=2 depth2=3 depth0=2
+= status: F2 path=fft/a.txt sub=fft/sub/c.txt nodir=0 isdir=$true $false $false
+= status: F3cmd a.txt n=1
+= status: F3cmd z.txt n=2
+= status: F3cmd c.txt n=3
+= status: F3cmd d.txt n=4
+= status: F3 ret=4
+= status: F4 order: a.txt b.log z.txt findfilen=3
+= status: F6 lines=4 l1=a.txt
+= status: F7cmd a.txt
+= status: F7 ret=<>
+= status: M1 mircini=mirc.ini lactive=<> appactive=$false
+focus #trout
+= status: A active=#trout lactive=@ff
+= status: A# channel #trout
+focus status
+= status: A active=Status Window lactive=#trout
+app in front
+= status: AA appactive=$true

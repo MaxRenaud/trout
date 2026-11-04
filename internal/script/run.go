@@ -31,6 +31,7 @@ type run struct {
 	sockBR    int               // $sockbr
 	sockReads int               // /sockreads in this SOCKREAD event
 	sockBin   bool              // one of them was into a &binvar
+	findfileN int               // $findfilen
 	bins      map[string][]byte // binary variables (&name), lowercase: this run's only
 }
 

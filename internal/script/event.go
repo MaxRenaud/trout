@@ -134,6 +134,9 @@ var eventFields = map[string]int{
 	"OPEN": 2, "CLOSE": 1,
 	// on INPUT:#: typed text, in a channel (#), query (?), any window (*).
 	"INPUT": 1,
+	// on ACTIVE:#: a window coming to the front; on APPACTIVE: trout's
+	// terminal coming to the front or going behind.
+	"ACTIVE": 1, "APPACTIVE": 0,
 }
 
 // matchOnly are the events whose one field is matchtext, not a location.
@@ -224,7 +227,7 @@ func (r *run) matches(f *file, h *event, ev *Event) bool {
 		return false
 	}
 	switch {
-	case h.kind == "OPEN" || h.kind == "CLOSE" || h.kind == "INPUT":
+	case h.kind == "OPEN" || h.kind == "CLOSE" || h.kind == "INPUT" || h.kind == "ACTIVE":
 		if !windowLoc(h.loc, ev.Target) {
 			return false
 		}

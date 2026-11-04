@@ -891,3 +891,135 @@ func (a *App) loadVarsOrUsers(file string, vars bool) tea.Cmd {
 	a.addLine(a.active, state.RoleInfo, "* Loaded "+strconv.Itoa(len(lines))+map[bool]string{true: " variables", false: " users"}[vars]+" from "+file)
 	return a.runScript(actions)
 }
+
+// activeChanged is on ACTIVE, once an Update has changed the active window
+// (not in activate itself, which also runs while a script changes
+// windows): $active is the new one, $lactive the one before.
+func (a *App) activeChanged() tea.Cmd {
+	if a.active == a.activeSeen || a.active == nil {
+		return nil
+	}
+	prev := a.activeSeen
+	a.activeSeen = a.active
+	if prev == nil { // trout starting
+		return nil
+	}
+	a.lastActive = prev
+	if !a.scriptsOn() {
+		return nil
+	}
+	ev := script.Event{Kind: "ACTIVE", Network: a.active.Net.Name, Target: a.active.Name}
+	if a.active.Kind == state.KStatus {
+		ev.Target = ""
+	}
+	return a.scriptEvent(ev)
+}
+
+// appActive is on APPACTIVE: the terminal came to the front or went
+// behind ($appactive), like mIRC's window.
+func (a *App) appActive() tea.Cmd {
+	if !a.scriptsOn() {
+		return nil
+	}
+	return a.scriptEvent(script.Event{Kind: "APPACTIVE", Network: a.active.Net.Name})
+}
+
+func (h scriptHost) AppActive() bool { return h.a.focused }
+
+func (h scriptHost) LastActive() (string, string, bool) {
+	w := h.a.lastActive
+	if w == nil || w.Net == nil {
+		return "", "", false
+	}
+	if w.Kind == state.KStatus {
+		return w.Net.Name, "", true
+	}
+	return w.Net.Name, w.Name, true
+}
+
+// Colors is the scheme's palette, mIRC's fixed colors after it, and the
+// color number of each kind of text: the Colors dialog's choice, or the
+// palette color nearest the scheme's.
+func (h scriptHost) Colors() script.Colors {
+	a := h.a
+	t := a.theme()
+	var c script.Colors
+	for i, v := range t.Pal {
+		c.Pal[i] = uint32(v)
+	}
+	for i, v := range extendedColors {
+		c.Pal[16+i] = uint32(v)
+	}
+	c.Index = map[string]int{}
+	for _, it := range colorItems {
+		if it.role < -1 {
+			continue // the switchbar's
+		}
+		if idx, ok := a.colors[it.role]; ok {
+			c.Index[it.key] = idx
+			continue
+		}
+		c.Index[it.key] = nearestPal(t, themeColor(t, it.role))
+	}
+	return c
+}
+
+// nearestPal is the palette number of the scheme's color nearest rgb.
+func nearestPal(t *Theme, rgb RGB) int {
+	best, bestD := 0, -1
+	for i, p := range t.Pal {
+		dr, dg, db := int(p>>16&0xff)-int(rgb>>16&0xff), int(p>>8&0xff)-int(rgb>>8&0xff), int(p&0xff)-int(rgb&0xff)
+		if d := dr*dr + dg*dg + db*db; bestD < 0 || d < bestD {
+			best, bestD = i, d
+		}
+	}
+	return best
+}
+
+// ListDir is a folder of the scripts folder, for $findfile: the folder
+// itself for "", and nothing outside it.
+func (h scriptHost) ListDir(dir string) ([]script.DirEntry, bool) {
+	a := h.a
+	if a.scriptsDir() == "" {
+		return memDir(a.scriptMem, dir)
+	}
+	path := a.scriptsDir()
+	if dir != "" {
+		p, ok := a.scriptFile(dir)
+		if !ok {
+			return nil, false
+		}
+		path = p
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, false
+	}
+	out := make([]script.DirEntry, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, script.DirEntry{Name: e.Name(), IsDir: e.IsDir()})
+	}
+	return out, true
+}
+
+// memDir is ListDir for scriptMem, whose names have / in them.
+func memDir(files map[string]string, dir string) ([]script.DirEntry, bool) {
+	prefix := ""
+	if dir != "" {
+		prefix = strings.ToLower(strings.ReplaceAll(dir, `\`, "/")) + "/"
+	}
+	seen := map[string]bool{}
+	var out []script.DirEntry
+	for name := range files {
+		rest, ok := strings.CutPrefix(strings.ReplaceAll(name, `\`, "/"), prefix)
+		if !ok {
+			continue
+		}
+		first, _, isDir := strings.Cut(rest, "/")
+		if !seen[first] {
+			seen[first] = true
+			out = append(out, script.DirEntry{Name: first, IsDir: isDir})
+		}
+	}
+	return out, dir == "" || len(out) > 0
+}

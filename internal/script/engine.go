@@ -45,6 +45,16 @@ type Host interface {
 	// ReadFile reads a file from the scripts folder: /hload, $read. The
 	// name is as the script gave it; the client keeps it in that folder.
 	ReadFile(name string) (string, bool)
+	// ListDir is a folder of the scripts folder ("" for itself), for
+	// $findfile and $isdir; false if there's no such folder.
+	ListDir(dir string) ([]DirEntry, bool)
+	// Colors is the client's palette and text colors, for $color.
+	Colors() Colors
+	// AppActive is whether the client is in front ($appactive);
+	// LastActive the window active before the active one ($lactive),
+	// false if there's been none.
+	AppActive() bool
+	LastActive() (network, window string, ok bool)
 	Now() time.Time
 }
 

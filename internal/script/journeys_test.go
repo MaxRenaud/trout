@@ -336,6 +336,21 @@ func (j *journey) step(l string) {
 		j.host.CloseWindow(name)
 		actions, halted := j.e.Dispatch(Event{Kind: "CLOSE", Network: j.host.net, Target: name}, j.host)
 		j.record(actions, halted)
+	case strings.HasPrefix(l, "focus "):
+		// focus #chan: the user brings a window to the front (status for
+		// the status window): on ACTIVE.
+		name := strings.TrimSpace(l[6:])
+		if name == "status" {
+			name = ""
+		}
+		j.host.lastActive, j.host.hadActive, j.host.active = j.host.active, true, name
+		actions, halted := j.e.Dispatch(Event{Kind: "ACTIVE", Network: j.host.net, Target: name}, j.host)
+		j.record(actions, halted)
+	case l == "app in front", l == "app behind":
+		// The terminal comes to the front or goes behind: on APPACTIVE.
+		j.host.appActive = l == "app in front"
+		actions, halted := j.e.Dispatch(Event{Kind: "APPACTIVE", Network: j.host.net}, j.host)
+		j.record(actions, halted)
 	case strings.HasPrefix(l, "menu "):
 		w := strings.Fields(l)
 		items, actions := j.e.Popups(w[1], j.host.net, j.host.active, w[2:], j.host)
@@ -431,6 +446,9 @@ type fakeHost struct {
 	info            NetInfo
 	now             time.Time
 	wins            []*fakeWin // custom windows, in the order they opened
+	appActive       bool
+	lastActive      string // "" with hadActive: the status window
+	hadActive       bool
 }
 
 // fakeWin is a custom window, kept like the client keeps them.
@@ -525,6 +543,44 @@ func (h *fakeHost) IAL(string) []string {
 		ial = append(ial, h.addrs[nick])
 	}
 	return ial
+}
+
+// ListDir lists a folder from the files' names, which have / in them.
+func (h *fakeHost) ListDir(dir string) ([]DirEntry, bool) {
+	prefix := ""
+	if dir != "" {
+		prefix = strings.ToLower(dir) + "/"
+	}
+	seen := map[string]bool{}
+	var out []DirEntry
+	for name := range h.files {
+		rest, ok := strings.CutPrefix(strings.ReplaceAll(name, `\`, "/"), prefix)
+		if !ok {
+			continue
+		}
+		first, _, isDir := strings.Cut(rest, "/")
+		if !seen[first] {
+			seen[first] = true
+			out = append(out, DirEntry{Name: first, IsDir: isDir})
+		}
+	}
+	return out, dir == "" || len(out) > 0
+}
+
+func (h *fakeHost) Colors() Colors {
+	c := Colors{Index: map[string]int{"background": 0, "normal": 1, "own": 1, "action": 6, "event": 3,
+		"quit": 2, "notice": 5, "info": 2, "highlight": 5}}
+	for i, v := range []uint32{0xffffff, 0x000000, 0x00007f, 0x009300, 0xff0000, 0x7f0000, 0x9c009c, 0xfc7f00,
+		0xffff00, 0x00fc00, 0x009393, 0x00ffff, 0x0000fc, 0xff00ff, 0x7f7f7f, 0xd2d2d2} {
+		c.Pal[i] = v
+	}
+	c.Pal[16], c.Pal[17], c.Pal[98] = 0x470000, 0x472100, 0xffffff
+	return c
+}
+
+func (h *fakeHost) AppActive() bool { return h.appActive }
+func (h *fakeHost) LastActive() (string, string, bool) {
+	return h.net, h.lastActive, h.lastActive != "" || h.hadActive
 }
 
 func (h *fakeHost) ReadFile(name string) (string, bool) {

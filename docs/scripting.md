@@ -142,12 +142,16 @@ error.
   `QUIT`, `NICK`, `KICK`, `TOPIC`, `INVITE`, `RAWMODE` and the mode events (`OP`,
   `DEOP`, `VOICE`, `BAN`, `UNBAN`, `MODE`...), `USERMODE`, `SNOTICE`, `WALLOPS`,
   `ERROR`, `PING`, `PONG`, `raw` numerics, `CONNECT`, `DISCONNECT`, `CONNECTFAIL`,
-  `INPUT`, `OPEN`, `CLOSE`, `NOTIFY`, `UNOTIFY`, `LOAD`, `START`, `UNLOAD`, `EXIT`,
-  `SIGNAL`, and the socket events `SOCKOPEN`, `SOCKREAD`, `SOCKWRITE` and `SOCKCLOSE`. `^` handlers run before trout shows a line and can hide it (`/haltdef`); a
+  `INPUT`, `OPEN`, `CLOSE`, `ACTIVE` (with `$lactive`), `APPACTIVE` (the terminal
+  gaining or losing focus, `$appactive`), `NOTIFY`, `UNOTIFY`, `LOAD`, `START`,
+  `UNLOAD`, `EXIT`, `SIGNAL`, and the socket events `SOCKOPEN`, `SOCKREAD`, `SOCKWRITE` and `SOCKCLOSE`. `^` handlers run before trout shows a line and can hide it (`/haltdef`); a
   CTCP handler's `/halt` stops trout's reply.
 - **Levels**: the Users list, with general, `=` exact and named levels, `+`, `*`, the
   `me`, `!`, `@` and `&` prefixes, and `/auser`, `/guser`, `/ruser`, `/iuser`,
   `/rlevel`, `/flush`, `/ulist`, `/dlevel`.
+- **Colors and files**: `$color` (the Colors dialog's kinds of text, from your scheme),
+  `$rgb`, `$findfile` (in the scripts folder, with a command or a `@window`),
+  `$findfilen`, `$isdir`, and `$mircini` (a `mirc.ini` there, which trout doesn't read).
 - **Identifiers**: about 200, among them the text, token, number, time and `$calc`
   families, `$nick`, `$chan`, `$address`, `$ial`, `$comchan`, `$chan(N)`, `$nick(#,N)`,
   `$hget`, `$hfind`, `$read`, `$readini`, `$ini`, `$regex`, `$regsubex`, `$timer`,

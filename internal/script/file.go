@@ -581,5 +581,4 @@ var fileHandleIdents = map[string]builtin{
 		}
 		return "", errorf("$file().", c.prop, " isn't supported")
 	},
-	"isdir": func(r *run, fr *frame, c *call) (string, error) { return "$false", nil },
 }
