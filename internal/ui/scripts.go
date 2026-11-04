@@ -1055,9 +1055,9 @@ var goos = runtime.GOOS
 // noteDefender says once, after the first /load you type on Windows, that
 // Microsoft Defender deletes scripts it takes for IRC worms: any with both
 // on START and /bwrite (found 2026-11-04; mIRC's get the same), which
-// would otherwise just vanish.
+// would otherwise just vanish. Only with a config, where "once" is kept.
 func (a *App) noteDefender() {
-	if goos != "windows" || a.defenderNoted {
+	if goos != "windows" || a.defenderNoted || a.cfg == nil {
 		return
 	}
 	a.defenderNoted = true

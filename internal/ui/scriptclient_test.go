@@ -1,10 +1,15 @@
 package ui
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/MaxRenaud/trout/internal/config"
 )
 
 // TestScriptClientIdents: on ACTIVE when you change windows ($active and
@@ -75,15 +80,24 @@ alias up echo -s up $uptime(mirc,3) $iif($uptime(system) > $uptime(mirc),yes,no)
 }
 
 // TestDefenderNote: the first /load on Windows says what Defender does to
-// some scripts, once; the setting remembers it. Elsewhere it's not said.
+// some scripts, once; the setting remembers it, in config.toml. Elsewhere
+// it's not said.
 func TestDefenderNote(t *testing.T) {
 	defer func(g string) { goos = g }(goos)
-	for _, os := range []string{"linux", "windows"} {
-		goos = os
-		a := New(Options{Demo: true})
+	for _, sys := range []string{"linux", "windows"} {
+		goos = sys
+		cfg, err := config.Load(filepath.Join(t.TempDir(), "config.toml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := New(Options{Config: cfg})
 		a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
-		a.scriptMem = map[string]string{"a.mrc": "alias a echo -a a", "b.mrc": "alias b echo -a b"}
-		st := a.nets[0].Status()
+		dir := a.scriptsDir()
+		if err := errors.Join(os.MkdirAll(dir, 0o755), os.WriteFile(filepath.Join(dir, "a.mrc"), []byte("alias a echo -a a"), 0o644),
+			os.WriteFile(filepath.Join(dir, "b.mrc"), []byte("alias b echo -a b"), 0o644)); err != nil {
+			t.Fatal(err)
+		}
+		st := a.home.Status()
 		a.activate(st)
 		load := func(f string) string {
 			a.edit(st).Buf = []rune("/load -rs " + f)
@@ -92,8 +106,8 @@ func TestDefenderNote(t *testing.T) {
 		}
 		first, second := load("a.mrc"), load("b.mrc")
 		noted := strings.Contains(first, "Microsoft Defender")
-		if noted != (os == "windows") || strings.Contains(second, "Defender") || a.settings().DefenderNoted != noted {
-			t.Errorf("%s: first %q, second %q, setting %v", os, first, second, a.settings().DefenderNoted)
+		if noted != (sys == "windows") || strings.Contains(second, "Defender") || a.settings().DefenderNoted != noted {
+			t.Errorf("%s: first %q, second %q, setting %v", sys, first, second, a.settings().DefenderNoted)
 		}
 	}
 }
