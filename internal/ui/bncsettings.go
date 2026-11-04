@@ -146,7 +146,7 @@ func (a *App) bncPages() []optPage {
 				l += ", " + m[3]
 			}
 		}
-		netNotes = append(netNotes, l)
+		netNotes = append(netNotes, oneOf(l))
 	}
 	if len(netNotes) > 0 {
 		netNotes = append([]string{""}, netNotes...)
@@ -181,7 +181,7 @@ func (a *App) bncPages() []optPage {
 	}
 	acctNotes := []string{"", "User:      " + a.bnc.User}
 	if s.admin {
-		acctNotes = append(acctNotes, "           an admin: Users manages the others")
+		acctNotes = append(acctNotes, "           an admin (see Users)")
 	}
 	account := optPage{Name: "Account", Notes: acctNotes, Items: []optItem{
 		{Label: "Nickname: " + cmp.Or(nick, "(none)") + "...", Action: func(a *App) {
@@ -198,13 +198,16 @@ func (a *App) bncPages() []optPage {
 	if a.bnc.SojuVersion != "" {
 		srvNotes = append(srvNotes, "Runs:      soju "+a.bnc.SojuVersion)
 	}
-	cert := "self-signed, which trout trusts by its key"
+	cert := "self-signed (trout pins its key)"
 	if a.bnc.Cert == letsEncrypt {
 		cert = "from Let's Encrypt"
 	}
 	srvNotes = append(srvNotes, "Cert:      "+cert)
 	if s.server != "" {
-		srvNotes = append(srvNotes, "", "Now:       "+s.server)
+		srvNotes = append(srvNotes, "", "Now:")
+		for part := range strings.SplitSeq(s.server, ", ") {
+			srvNotes = append(srvNotes, "  "+part)
+		}
 	}
 	server := optPage{Name: "Server", Notes: loading(srvNotes), Items: []optItem{
 		{Label: "Connect a phone...", Action: func(a *App) { a.openPhone() }},
@@ -224,7 +227,7 @@ func (a *App) bncPages() []optPage {
 			if u.attrs != "" {
 				l = u.name + " (" + u.attrs + "): " + u.info
 			}
-			notes = append(notes, l)
+			notes = append(notes, oneOf(l))
 		}
 		pages = append(pages, optPage{Name: "Users", Notes: append([]string{""}, notes...), Items: []optItem{
 			{Label: "Users: add, delete, admin...", Action: func(a *App) { a.openBouncerUsers(s) }},
@@ -459,3 +462,8 @@ func (a *App) deleteUser(name string) {
 			return nil
 		}})
 }
+
+// oneOf fixes soju's "1 channels" and "1 networks".
+var oneRe = regexp.MustCompile(`\b1 (channel|network|user|downstream|upstream)s\b`)
+
+func oneOf(s string) string { return oneRe.ReplaceAllString(s, "1 $1") }

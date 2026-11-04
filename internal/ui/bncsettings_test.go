@@ -61,7 +61,7 @@ func TestBouncerSettings(t *testing.T) {
 		t.Fatalf("Settings opened %T", a.dlg)
 	}
 	page := func(i int) string { return strings.Join(o.pages[i].Notes, "\n") }
-	if !strings.Contains(page(bncNetworks), "TroutNet: connected as max, 1 channels") {
+	if !strings.Contains(page(bncNetworks), "TroutNet: connected as max, 1 channel") {
 		t.Errorf("Networks:\n%s", page(bncNetworks))
 	}
 	if !strings.Contains(page(bncChannels), "keeps 2 channels; 1 detached") {
@@ -70,7 +70,7 @@ func TestBouncerSettings(t *testing.T) {
 	if !strings.Contains(page(bncUsers), "ann (disabled): 2 networks") || len(o.pages[bncUsers].Items) == 0 {
 		t.Errorf("Users:\n%s", page(bncUsers))
 	}
-	if !strings.Contains(page(bncServer), "Now:       2/2 users") {
+	if !strings.Contains(page(bncServer), "Now:\n  2/2 users\n  1 downstream") {
 		t.Errorf("Server:\n%s", page(bncServer))
 	}
 	if strings.Contains(strings.Join([]string{page(0), page(1), page(2), page(3), page(4)}, ""), "Asking") {

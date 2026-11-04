@@ -277,11 +277,19 @@ func (a *App) openDownloadDir() {
 
 func (o *optionsBox) title() string { return cmp.Or(o.Title, "trout Options") }
 
+// optNotesW is how wide a page's notes are: the dialog less the page
+// list and the margins. Longer ones wrap.
+const optNotesW = 64 - 20
+
 // size fits the longest page: its items and notes, plus the frame.
 func (o *optionsBox) size(a *App) (int, int) {
 	rows := len(o.pages)
 	for _, p := range o.pages {
-		rows = max(rows, len(p.Items)+len(p.Notes))
+		n := len(p.Items)
+		for _, l := range p.Notes {
+			n += max(1, len(wrapPlain(l, optNotesW)))
+		}
+		rows = max(rows, n)
 	}
 	return 64, max(19, rows+8)
 }
@@ -333,8 +341,17 @@ func (o *optionsBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		row++
 	}
 	for _, n := range p.Notes {
-		c.Text(px, row, pw, n, face)
-		row++
+		lines := wrapPlain(n, pw)
+		if len(lines) == 0 {
+			lines = []string{""}
+		}
+		for i, l := range lines {
+			if i > 0 && strings.HasPrefix(n, "           ") { // keep a "Label:    value" note's column
+				l = strings.Repeat(" ", 11) + l
+			}
+			c.Text(px, row, pw, l, face)
+			row++
+		}
 	}
 	a.dlgButtons(c, x, y+h-3, w, []string{"OK"}, 0)
 }
