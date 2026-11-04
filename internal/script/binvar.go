@@ -27,6 +27,18 @@ func (r *run) setBin(name string, b []byte) {
 
 func isBinvar(s string) bool { return len(s) > 1 && s[0] == '&' }
 
+// spaceFields splits s at spaces only, like mIRC's parameters: tabs and
+// line breaks are part of a word.
+func spaceFields(s string) []string {
+	var out []string
+	for w := range strings.SplitSeq(s, " ") {
+		if w != "" {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // putBytes writes src into dst at 1-based position n, padding with zeros
 // past the end; chop drops whatever follows.
 func putBytes(dst []byte, n int, src []byte, chop bool) []byte {
@@ -69,7 +81,7 @@ func (r *run) cmdBset(fr *frame, rest string) error {
 		return err
 	}
 	sw, line := switches(line)
-	words := strings.Fields(line)
+	words := spaceFields(line) // a $crlf in -t text stays
 	if len(words) < 1 || !isBinvar(words[0]) {
 		return errorf("/bset: insufficient parameters")
 	}

@@ -422,6 +422,8 @@ func (a *App) runScript(actions []script.Action) tea.Cmd {
 			}
 		case act.Sock != nil:
 			a.scriptSocket(act.Sock)
+		case act.URL != nil:
+			a.scriptURL(act.URL)
 		case act.Echo != nil:
 			w := a.scriptWindow(act.Echo.Network, act.Echo.Window)
 			l := state.Line{Time: time.Now(), Role: state.RoleNormal, Text: act.Echo.Text}

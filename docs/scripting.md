@@ -160,6 +160,12 @@ popup items and typed lines, and in the alias such a line calls.
   `/bunset`, `/bcopy`, `/breplace`, `/bread`, `/bwrite`, `/btrunc`, `$bvar` (with `.text`, `.word`,
   `.nword`, `.long`, `.nlong`), `$bfind`, and `&binvars` in `$md5`, `$sha1`, `$crc` and
   the rest (N = 1), `$encode`/`$decode` (`b`), and the socket commands.
+- **Web requests**: `$urlget(url,options,target,alias,headers,body)`, like mIRC's: GET,
+  HEAD, POST, PUT, PATCH or DELETE into a `&binvar` or a file, with `&binvar` headers
+  and body, `i` (any certificate), `k` (no redirects), `e` (keep a 404's reply), `r`
+  (resume a file) and `c` (cancel); the alias gets the id, and `$urlget(id)`'s
+  properties (`state`, `reply`, `size`, `redirect`...) last until it returns. trout makes
+  the request, so `.reply`'s headers are sorted, not in the server's order.
 - **Custom windows**: `@windows` of text or a listbox (`/window -l`), with a side
   listbox (`-lN`), an editbox (`-e`) and its default command, sorted (`-s`), opened
   minimized (`-n`), hidden (`-h`) or without a button (`-w0`, `-k0` for one without its

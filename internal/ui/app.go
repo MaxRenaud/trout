@@ -5,6 +5,7 @@ package ui
 
 import (
 	"cmp"
+	"context"
 	"crypto/tls"
 	"io"
 	"math/rand/v2"
@@ -288,8 +289,9 @@ type App struct {
 	scriptTickAt   time.Time
 	ial            map[*state.Network]map[string]string
 	isupport       map[*state.Network]map[string]string
-	socks          map[int]*scriptSock // scripts' sockets, by the engine's ID
-	scriptCmds     []tea.Cmd           // from script events in places that can't return a command
+	socks          map[int]*scriptSock        // scripts' sockets, by the engine's ID
+	webGets        map[int]context.CancelFunc // scripts' $urlget requests, by id
+	scriptCmds     []tea.Cmd                  // from script events in places that can't return a command
 	hideLines      bool
 	ctcpHalted     bool
 	lastTyped      time.Time
@@ -310,6 +312,7 @@ func Run(opts Options) error {
 	a.stopITermProfile() // back to the tab's own profile
 	a.local.Stop()       // trout's own soju, if it started one
 	a.closeSockets()     // scripts' sockets
+	a.cancelURLs()       // and their web requests
 	return err
 }
 
@@ -401,6 +404,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.scriptTick()
 	case sockOpenedMsg, sockReadMsg, sockWrittenMsg, sockClosedMsg:
 		cmd = a.sockMsg(msg)
+	case urlDoneMsg:
+		cmd = a.urlDone(msg)
 	case tickMsg:
 		if ev, ok := demo.Traffic(a.nets); ok {
 			a.addLine(ev.Win, ev.Role, ev.Text)

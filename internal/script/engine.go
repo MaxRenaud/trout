@@ -65,6 +65,7 @@ type Action struct {
 	Save    *Save
 	File    *File
 	Sock    *Sock
+	URL     *URLGet
 }
 
 // File is a file for the client to write in the scripts folder, from
@@ -146,6 +147,8 @@ type Engine struct {
 	lastAnswer string             // $!
 	socks      []*socket          // /sockopen's sockets
 	sockSeq    int                // the last socket's ID
+	urls       []*urlGet          // $urlget's transfers, until their alias returns
+	urlSeq     int                // the last one's id (they start at 1025, like mIRC's)
 }
 
 // Listen turns the three kinds of event on and off, like mIRC's /ctcps,

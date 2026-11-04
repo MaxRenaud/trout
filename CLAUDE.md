@@ -57,7 +57,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `proxy.go` Options > Connect > Proxy; `form.go` is the text-field dialog they and Kick
   (why) use; `phone.go` Bouncer > Connect a Phone (a QR code for Goguma); `scripts.go`
   scripts: the engine's hooks, its Host and `/load`, and `scriptsock.go` scripts'
-  sockets (the network side of `/sockopen`); `scripteditor.go` the Scripts Editor
+  sockets (the network side of `/sockopen`), `scripturl.go` its `$urlget` requests;
+  `scripteditor.go` the Scripts Editor
   (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files);
   `popups.go` the right-click menus and Commands, from popups.ini like mIRC's, and the
   `$?` input boxes; `theme.go` the theme list with Classic and Dark, `themes.go` the
