@@ -171,11 +171,14 @@ func (a *App) controlDue(msg controlMsg) {
 	a.sendNet(msg.net, "MODE", w.Name, msg.mode, msg.nick)
 }
 
-// protect handles a mode change by someone else: like mIRC's protect
-// list, a protected person deopped or banned gets it undone, and the one
-// who did it is deopped.
+// protect handles a mode change by someone else (by is the line's
+// source, nick!user@host): like mIRC's protect list, a protected person
+// deopped or banned gets it undone, and the one who did it is deopped.
+// Entries match full addresses, so *!*@their.host works, the deopped
+// person's from the address list.
 func (a *App) protect(n *state.Network, w *state.Window, by, modes string, args []string) {
-	if !isOp(w) || n.Same(by, n.Nick) || strings.Contains(a.controlFor(n, w.Name, by+"!*@*"), "p") {
+	byNick, _, _ := strings.Cut(by, "!")
+	if !isOp(w) || n.Same(byNick, n.Nick) || strings.Contains(a.controlFor(n, w.Name, a.addressOf(n, by)), "p") {
 		return
 	}
 	on, ai := true, 0
@@ -196,22 +199,42 @@ func (a *App) protect(n *state.Network, w *state.Window, by, modes string, args 
 		arg := args[ai]
 		ai++
 		switch {
-		case c == 'o' && !on && strings.Contains(a.controlFor(n, w.Name, arg+"!*@*"), "p"):
-			a.sendNet(n, "MODE", w.Name, "-o+o", by, arg)
+		case c == 'o' && !on && strings.Contains(a.controlFor(n, w.Name, a.addressOf(n, arg)), "p"):
+			a.sendNet(n, "MODE", w.Name, "-o+o", byNick, arg)
 		case c == 'b' && on && a.protectedBan(n, w, arg):
-			a.sendNet(n, "MODE", w.Name, "-o-b", by, arg)
+			a.sendNet(n, "MODE", w.Name, "-o-b", byNick, arg)
 		}
 	}
 }
 
-// protectedBan reports whether a ban mask covers someone protected there.
+// protectedBan reports whether a ban mask covers someone protected there:
+// a protect entry's own mask, or someone in the channel whose address
+// (from the address list) is protected.
 func (a *App) protectedBan(n *state.Network, w *state.Window, ban string) bool {
 	for _, e := range a.book().Control {
 		if strings.Contains(e.Kinds, "p") && onNetwork(e.Network, n) && wildMatch(ban, ignoreMask(e.Mask)) {
 			return true
 		}
 	}
+	for _, addr := range a.ial[n] {
+		nick, _, _ := strings.Cut(addr, "!")
+		if w.NickIndex(nick) >= 0 && wildMatch(ban, addr) && strings.Contains(a.controlFor(n, w.Name, addr), "p") {
+			return true
+		}
+	}
 	return false
+}
+
+// addressOf is who's nick!user@host from the address list, or nick!*@*
+// when trout hasn't seen it. who may already be an address.
+func (a *App) addressOf(n *state.Network, who string) string {
+	if strings.Contains(who, "!") {
+		return who
+	}
+	if addr, ok := a.ial[n][n.Fold(who)]; ok {
+		return addr
+	}
+	return who + "!*@*"
 }
 
 // ignoreEntry is one ignore list entry, "mask [flags] [until=unix]", like

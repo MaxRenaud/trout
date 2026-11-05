@@ -82,6 +82,21 @@ func TestControl(t *testing.T) {
 	w.AddNick(state.Nick{Prefix: "@", Name: "carol"})
 	feed(":evil!e@h MODE #go -o carol")
 	expectSent(t, sent, "MODE #go -o+o evil carol")
+
+	// Entries by host: dave's address is from what he says, and a ban
+	// covering it is undone. A protected op deopping someone is left be.
+	a.memBook.Control = append(a.memBook.Control, config.ControlEntry{Mask: "*!*@dave.example", Kinds: "p"},
+		config.ControlEntry{Mask: "*!*@trusted.example", Kinds: "p"})
+	w.AddNick(state.Nick{Prefix: "@", Name: "dave"})
+	feed(":dave!d@dave.example PRIVMSG #go :hi")
+	feed(":evil!e@h MODE #go -o dave")
+	expectSent(t, sent, "MODE #go -o+o evil dave")
+	feed(":evil!e@h MODE #go +b *!*@*.example")
+	expectSent(t, sent, "MODE #go -o-b evil *!*@*.example")
+	feed(":frank!f@trusted.example MODE #go -o dave", ":evil!e@h MODE #go -o dave")
+	if got := <-sent; got != "MODE #go -o+o evil dave" {
+		t.Errorf("after a protected op's deop, sent %q", got)
+	}
 }
 
 func TestAddressBook(t *testing.T) {

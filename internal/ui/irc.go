@@ -434,7 +434,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		} else if w := n.Find(state.KChannel, arg(0)); w != nil {
 			applyChanModes(w, arg(1), p[min(2, len(p)):])
 			a.listModes(w, nick, arg(1), p[min(2, len(p)):], t)
-			a.protect(n, w, nick, arg(1), p[min(2, len(p)):]) // Address Book > Control
+			a.protect(n, w, cmp.Or(m.Source, nick), arg(1), p[min(2, len(p)):]) // Address Book > Control
 			event(w, state.RoleEvent, "* "+who+" sets mode: "+change)
 		}
 	case "TOPIC":
