@@ -247,7 +247,7 @@ func runMenuItem(a *App, label string) bool {
 
 // TestScriptsFolder runs scripts from a real config: loaded at startup
 // from the scripts folder, with on START, vars.ini and users.ini written
-// there, and files a script can't write outside it.
+// there, and a file a script writes outside it (mIRC lets it).
 func TestScriptsFolder(t *testing.T) {
 	dir := t.TempDir()
 	folder := filepath.Join(dir, "scripts")
@@ -275,11 +275,8 @@ alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	if string(notes) != "started\r\n" {
 		t.Errorf("notes.txt = %q", notes)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "escape.txt")); err == nil {
-		t.Error("a script wrote outside the scripts folder")
-	}
-	if !slices.ContainsFunc(a.home.Status().Lines, func(l state.Line) bool { return strings.Contains(l.Text, "escape.txt") }) {
-		t.Error("no error for writing outside the folder")
+	if got, err := os.ReadFile(filepath.Join(dir, "escape.txt")); err != nil || string(got) != "nope\r\n" {
+		t.Errorf("..\\escape.txt, outside the folder like mIRC's: %q, %v", got, err)
 	}
 	actions, ok := a.scripts.Command(a.home.Name, "", "who", false, a.scriptHost())
 	if !ok {
@@ -702,10 +699,11 @@ on ^*:OP:#:echo $chan opped $opnick | haltdef`}
 		t.Errorf("^OP: %q (%d new lines)", got, len(w.Lines)-before)
 	}
 
-	// A script can't /load from outside the scripts folder.
+	// A script can /load from anywhere, like mIRC's (here a file that
+	// isn't a script; it just isn't refused for where it is).
 	actions, _ := a.scripts.Command(n.Name, "#go", "tryload", false, a.scriptHost())
 	a.runScript(actions)
-	if got := a.firstStatus().Lines[len(a.firstStatus().Lines)-1].Text; !strings.Contains(got, "only load files from the scripts folder") {
+	if got := a.firstStatus().Lines[len(a.firstStatus().Lines)-1].Text; strings.Contains(got, "scripts folder") {
 		t.Errorf("/load from a script: %q", got)
 	}
 

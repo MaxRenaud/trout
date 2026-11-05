@@ -50,19 +50,16 @@ func (a *App) scriptsDir() string {
 	return filepath.Join(filepath.Dir(a.cfg.Path), "scripts")
 }
 
-// scriptFile is where a script's file name is in the scripts folder: no
-// absolute paths and no .., so a script can't reach outside it. mIRC's
-// backslashes work too.
+// scriptFile is where a script's file is, like mIRC's: a full path is
+// itself, anywhere; any other name is in the scripts folder ($mircdir),
+// .. and all. mIRC's backslashes work too. Only an empty name isn't a file.
 func (a *App) scriptFile(name string) (string, bool) {
 	name = filepath.Clean(filepath.FromSlash(strings.ReplaceAll(name, `\`, "/")))
-	// A full path is fine if it's in the folder: $mircdir $+ file.
-	if filepath.IsAbs(name) && a.scriptsDir() != "" {
-		if rel, err := filepath.Rel(a.scriptsDir(), name); err == nil {
-			name = rel
-		}
-	}
-	if name == "" || !filepath.IsLocal(name) {
+	switch {
+	case name == "" || name == ".":
 		return "", false
+	case filepath.IsAbs(name):
+		return name, true
 	}
 	return filepath.Join(a.scriptsDir(), name), true
 }
@@ -326,9 +323,8 @@ func (a *App) unloadScript(name string) tea.Cmd {
 
 // scriptAdmin handles the commands that manage scripts, typed or from a
 // script: /load -rs, /unload -rs, /reload -rs and /remote [on|off]. It
-// reports whether line was one. A script (fromScript) can only load files
-// from the scripts folder, like its other files: a full path is yours to
-// type.
+// reports whether line was one. Like mIRC, a script (fromScript) can load
+// a file from anywhere.
 func (a *App) scriptAdmin(line string, fromScript bool) (tea.Cmd, bool) {
 	if a.scripts == nil {
 		return nil, false
@@ -340,13 +336,6 @@ func (a *App) scriptAdmin(line string, fromScript bool) (tea.Cmd, bool) {
 		sw, rest, _ = strings.Cut(rest, " ")
 	}
 	file := strings.Trim(strings.TrimSpace(rest), `"`)
-	if _, inFolder := a.scriptFile(file); fromScript && !inFolder {
-		switch strings.ToLower(name) {
-		case "load", "reload":
-			a.addLine(a.firstStatus(), state.RoleInfo, "* /"+name+": a script can only load files from the scripts folder")
-			return nil, true
-		}
-	}
 	switch strings.ToLower(name) {
 	case "load":
 		if !fromScript {

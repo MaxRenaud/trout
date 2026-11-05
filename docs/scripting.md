@@ -32,8 +32,8 @@ It holds mIRC's own files, in mIRC's format, so you can copy yours over:
 
 Other scripts (`.mrc` files) go there too, and anything a script reads or writes
 (`/write`, `$read`, `/hsave`, `/writeini`): names are relative to it, and `$mircdir` is
-its full path, which works too. A script can't reach outside the folder; you can still
-`/load` a script from anywhere by its full path.
+its full path. Like mIRC, a full path reaches any file (`$read(/home/me/notes.txt)`), and
+so does `..`: a script can read and write what you can, so load only scripts you trust.
 
 `config.toml` remembers what's loaded, in order (`scripts`), and the switches below
 (`scripts-off`, `script-level`, `script-options`).

@@ -241,8 +241,8 @@ func TestScriptNetIdents(t *testing.T) {
 	}
 }
 
-// TestScriptFullPaths: $mircdir is the scripts folder, and a full path
-// into it works like a name in it; one outside it doesn't.
+// TestScriptFullPaths: $mircdir is the scripts folder, a full path into
+// it works like a name in it, and like mIRC's, so does one outside it.
 func TestScriptFullPaths(t *testing.T) {
 	cfg, err := config.Load(filepath.Join(t.TempDir(), "config.toml"))
 	if err != nil {
@@ -256,7 +256,7 @@ func TestScriptFullPaths(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	os.WriteFile(outside, []byte("nope\r\n"), 0o644)
 	acts, _ := a.scripts.Command(a.home.Name, "", "echo -s dir= $+ $mircdir full= $+ $read($mircdir $+ notes.txt,1) / $read(notes.txt,1) / outside= $+ $read("+outside+",1)", true, a.scriptHost())
-	want := "dir=" + dir + string(filepath.Separator) + " full=first line / first line / outside="
+	want := "dir=" + dir + string(filepath.Separator) + " full=first line / first line / outside=nope"
 	if len(acts) == 0 || acts[0].Echo == nil || acts[0].Echo.Text != want {
 		t.Errorf("got %q, want %q", acts[0].Echo.Text, want)
 	}
