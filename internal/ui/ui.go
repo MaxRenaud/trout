@@ -89,8 +89,7 @@ type textRow struct {
 func (a *App) addRegion(r Region) { a.regions = append(a.regions, r) }
 
 func (a *App) hit(x, y int) (Region, bool) {
-	for i := len(a.regions) - 1; i >= 0; i-- {
-		r := a.regions[i]
+	for _, r := range slices.Backward(a.regions) {
 		if x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H {
 			return r, true
 		}

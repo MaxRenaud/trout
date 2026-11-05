@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,8 +61,7 @@ func (a *App) searchResults(n *state.Network, msgs []ircmsg.Message) {
 	}
 	l := &listBox{Title: "Search Results - " + where + ": \"" + s.needle + "\"",
 		Header: "When          Where          Message", Buttons: []string{"Go To", "Close"}}
-	for i := len(msgs) - 1; i >= 0; i-- {
-		m := msgs[i]
+	for _, m := range slices.Backward(msgs) {
 		if (m.Command != "PRIVMSG" && m.Command != "NOTICE") || len(m.Params) < 2 || a.ignored(n, m) {
 			continue
 		}

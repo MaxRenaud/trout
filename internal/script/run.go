@@ -205,8 +205,7 @@ func (r *run) evalTop(fr *frame, text string) (v string, err error) {
 func (r *run) blockFrom(fr *frame, stmts []stmt, start int) error {
 	for i := start; i < len(stmts); i++ {
 		err := r.exec(fr, stmts[i])
-		var ge *gotoErr
-		if errors.As(err, &ge) {
+		if ge, ok := errors.AsType[*gotoErr](err); ok {
 			if j := slices.IndexFunc(stmts, func(s stmt) bool {
 				l, ok := s.(*labelStmt)
 				return ok && l.name == ge.label

@@ -172,7 +172,7 @@ func (r *run) cmdHash(fr *frame, name, rest string) error {
 		if err := need(); err != nil {
 			return err
 		}
-		file := strings.SplitN(arg(1)+" "+arg(2), " ", 2)[0]
+		file, _, _ := strings.Cut(arg(1)+" "+arg(2), " ")
 		data, ok := r.readFile(file)
 		if !ok {
 			return errorf("/hload: unable to open '", file, "'")

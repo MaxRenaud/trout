@@ -443,8 +443,7 @@ var winsockText = map[int]string{
 // $sockerr, which is 4 for an address that didn't resolve and 3 for the
 // rest (both checked, as is the refused connection's message).
 func sockError(err error) (wserr int, wsmsg string, sockerr int) {
-	var dns *net.DNSError
-	if errors.As(err, &dns) {
+	if _, ok := errors.AsType[*net.DNSError](err); ok {
 		return 0, "[0] Network error", 4
 	}
 	var errno syscall.Errno
