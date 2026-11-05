@@ -92,3 +92,29 @@ func TestScriptOpts(t *testing.T) {
 		t.Errorf("reloaded %+v, %v", c2.ScriptOpts, err)
 	}
 }
+
+// TestWriteFileSymlink saves through a symlink, as a dotfiles repo makes:
+// the link stays, its target gets the new data, and no temp file is left.
+func TestWriteFileSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real, link := filepath.Join(dir, "real.ini"), filepath.Join(dir, "sub", "vars.ini")
+	os.WriteFile(real, []byte("old"), 0o600)
+	os.Mkdir(filepath.Dir(link), 0o700)
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip(err) // Windows without the privilege
+	}
+	if err := WriteFile(link, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the symlink was replaced: %v %v", fi.Mode(), err)
+	}
+	if b, _ := os.ReadFile(real); string(b) != "new" {
+		t.Errorf("target = %q", b)
+	}
+	for _, d := range []string{dir, filepath.Dir(link)} {
+		if es, _ := os.ReadDir(d); len(es) != map[string]int{dir: 2, filepath.Dir(link): 1}[d] {
+			t.Errorf("%s holds %v", d, es)
+		}
+	}
+}

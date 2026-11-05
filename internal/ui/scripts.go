@@ -17,6 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
 
+	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
@@ -132,14 +133,13 @@ func (a *App) scriptWriteFile(f *script.File) error {
 	if f.Delete {
 		return os.Remove(path)
 	}
+	if !f.Append { // whole files (vars.ini, a saved script) are replaced at once
+		return config.WriteFile(path, []byte(f.Data))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
-	if f.Append {
-		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
-	}
-	file, err := os.OpenFile(path, flags, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}

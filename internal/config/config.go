@@ -397,7 +397,7 @@ func (c *Config) Save() error {
 	if err := toml.NewEncoder(&b).Encode(c); err != nil {
 		return err
 	}
-	return writeFile(c.Path, b.Bytes())
+	return WriteFile(c.Path, b.Bytes())
 }
 
 // Find returns the bouncer called name, or nil.
@@ -495,7 +495,7 @@ func (c *Config) editCredentials(edit func(map[string]string)) error {
 	if err := toml.NewEncoder(&b).Encode(creds); err != nil {
 		return err
 	}
-	return writeFile(c.credentialsPath(), b.Bytes())
+	return WriteFile(c.credentialsPath(), b.Bytes())
 }
 
 // RunPasswordCommand runs cmd with the shell, letting it use the terminal
@@ -526,9 +526,13 @@ func FirstLine(s string) string {
 	return strings.TrimSuffix(line, "\r")
 }
 
-// writeFile replaces path atomically with a private file, so a crash
-// can't leave half a config behind.
-func writeFile(path string, data []byte) error {
+// WriteFile replaces path atomically with a private file, so a crash
+// can't leave half a file behind. A symlink stays one: the file it points
+// to is replaced.
+func WriteFile(path string, data []byte) error {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -579,7 +583,7 @@ func (c *Config) ClientCert() (tls.Certificate, error) {
 	}
 	data := slices.Concat(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
 		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
-	if err := writeFile(path, data); err != nil {
+	if err := WriteFile(path, data); err != nil {
 		return tls.Certificate{}, err
 	}
 	return tls.X509KeyPair(data, data)

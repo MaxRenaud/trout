@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
 
+	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
@@ -1040,7 +1041,7 @@ func (ed *scriptEditor) popupsIni() string {
 // full path.
 func (a *App) writeScript(name, data string) error {
 	if filepath.IsAbs(name) {
-		return os.WriteFile(name, []byte(data), 0o600)
+		return config.WriteFile(name, []byte(data))
 	}
 	if _, ok := a.scriptFile(name); !ok {
 		return errors.New(name + ": a .. after a folder's name isn't allowed")
