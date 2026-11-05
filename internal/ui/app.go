@@ -495,7 +495,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds(), a.activeChanged())
 	a.keepAsking()
-	if t := "trout - [" + a.winTitle(a.active) + "]"; t != a.title {
+	if t := titleText("trout - [" + a.winTitle(a.active) + "]"); t != a.title {
 		a.title = t
 		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
 	}

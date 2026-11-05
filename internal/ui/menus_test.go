@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
@@ -268,6 +269,46 @@ func TestDCCOffer(t *testing.T) {
 	feed(offer)
 	if a.dlg != nil || !strings.Contains(lastLine(n.Status()), "Ignored pack.bin") {
 		t.Fatal("Ignore all still asked")
+	}
+}
+
+// TestTitleEscapes: names from IRC reach the terminal's window title,
+// so a BEL, ESC or C1 control in one, which would end the title's escape
+// sequence and send the rest to the terminal (here an OSC 52 clipboard
+// write), is dropped: a DCC file's name, and a topic's ST (U+009C).
+func TestTitleEscapes(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn = false
+	a.downloadDir = t.TempDir()
+	a.messaged[n.ID+" bot"] = time.Now()
+	feed(":bot!b@h PRIVMSG max :\x01DCC SEND \"x\x07\x1b]52;c;aGk=\x07.txt\" 134744072 6800 1024\x01") // 8.8.8.8
+	if len(a.transfers) != 1 {
+		t.Fatalf("transfers: %+v", a.transfers)
+	}
+	tr := a.transfers[0]
+	a.activate(tr.win)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	check := func() {
+		t.Helper()
+		if strings.ContainsFunc(a.title, unicode.IsControl) {
+			t.Errorf("title %q has control characters", a.title)
+		}
+	}
+	check()
+	if !strings.Contains(a.title, "]52;c;aGk=") {
+		t.Errorf("title %q: the name's printable part is gone", a.title)
+	}
+	for tr.cancel == nil {
+		time.Sleep(time.Millisecond) // dccGo runs in the background
+	}
+	a.closeWindow(tr.win)
+
+	feed(":max!m@h JOIN #t", ":srv 332 max #t :topic\u009c\x1b]52;c;aGk=\x07")
+	a.activate(n.Find(state.KChannel, "#t"))
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	check()
+	if !strings.Contains(a.title, "topic]52") {
+		t.Errorf("title %q", a.title)
 	}
 }
 

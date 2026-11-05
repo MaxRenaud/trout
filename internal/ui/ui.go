@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
@@ -795,6 +796,22 @@ func (a *App) offline(n *state.Network) bool {
 		return !a.opts.Demo && a.control == nil
 	}
 	return n.Down()
+}
+
+// titleText is a window title safe to send to the terminal: its parts
+// come from IRC (a DCC file's name, a topic, a script's window), and a
+// BEL, ESC or C1 control in one would end the title's escape sequence
+// early and send the rest to the terminal as its own (an OSC 52 clipboard
+// write, say). Control characters go, and bytes that aren't UTF-8 become
+// U+FFFD, so a lone 0x9C (ST) can't end it either.
+func titleText(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if !unicode.IsControl(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // winTitle is the caption mIRC shows for a window.
