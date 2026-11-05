@@ -1,6 +1,8 @@
 package script
 
 import (
+	"path"
+	"slices"
 	"strings"
 
 	"github.com/ergochat/irc-go/ircmsg"
@@ -29,6 +31,9 @@ type Event struct {
 	// Halted is whether a ^ handler halted the client's text for this
 	// event (DispatchBefore said so): $halted, and & events skip it.
 	Halted bool
+	// Transfer is the file or chat a DCC event is about: $get(-1),
+	// $send(-1), $filename.
+	Transfer *Transfer
 
 	// A mode event's line, split up ($mode), and whether it's its first
 	// or last event ($modefirst, $modelast).
@@ -137,10 +142,13 @@ var eventFields = map[string]int{
 	// on ACTIVE:#: a window coming to the front; on APPACTIVE: trout's
 	// terminal coming to the front or going behind.
 	"ACTIVE": 1, "APPACTIVE": 0,
+	// on FILERCVD:*.txt,*.ini: a file got or sent, or not; on CHAT:text: a
+	// DCC chat message.
+	"FILERCVD": 1, "GETFAIL": 1, "FILESENT": 1, "SENDFAIL": 1, "CHAT": 1,
 }
 
 // matchOnly are the events whose one field is matchtext, not a location.
-var matchOnly = map[string]bool{"CTCPREPLY": true, "SNOTICE": true, "WALLOPS": true, "ERROR": true}
+var matchOnly = map[string]bool{"CTCPREPLY": true, "SNOTICE": true, "WALLOPS": true, "ERROR": true, "CHAT": true}
 
 // dispatchFile runs f's handler for ev, if one matches. Like mIRC, a
 // script runs at most one handler per event: the matching one with the
@@ -229,6 +237,15 @@ func (r *run) matches(f *file, h *event, ev *Event) bool {
 	switch {
 	case h.kind == "OPEN" || h.kind == "CLOSE" || h.kind == "INPUT" || h.kind == "ACTIVE":
 		if !windowLoc(h.loc, ev.Target) {
+			return false
+		}
+	case h.kind == "FILERCVD" || h.kind == "GETFAIL" || h.kind == "FILESENT" || h.kind == "SENDFAIL":
+		// The file's name, against wildcards split by commas.
+		name := ""
+		if ev.Transfer != nil {
+			name = path.Base(strings.ReplaceAll(ev.Transfer.File, `\`, "/"))
+		}
+		if !slices.ContainsFunc(strings.Split(h.loc, ","), func(w string) bool { return wildMatch(w, name, false) }) {
 			return false
 		}
 	case h.kind == "SIGNAL" || strings.HasPrefix(h.kind, "SOCK"):

@@ -320,13 +320,21 @@ type Prompt struct {
 	Required bool
 	Masked   bool // $?*: a password, shown as dots
 	YesNo    bool // $?!: Yes or No, answered $true or $false
+	// File is $sfile's: a file name, starting from Default (its folder).
+	File    bool
+	Default string
 }
 
-var promptRe = regexp.MustCompile(`(\$\$?)\?([*!]?)(?:="([^"]*)")?`)
+var promptRe = regexp.MustCompile(`(\$\$?)\?([*!]?)(?:="([^"]*)")?|\$\$?sfile\(([^,)]*)(?:,([^,)]*))?`)
 
 func prompts(src string) []Prompt {
 	var out []Prompt
 	for _, m := range promptRe.FindAllStringSubmatch(src, -1) {
+		if strings.Contains(m[0], "sfile(") {
+			out = append(out, Prompt{Text: cmpOr(strings.TrimSpace(m[5]), "Select a file"), File: true,
+				Default: strings.TrimSpace(m[4])})
+			continue
+		}
 		out = append(out, Prompt{Text: m[3], Required: m[1] == "$$", Masked: m[2] == "*", YesNo: m[2] == "!"})
 	}
 	return out

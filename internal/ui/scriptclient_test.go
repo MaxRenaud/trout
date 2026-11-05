@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -143,5 +144,66 @@ func TestDefenderRisk(t *testing.T) {
 	goos = "darwin"
 	if defenderRisk("on *:START:echo hi\nalias s bwrite f 0 -1 &b") {
 		t.Error("warned off Windows")
+	}
+}
+
+// TestScriptDCCEvents: a download finishing or failing is on FILERCVD or
+// GETFAIL, Send File's upload on FILESENT or SENDFAIL, a DCC chat message
+// on CHAT; and $sfile asks for a file name before a typed line runs.
+func TestScriptDCCEvents(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	n := a.nets[0]
+	a.scriptMem = map[string]string{"d.mrc": `on *:FILERCVD:*.txt:echo -s got $nopath($filename) from $nick $get(-1).size $get(0)
+on *:GETFAIL:*:echo -s getfail $nopath($filename) $get(-1).status
+on *:FILESENT:*:echo -s sent $nopath($filename) to $nick $send(-1).size
+on *:SENDFAIL:*:echo -s sendfail $nopath($filename) to $nick
+on *:CHAT:*:echo -s chat $nick said $1- $chat(0)
+alias pick echo -s picked $sfile(logs,Pick one) $sfstate`}
+	st := n.Status()
+	a.activate(st)
+	a.edit(st).Buf = []rune("/load -rs d.mrc")
+	a.submit(st)
+	last := func() string { return lastLine(st) }
+
+	tr := &transfer{net: n, nick: "bob", file: "notes.txt", path: "/dl/notes.txt", size: 100, started: time.Now()}
+	a.transfers = append(a.transfers, tr)
+	a.Update(dccDoneMsg{t: tr, got: 100})
+	if got := last(); got != "got notes.txt from bob 100 1" {
+		t.Errorf("FILERCVD: %q", got)
+	}
+	tr2 := &transfer{net: n, nick: "ann", file: "big.iso", path: "/dl/big.iso", size: 900, started: time.Now()}
+	a.transfers = append(a.transfers, tr2)
+	a.Update(dccDoneMsg{t: tr2, got: 10, err: errors.New("the sender stopped")})
+	if got := last(); got != "getfail big.iso failed" {
+		t.Errorf("GETFAIL: %q", got)
+	}
+	a.Update(uploadDoneMsg{w: st, target: "carol", link: "https://x/y", path: "/home/talk.pdf", size: 512, start: time.Now()})
+	if got := last(); got != "sent talk.pdf to carol 512" {
+		t.Errorf("FILESENT: %q", got)
+	}
+	a.Update(uploadDoneMsg{w: st, target: "dave", err: errors.New("no"), path: "/home/x.bin"})
+	if got := last(); got != "sendfail x.bin to dave" {
+		t.Errorf("SENDFAIL: %q", got)
+	}
+	c := &dccChat{net: n, nick: "eve", win: &state.Window{Kind: state.KChat, Name: "=eve", Net: n}}
+	n.Wins = append(n.Wins, c.win)
+	a.chats = append(a.chats, c)
+	a.Update(chatLineMsg{c, "hello there"})
+	if got := last(); got != "chat eve said hello there 1" {
+		t.Errorf("CHAT: %q", got)
+	}
+
+	// $sfile asks first, in a file box with the folder filled in.
+	a.edit(st).Buf = []rune("/pick")
+	a.submit(st)
+	f, ok := a.dlg.(*formBox)
+	if !ok || f.Title != "Select File" || string(f.Fields[0].Edit.Buf) != "logs" {
+		t.Fatalf("$sfile: %#v", a.dlg)
+	}
+	f.Fields[0].Edit.Buf = []rune("logs/a.txt")
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := last(); got != "picked logs/a.txt" {
+		t.Errorf("after picking: %q", got)
 	}
 }

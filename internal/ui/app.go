@@ -360,7 +360,8 @@ func New(opts Options) *App {
 		a.applySettings(a.cfg.Settings)
 	}
 	a.saved = a.settings()
-	a.scripts, a.scriptProblems = script.New(script.Options{}), map[string][]script.Problem{}
+	exe, _ := os.Executable()
+	a.scripts, a.scriptProblems = script.New(script.Options{Exe: exe}), map[string][]script.Problem{}
 	a.loadPopups()           // the menus, before anything else loads
 	a.lastTyped = time.Now() // $idle counts from the start
 	a.scriptTab = edRemote

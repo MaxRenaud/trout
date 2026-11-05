@@ -431,8 +431,10 @@ func (a *App) dccUpdate(msg tea.Msg) {
 				got = fmt.Sprintf(" after %s of %s; a new offer resumes it", sizeText(tr.got), sizeText(tr.size))
 			}
 			a.addLine(tr.net.Status(), state.RoleQuit, "* DCC: "+tr.file+" from "+tr.nick+" failed"+got+": "+tr.err.Error())
+			a.queueScript(a.transferEvent("GETFAIL", tr.scriptTransfer()))
 			return
 		}
+		defer func() { a.queueScript(a.transferEvent("FILERCVD", tr.scriptTransfer())) }() // after trout's line
 		secs := max(time.Since(tr.started).Seconds(), 0.001)
 		a.addLine(tr.net.Status(), state.RoleInfo, fmt.Sprintf("* DCC: got %s (%s in %.0fs, %s/s) in %s",
 			tr.file, sizeText(tr.got), secs, sizeText(int64(float64(tr.got-tr.from)/secs)), tr.path))

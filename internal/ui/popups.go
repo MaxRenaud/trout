@@ -241,6 +241,9 @@ func promptBox(p script.Prompt, answer func(a *App, v string, cancelled bool) te
 	}
 	f := &formBox{Title: "Input Request", Buttons: []string{"OK", "Cancel"},
 		Fields: []*formField{newField("", "", p.Masked)}}
+	if p.File { // $sfile: no file dialog in a terminal, so its name, from the folder given
+		f.Title, f.Fields = "Select File", []*formField{newField("File:", p.Default, false)}
+	}
 	if p.Text != "" {
 		f.Lines = []string{p.Text}
 	}

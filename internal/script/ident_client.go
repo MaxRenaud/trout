@@ -118,7 +118,7 @@ func rgbIdent(r *run, fr *frame, c *call) (string, error) {
 // folder's own files by name (ignoring case), then its folders', depth
 // levels down (1 or 0: the folder alone; -1: all of them). Names are the
 // scripts folder's, with / between folders.
-func (r *run) findFiles(dir, wildcards string, depth int) []string {
+func (r *run) findFiles(dir, wildcards string, depth int, dirs bool) []string {
 	var pats []string
 	for w := range strings.SplitSeq(wildcards, ";") {
 		if w = strings.TrimSpace(w); w != "" {
@@ -128,33 +128,60 @@ func (r *run) findFiles(dir, wildcards string, depth int) []string {
 	var out []string
 	var walk func(dir string, level int)
 	walk = func(dir string, level int) {
-		entries, ok := r.h.ListDir(dir)
+		entries, ok := r.listDir(dir)
 		if !ok {
 			return
 		}
 		slices.SortFunc(entries, func(a, b DirEntry) int {
 			return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 		})
-		var dirs []string
+		var subs []string
 		for _, e := range entries {
 			full := path.Join(dir, e.Name)
 			if e.IsDir {
-				dirs = append(dirs, full)
-				continue
+				subs = append(subs, full)
 			}
-			if slices.ContainsFunc(pats, func(p string) bool { return wildMatch(p, e.Name, false) }) {
+			// $findfile wants files, $finddir folders (checked: a
+			// folder's matches, then its folders').
+			if e.IsDir == dirs && slices.ContainsFunc(pats, func(p string) bool { return wildMatch(p, e.Name, false) }) {
 				out = append(out, full)
 			}
 		}
 		if depth >= 0 && level >= max(depth, 1) {
 			return
 		}
-		for _, d := range dirs {
+		for _, d := range subs {
 			walk(d, level+1)
 		}
 	}
 	walk(cleanDir(dir), 1)
 	return out
+}
+
+// listDir is a folder as this run sees it: the client's, with the files
+// the run has written but the client hasn't yet (and less the ones it
+// deleted), like readFile.
+func (r *run) listDir(dir string) ([]DirEntry, bool) {
+	entries, ok := r.h.ListDir(dir)
+	prefix := ""
+	if dir != "" {
+		prefix = strings.ToLower(dir) + "/"
+	}
+	for name, w := range r.files {
+		rest, in := strings.CutPrefix(strings.ReplaceAll(name, `\`, "/"), prefix)
+		if !in || rest == "" {
+			continue
+		}
+		first, _, isDir := strings.Cut(rest, "/")
+		i := slices.IndexFunc(entries, func(e DirEntry) bool { return strings.EqualFold(e.Name, first) })
+		switch {
+		case w.deleted && !isDir && i >= 0:
+			entries = slices.Delete(entries, i, i+1)
+		case !w.deleted && i < 0:
+			entries, ok = append(entries, DirEntry{Name: first, IsDir: isDir}), true
+		}
+	}
+	return entries, ok
 }
 
 // cleanDir is a script's folder name as the scripts folder's: "" or "." is
@@ -171,9 +198,13 @@ func cleanDir(dir string) string {
 // the Nth file found, or with N = 0 how many. With a command it runs for
 // each one ($1- is its name), stopping at /halt; with a @window listbox
 // it fills it. Both return how many (checked).
-func findfileIdent(r *run, fr *frame, c *call) (string, error) {
+func findfileIdent(r *run, fr *frame, c *call) (string, error) { return findIdent(r, fr, c, false) }
+
+// findIdent is $findfile, or with dirs $finddir(dir,wildcard,N...),
+// which finds folders the same way.
+func findIdent(r *run, fr *frame, c *call, dirs bool) (string, error) {
 	if len(c.vals) < 3 {
-		return "", errorf("Invalid parameters: $findfile")
+		return "", errorf("Invalid parameters: $", iff(dirs, "finddir", "findfile"))
 	}
 	// The last argument is a @window, or a command, which runs as it
 	// was written for each file (unevaluated till then: $1- is the file).
@@ -187,7 +218,7 @@ func findfileIdent(r *run, fr *frame, c *call) (string, error) {
 	if from < len(c.args) {
 		rest = strings.TrimSpace(strings.Join(c.args[from:], ","))
 	}
-	found := r.findFiles(c.arg(0), c.arg(1), depth)
+	found := r.findFiles(c.arg(0), c.arg(1), depth, dirs)
 	n := int(c.num(2))
 	switch {
 	case strings.HasPrefix(rest, "@"):
@@ -236,7 +267,7 @@ var clientIdents = map[string]builtin{
 	// folder, which holds none of trout's settings.
 	"mircini": str("mirc.ini"),
 	"isdir": func(r *run, fr *frame, c *call) (string, error) {
-		_, ok := r.h.ListDir(cleanDir(c.arg(0)))
+		_, ok := r.listDir(cleanDir(c.arg(0)))
 		return boolStr(ok && cleanDir(c.arg(0)) != ""), nil
 	},
 	// $appactive is whether trout's terminal is in front.

@@ -798,6 +798,7 @@ func (h scriptHost) Info(network string) script.NetInfo {
 		Away:       a.away != "",
 		AwayMsg:    a.away,
 		Idle:       time.Since(a.lastTyped),
+		RealName:   cmp.Or(n.Attrs["realname"], a.home.Attrs["realname"]),
 	}
 	if a.opts.Demo {
 		info.Connected = true
@@ -1085,4 +1086,64 @@ func defenderRisk(src string) bool {
 func defenderWarning(name string) string {
 	return "Microsoft Defender may delete " + name + ": it has both on START and /bwrite, which it takes " +
 		"for an IRC worm. Moving the /bwrite (or the on START) into another file keeps it from doing that."
+}
+
+// transferEvent is a DCC event (on FILERCVD, GETFAIL, FILESENT,
+// SENDFAIL) about t: $nick, $filename, $get(-1) or $send(-1).
+func (a *App) transferEvent(kind string, t script.Transfer) tea.Cmd {
+	if !a.scriptsOn() {
+		return nil
+	}
+	return a.scriptEvent(script.Event{Kind: kind, Network: t.Network, Nick: t.Nick, Transfer: &t})
+}
+
+// scriptTransfer is a download as scripts see it.
+func (tr *transfer) scriptTransfer() script.Transfer {
+	status := "active"
+	switch {
+	case tr.done && tr.err != nil:
+		status = "failed"
+	case tr.done:
+		status = "sent" // mIRC's word for a finished one
+	case tr.resuming || tr.started.IsZero():
+		status = "waiting"
+	}
+	return script.Transfer{Kind: "get", Network: tr.net.Name, Nick: tr.nick, IP: tr.addr, File: tr.path,
+		Size: tr.size, Done: tr.got, Resume: tr.from, Status: status, Started: tr.started, Rate: tr.rate}
+}
+
+// Transfers is the downloads, then the DCC chats, for $get and $chat.
+// Send File's uploads aren't kept once done; scripts see them in on
+// FILESENT and SENDFAIL ($send(-1)).
+func (h scriptHost) Transfers() []script.Transfer {
+	a := h.a
+	var out []script.Transfer
+	for _, tr := range a.transfers {
+		out = append(out, tr.scriptTransfer())
+	}
+	for _, c := range a.chats {
+		if !a.chatOpen(c) {
+			continue
+		}
+		status := "waiting"
+		if c.conn != nil {
+			status = "active"
+		}
+		out = append(out, script.Transfer{Kind: "chat", Network: c.net.Name, Nick: c.nick, IP: c.addr, Status: status})
+	}
+	return out
+}
+
+// Notify is a network's notify list, with who's online.
+func (h scriptHost) Notify(network string) []script.NotifyEntry {
+	n := h.net(network)
+	if n == nil {
+		return nil
+	}
+	var out []script.NotifyEntry
+	for _, s := range h.a.netList(listNotify, n) {
+		e := parseNotify(s)
+		out = append(out, script.NotifyEntry{Nick: e.nick, Note: e.note, Whois: e.whois, On: n.Online[n.Fold(e.nick)]})
+	}
+	return out
 }

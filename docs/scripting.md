@@ -143,7 +143,9 @@ error.
   `DEOP`, `VOICE`, `BAN`, `UNBAN`, `MODE`...), `USERMODE`, `SNOTICE`, `WALLOPS`,
   `ERROR`, `PING`, `PONG`, `raw` numerics, `CONNECT`, `DISCONNECT`, `CONNECTFAIL`,
   `INPUT`, `OPEN`, `CLOSE`, `ACTIVE` (with `$lactive`), `APPACTIVE` (the terminal
-  gaining or losing focus, `$appactive`), `NOTIFY`, `UNOTIFY`, `LOAD`, `START`,
+  gaining or losing focus, `$appactive`), `FILERCVD` and `GETFAIL` (DCC Get),
+  `FILESENT` and `SENDFAIL` (Send File, trout's DCC send), `CHAT` (a DCC chat message),
+  `NOTIFY`, `UNOTIFY`, `LOAD`, `START`,
   `UNLOAD`, `EXIT`, `SIGNAL`, and the socket events `SOCKOPEN`, `SOCKREAD`, `SOCKWRITE` and `SOCKCLOSE`. `^` handlers run before trout shows a line and can hide it (`/haltdef`); a
   CTCP handler's `/halt` stops trout's reply.
 - **Levels**: the Users list, with general, `=` exact and named levels, `+`, `*`, the
@@ -152,6 +154,11 @@ error.
 - **Colors and files**: `$color` (the Colors dialog's kinds of text, from your scheme),
   `$rgb`, `$findfile` (in the scripts folder, with a command or a `@window`),
   `$findfilen`, `$isdir`, and `$mircini` (a `mirc.ini` there, which trout doesn't read).
+- **DCC and more**: `$get`, `$send` and `$chat` (with `-1` for the event's), `$filename`,
+  `$notify` (the notify list), `$sfile` (an input box for a file name: a terminal has no
+  file dialog) and `$sfstate`, `$readn`, `$longip`, `$isalias`, `$alias`, `$finddir`,
+  `$mklogfn`, `$fullname`, `$mircexe`; `$insong`/`$inwave` are `$false` and `$anick`
+  and `$emailaddr` empty, since trout has no sounds, alternate nick or email.
 - **Uptime**: `$uptime(mirc)` is trout's, `$uptime(server)` the network connection's, and
   `$uptime(system)` (and `$ticks`) the computer's, in milliseconds or, with N, as
   `$duration` does it.

@@ -178,6 +178,10 @@ func (r *run) evalWord(fr *frame, w string) (string, error) {
 			return v, err
 		}
 		return "#" + v, nil
+	case strings.HasPrefix(w, "=$"):
+		// =$nick is a DCC chat's window, like mIRC's help's msg =$nick.
+		v, err := r.evalWord(fr, w[1:])
+		return "=" + v, err
 	case len(w) > 1 && w[0] == '%':
 		return r.getVar(fr, w[1:]), nil
 	case len(w) > 1 && w[0] == '$':

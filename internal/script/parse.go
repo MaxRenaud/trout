@@ -8,6 +8,7 @@ import (
 // file is a loaded script.
 type file struct {
 	name    string
+	kind    string            // how it was loaded: "" remote, aliases, popups or a popup kind
 	aliases map[string]*alias // by lower-case name
 	events  []*event
 	groups  []group
@@ -78,7 +79,7 @@ func parseFile(name, src string) (*file, []Problem) { return parseFileAs(name, s
 // (nicklist popup items, with no menu around them): as is "aliases", a
 // popup's kind, or "popups" for a popups.ini.
 func parseFileAs(name, src, as string) (*file, []Problem) {
-	p := &parser{f: &file{name: name, aliases: map[string]*alias{}}}
+	p := &parser{f: &file{name: name, kind: as, aliases: map[string]*alias{}}}
 	p.lines, p.problems = sourceLines(src)
 	if as == "popups" {
 		p.popupsIni()

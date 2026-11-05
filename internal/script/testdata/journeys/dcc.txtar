@@ -1,0 +1,53 @@
+DCC events and the identifiers that came with them: on FILERCVD (with its
+filename wildcards), GETFAIL, FILESENT, SENDFAIL and CHAT; $get, $send and
+$chat, with -1 for the event's; $filename; then $readn, $longip, $isalias,
+$alias, $finddir, $notify and $mklogfn, as mIRC 7.86 did them
+(tmp/misc-oracle3.mrc).
+
+-- dcc.mrc --
+on *:FILERCVD:*.txt,*.ini:echo -s got $filename from $nick size= $+ $get(-1).size ip= $+ $get(-1).ip done= $+ $get(-1).done status= $+ $get(-1).status pc= $+ $get(-1).pc file= $+ $get(-1).file path= $+ $get(-1).path count= $+ $get(0) first= $+ $get(1) bobs= $+ $get(bob)
+on *:GETFAIL:*:echo -s failed $nopath($filename) from $nick status= $+ $get(-1).status done= $+ $get(-1).done
+on *:FILESENT:*:echo -s sent $filename to $nick size= $+ $send(-1).size count= $+ $send(0) get-1=< $+ $get(-1) $+ >
+on *:SENDFAIL:*:echo -s couldn't send $filename to $nick
+on *:CHAT:*hello*:msg =$nick hi back
+-- misc.mrc --
+alias m {
+  echo -s M1 $longip(158.152.50.239) $longip(2660774639) $longip(0) < $+ $longip(notanip) $+ > $longip(255.255.255.255)
+  echo -s M2 $isalias(m) $isalias(nosuch) $isalias(m).fname $isalias(m).ftype $isalias(hidden)
+  echo -s M3 alias0= $+ $alias(0) aliasfile=< $+ $alias(misc.mrc) $+ > mklog= $+ $mklogfn(#Test) $mklogfn(Status Window)
+  write -c rd.txt one
+  write rd.txt two words
+  write rd.txt three
+  echo -s M4 r= $+ $read(rd.txt,s,two) n= $+ $readn w= $+ $read(rd.txt,w,thr*) n2= $+ $readn none=< $+ $read(rd.txt,s,zzz) $+ > n3= $+ $readn line= $+ $read(rd.txt,2) n4= $+ $readn
+  write -c fd/abc/abe/f.txt x
+  write -c fd/abd/g.txt x
+  write -c fd/x/h.txt x
+  echo -s M5 count= $+ $finddir(fd,ab*,0) one= $+ $nopath($finddir(fd,ab*,1)) two= $+ $nopath($finddir(fd,ab*,2)) three= $+ $nopath($finddir(fd,ab*,3)) depth1= $+ $finddir(fd,ab*,0,1)
+  echo -s M6 notify= $+ $notify(0) first= $+ $notify(1) on= $+ $notify(1).ison note= $+ $notify(1).note pos= $+ $notify(carol) off= $+ $notify(2).ison state= $+ $notify
+  echo -s M7 anick=< $+ $anick $+ > email=< $+ $emailaddr $+ > insong= $+ $insong inwave= $+ $inwave fname=< $+ $insong.fname $+ > chats= $+ $chat(0)
+}
+alias -l hidden return no
+-- transcript --
+me trout
+notify alice on friend from work
+notify carol
+dcc got bob /home/trout/Downloads/notes.txt 2048
+= status: got /home/trout/Downloads/notes.txt from bob size=2048 ip=192.0.2.7 done=$true status=sent pc=100 file=notes.txt path=/home/trout/Downloads/ count=1 first=bob bobs=bob
+dcc got bob /home/trout/Downloads/pics.zip 4096
+dcc getfail ann /home/trout/Downloads/big.iso 9000
+= status: failed big.iso from ann status=failed done=$false
+dcc sent carol /home/trout/talk.pdf 512
+= status: sent /home/trout/talk.pdf to carol size=512 count=1 get-1=<>
+dcc sendfail dave /home/trout/x.bin 1
+= status: couldn't send /home/trout/x.bin to dave
+dcc chat bob well hello there
+> /msg =bob hi back
+dcc chat bob nothing to see
+/m
+= status: M1 2660774639 158.152.50.239 0.0.0.0 <> 4294967295
+= status: M2 $true $false misc.mrc remote $true
+= status: M3 alias0=0 aliasfile=<> mklog=#Test.TestNet.log status.TestNet.log
+= status: M4 r=words n=2 w=three n2=3 none=<> n3=0 line=two words n4=2
+= status: M5 count=3 one=abc two=abd three=abe depth1=2
+= status: M6 notify=2 first=alice on=$true note=friend from work pos=2 off=$false state=$true
+= status: M7 anick=<> email=<> insong=$false inwave=$false fname=<> chats=0

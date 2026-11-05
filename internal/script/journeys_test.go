@@ -336,6 +336,38 @@ func (j *journey) step(l string) {
 		j.host.CloseWindow(name)
 		actions, halted := j.e.Dispatch(Event{Kind: "CLOSE", Network: j.host.net, Target: name}, j.host)
 		j.record(actions, halted)
+	case strings.HasPrefix(l, "dcc "):
+		// dcc got|getfail|sent|sendfail nick file size: a transfer ends
+		// (it's in the host's list too); dcc chat nick text: a message.
+		w := strings.SplitN(l, " ", 5)
+		if w[1] == "chat" {
+			text := strings.Join(w[3:], " ")
+			actions, halted := j.e.Dispatch(Event{Kind: "CHAT", Network: j.host.net, Nick: w[2], Target: "=" + w[2], Text: text}, j.host)
+			j.record(actions, halted)
+			break
+		}
+		ends := map[string]struct{ event, kind, status string }{
+			"got": {"FILERCVD", "get", "sent"}, "getfail": {"GETFAIL", "get", "failed"},
+			"sent": {"FILESENT", "send", "sent"}, "sendfail": {"SENDFAIL", "send", "failed"},
+		}[w[1]]
+		kind, status := ends.event, ends.status
+		t := Transfer{Kind: ends.kind, Network: j.host.net, Nick: w[2], IP: "192.0.2.7", File: w[3],
+			Size: int64(atoi(w[4])), Status: status, Started: j.host.now.Add(-4 * time.Second), Rate: 512}
+		if status == "sent" {
+			t.Done = t.Size
+		}
+		j.host.transfers = append(j.host.transfers, t)
+		actions, halted := j.e.Dispatch(Event{Kind: kind, Network: j.host.net, Nick: w[2], Transfer: &t}, j.host)
+		j.record(actions, halted)
+	case strings.HasPrefix(l, "notify "):
+		// notify nick [on] [note...]: a nick on the notify list.
+		w := strings.Fields(l)
+		e := NotifyEntry{Nick: w[1]}
+		if len(w) > 2 && w[2] == "on" {
+			e.On, w = true, append(w[:2], w[3:]...)
+		}
+		e.Note = strings.Join(w[2:], " ")
+		j.host.notify = append(j.host.notify, e)
 	case strings.HasPrefix(l, "focus "):
 		// focus #chan: the user brings a window to the front (status for
 		// the status window): on ACTIVE.
@@ -447,6 +479,8 @@ type fakeHost struct {
 	now             time.Time
 	wins            []*fakeWin // custom windows, in the order they opened
 	appActive       bool
+	transfers       []Transfer
+	notify          []NotifyEntry
 	lastActive      string // "" with hadActive: the status window
 	hadActive       bool
 }
@@ -578,7 +612,9 @@ func (h *fakeHost) Colors() Colors {
 	return c
 }
 
-func (h *fakeHost) AppActive() bool { return h.appActive }
+func (h *fakeHost) AppActive() bool             { return h.appActive }
+func (h *fakeHost) Transfers() []Transfer       { return h.transfers }
+func (h *fakeHost) Notify(string) []NotifyEntry { return h.notify }
 
 // Uptime: trout up 3.25s, the network 90061s, the computer 6 days and a bit,
 // like the mIRC run tmp/uptime-oracle.mrc's numbers.

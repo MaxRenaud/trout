@@ -59,6 +59,11 @@ type Host interface {
 	// network's connection (0 if it's down), "system" the computer, for
 	// $uptime and $ticks.
 	Uptime(network, item string) time.Duration
+	// Transfers is the client's file transfers and DCC chats ($get,
+	// $send, $chat), in the order they started.
+	Transfers() []Transfer
+	// Notify is network's notify list, in order, with who's on.
+	Notify(network string) []NotifyEntry
 	Now() time.Time
 }
 
@@ -132,6 +137,8 @@ type Options struct {
 	MaxSteps int
 	// Rand is the source for $rand; nil uses a random seed.
 	Rand *rand.Rand
+	// Exe is the client's program file, for $mircexe.
+	Exe string
 }
 
 // Engine is a set of loaded scripts and their variables. It isn't safe
@@ -158,6 +165,8 @@ type Engine struct {
 	deaf       int                 // the events not listened to: $remote's bits (1 ctcp, 2 named, 4 raw)
 	identWarn  bool                // an identifier that doesn't exist is an error
 	answers    []string            // input box answers for $?, from Answer
+	readn      int                 // $readn: the line the last $read matched
+	sfstate    string              // $sfstate: cancel after a cancelled $sfile
 	ask        func(Prompt) string // asks an input box there's no answer for, from SetAsk
 	lastAnswer string              // $!
 	socks      []*socket           // /sockopen's sockets

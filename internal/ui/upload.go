@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MaxRenaud/trout/internal/irc"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -28,6 +29,9 @@ type uploadDoneMsg struct {
 	target string
 	link   string
 	err    error
+	path   string // the file sent
+	size   int64
+	start  time.Time
 }
 
 // openSendFile asks for a file and who gets the link.
@@ -65,9 +69,14 @@ func (a *App) openSendFile(to string) {
 // and trusting a pinned bouncer key the way the IRC connection does.
 func (a *App) upload(w *state.Window, target, path string) tea.Cmd {
 	host, user, password, pin, dial := w.Net.FileHost, a.bnc.User, a.password, a.bnc.Pin, a.dialer(false)
+	start := time.Now()
 	return func() tea.Msg {
 		link, err := uploadFile(host, user, password, pin, path, dial)
-		return uploadDoneMsg{w, target, link, err}
+		var size int64
+		if info, err := os.Stat(path); err == nil {
+			size = info.Size()
+		}
+		return uploadDoneMsg{w: w, target: target, link: link, err: err, path: path, size: size, start: start}
 	}
 }
 
@@ -125,12 +134,21 @@ func uploadFile(host, user, password, pin, path string, dial func(context.Contex
 }
 
 // uploaded sends the link once the upload is done.
+// It's trout's DCC send, so scripts get on FILESENT or SENDFAIL for it.
 func (a *App) uploaded(msg uploadDoneMsg) {
+	t := script.Transfer{Kind: "send", Network: msg.w.Net.Name, Nick: msg.target, File: msg.path,
+		Size: msg.size, Started: msg.start, Status: "sent", Done: msg.size}
+	if secs := time.Since(msg.start).Seconds(); secs > 0 {
+		t.Rate = float64(msg.size) / secs
+	}
 	if msg.err != nil {
 		a.addLine(msg.w, state.RoleQuit, "* Upload failed: "+msg.err.Error())
+		t.Status, t.Done, t.Rate = "failed", 0, 0
+		a.queueScript(a.transferEvent("SENDFAIL", t))
 		return
 	}
 	if a.sendNet(msg.w.Net, "PRIVMSG", msg.target, msg.link) && !a.echoed(msg.w.Net) {
 		a.addLine(msg.w, state.RoleOwn, "-> *"+msg.target+"* "+msg.link)
 	}
+	a.queueScript(a.transferEvent("FILESENT", t))
 }

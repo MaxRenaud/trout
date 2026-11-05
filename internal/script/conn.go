@@ -22,6 +22,7 @@ type NetInfo struct {
 	Away       bool
 	AwayMsg    string
 	Idle       time.Duration // since we last said something
+	RealName   string        // $fullname
 }
 
 // isupport is a 005 token, or mIRC's default for it when not connected.

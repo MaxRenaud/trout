@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -169,6 +170,10 @@ func (a *App) chatUpdate(msg tea.Msg) {
 		}
 		a.addLineL(c.win, l)
 		a.beepFor(c.win, l)
+		if l.Role != state.RoleAction { // on CHAT is what's said, like mIRC's
+			a.queueScript(a.scriptEvent(script.Event{Kind: "CHAT", Network: c.net.Name, Nick: c.nick,
+				Target: "=" + c.nick, Text: msg.line}))
+		}
 	case chatDownMsg:
 		c := msg.c
 		if c.conn != nil {

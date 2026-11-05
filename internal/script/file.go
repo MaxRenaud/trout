@@ -97,11 +97,19 @@ func readIdent(r *run, fr *frame, c *call) (string, error) {
 	if len(args) > 0 {
 		at = atoi(strings.TrimSpace(args[0]))
 	}
-	line, found := "", false
+	line, found, n := "", false, 0
+	// $readn is the line's number, 0 if none matched (checked).
+	defer func() {
+		r.e.readn = 0
+		if found {
+			r.e.readn = n
+		}
+	}()
 	switch {
 	case search:
 		for i := max(at, 1) - 1; i < len(lines) && !found; i++ {
 			l := lines[i]
+			n = i + 1
 			switch {
 			case strings.Contains(sw, "s"):
 				if w, rest, _ := strings.Cut(l, " "); strings.EqualFold(w, match) {
@@ -119,10 +127,11 @@ func readIdent(r *run, fr *frame, c *call) (string, error) {
 		}
 	case at < 0:
 		if len(lines) > 0 {
-			line, found = lines[r.e.opts.Rand.IntN(len(lines))], true
+			n = r.e.opts.Rand.IntN(len(lines)) + 1
+			line, found = lines[n-1], true
 		}
 	case at >= 1 && at <= len(lines):
-		line, found = lines[at-1], true
+		line, found, n = lines[at-1], true, at
 	}
 	if !found {
 		return "", nil

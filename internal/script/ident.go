@@ -20,7 +20,7 @@ func init() {
 	builtins = map[string]builtin{"regsubex": regsubexIdent}
 	for _, m := range []map[string]builtin{eventIdents, coreIdents, textIdents, tokenIdents, numIdents,
 		timeIdents, hashIdents, regexIdents, timerIdents, sockIdents, fileIdents, menuIdents, miscIdents,
-		fileHandleIdents, connIdents, userIdents, windowIdents, binIdents, urlIdents, clientIdents} {
+		fileHandleIdents, connIdents, userIdents, windowIdents, binIdents, urlIdents, clientIdents, dccIdents} {
 		maps.Copy(builtins, m)
 	}
 }
