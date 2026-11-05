@@ -988,6 +988,14 @@ func (ed *scriptEditor) apply(a *App, d *scriptDoc) tea.Cmd {
 			o.dirty, o.disk = false, data // all of popups.ini
 		}
 	}
+	if defenderRisk(data) {
+		// Defender may delete it as soon as it's written; the text is
+		// still here to change.
+		m := message(wrapPlain(defenderWarning(d.file), 56)...)
+		m.Title = "Microsoft Defender"
+		m.OnClose = func(a *App, _ int) tea.Cmd { return ed.back(a) }
+		a.openDialog(m)
+	}
 	var cmds []tea.Cmd
 	if d.was != "" && !strings.EqualFold(d.was, d.file) && a.scriptLoaded(d.was) {
 		cmds = append(cmds, a.unloadScript(d.was))

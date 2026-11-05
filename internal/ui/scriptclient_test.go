@@ -4,12 +4,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/state"
 )
 
 // TestScriptClientIdents: on ACTIVE when you change windows ($active and
@@ -109,5 +111,37 @@ func TestDefenderNote(t *testing.T) {
 		if noted != (sys == "windows") || strings.Contains(second, "Defender") || a.settings().DefenderNoted != noted {
 			t.Errorf("%s: first %q, second %q, setting %v", sys, first, second, a.settings().DefenderNoted)
 		}
+	}
+}
+
+// TestDefenderRisk: on Windows, loading a script with both on START and
+// /bwrite warns that Defender may delete it; either alone doesn't.
+func TestDefenderRisk(t *testing.T) {
+	defer func(g string) { goos = g }(goos)
+	goos = "windows"
+	for src, want := range map[string]bool{
+		"on *:START:{\n  bwrite x.bin 0 -1 &b\n}":         true,
+		"ON 1:START:echo hi\nalias s { .bwrite f 0 1 x }": true,
+		"on *:START:echo hi":                              false,
+		"alias s bwrite f 0 -1 &b":                        false,
+		"on *:START:echo bwriter":                         false,
+	} {
+		if got := defenderRisk(src); got != want {
+			t.Errorf("%q: %v, want %v", src, got, want)
+		}
+	}
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	a.scriptMem = map[string]string{"risky.mrc": "on *:START:echo hi\nalias s bwrite f 0 -1 &b"}
+	st := a.nets[0].Status()
+	a.activate(st)
+	a.edit(st).Buf = []rune("/load -rs risky.mrc")
+	a.submit(st)
+	if !slices.ContainsFunc(st.Lines, func(l state.Line) bool { return strings.Contains(l.Text, "Defender may delete risky.mrc") }) {
+		t.Error("no warning loading risky.mrc")
+	}
+	goos = "darwin"
+	if defenderRisk("on *:START:echo hi\nalias s bwrite f 0 -1 &b") {
+		t.Error("warned off Windows")
 	}
 }

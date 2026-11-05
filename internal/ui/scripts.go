@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -247,6 +248,9 @@ func (a *App) loadScript(entry string, first bool) tea.Cmd {
 	if err != nil {
 		a.addLine(where, state.RoleQuit, "* /load: couldn't read "+name+": "+err.Error())
 		return nil
+	}
+	if first && defenderRisk(src) {
+		a.addLine(where, state.RoleQuit, "* "+defenderWarning(name))
 	}
 	problems := a.scripts.LoadAs(name, src, as)
 	a.scriptProblems[strings.ToLower(name)] = problems
@@ -1064,4 +1068,21 @@ func (a *App) noteDefender() {
 	a.addLine(a.active, state.RoleInfo, "* On Windows, Microsoft Defender deletes a script that has both on START "+
 		"and /bwrite, taking it for an IRC worm (mIRC's scripts too). If one disappears, it's in Defender's "+
 		"Protection history, where you can also exclude the scripts folder. trout won't say this again.")
+}
+
+var (
+	startEvent = regexp.MustCompile(`(?im)^\s*on\s+[^:\r\n]*:start:`)
+	bwriteCmd  = regexp.MustCompile(`(?i)(^|[\s|{/.])bwrite\s`)
+)
+
+// defenderRisk is whether Microsoft Defender would take src for an IRC
+// worm and delete it, on Windows: a script with both on START and /bwrite
+// (found 2026-11-04 on Windows 11; either alone is left alone).
+func defenderRisk(src string) bool {
+	return goos == "windows" && startEvent.MatchString(src) && bwriteCmd.MatchString(src)
+}
+
+func defenderWarning(name string) string {
+	return "Microsoft Defender may delete " + name + ": it has both on START and /bwrite, which it takes " +
+		"for an IRC worm. Moving the /bwrite (or the on START) into another file keeps it from doing that."
 }

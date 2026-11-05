@@ -208,7 +208,8 @@ trout's own commands, and anything trout doesn't know goes to the server.
   `/bwrite` as `Worm:IRC/Generic` (found 2026-11-04; it does the same to mIRC's). `/load`
   then can't find the file. Keep `/bwrite` in another file than your `on START`, or tell
   Defender to leave trout's scripts folder alone. trout says so once, the first time you
-  `/load` on Windows.
+  `/load` on Windows, and warns when you load or save a script that has both. Defender
+  shows a notification when it deletes one; Protection history can restore it.
 
 ## Where trout differs from mIRC
 
