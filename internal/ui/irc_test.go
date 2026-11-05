@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -168,5 +169,41 @@ func TestNoNetworksYet(t *testing.T) {
 	feed("BATCH +m soju.im/bouncer-networks", "BATCH -m") // a reconnect
 	if a.dlg != nil {
 		t.Fatal("asked again")
+	}
+}
+
+// TestShortLines: a line with fewer parameters than its command has, from
+// a broken bouncer or a network, is shown or dropped, not a panic that
+// quits trout. Every command handleIRC knows and every numeric, with 0 to 3
+// parameters, from the bouncer's own connection and from a network.
+func TestShortLines(t *testing.T) {
+	a, n, _ := realApp(t)
+	cmds := []string{"AWAY", "BATCH", "BOUNCER", "CAP", "CHGHOST", "CLIENTCERT", "ERROR", "FAIL",
+		"INVITE", "JOIN", "KICK", "MARKREAD", "MODE", "NICK", "NOTICE", "PART", "PING", "PRIVMSG",
+		"QUIT", "TAGMSG", "TOPIC", "WALLOPS", "ACCOUNT", "SETNAME"}
+	for i := 1; i < 1000; i++ {
+		cmds = append(cmds, fmt.Sprintf("%03d", i))
+	}
+	params := []string{"", " max", " max #go", " max #go :x"}
+	for _, net := range []*state.Network{n, a.home} {
+		for _, c := range cmds {
+			for _, src := range []string{":srv ", ":bob!b@h ", ""} {
+				for _, p := range params {
+					l := src + c + p
+					m, err := ircmsg.ParseLine(l)
+					if err != nil {
+						continue
+					}
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								t.Errorf("%q on %s: %v", l, net.Name, r)
+							}
+						}()
+						a.handleIRC(net, m)
+					}()
+				}
+			}
+		}
 	}
 }

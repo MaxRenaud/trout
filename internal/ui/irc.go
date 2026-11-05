@@ -306,7 +306,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		if _, ok := is["MONITOR"]; ok {
 			n.Monitor = true
 		}
-		line(status, state.RoleNormal, strings.Join(p[1:], " "))
+		line(status, state.RoleNormal, strings.Join(p[min(1, len(p)):], " "))
 	case "JOIN":
 		ch := arg(0)
 		w := n.Find(state.KChannel, ch)
@@ -426,7 +426,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		}
 	case "MODE":
 		who := cmp.Or(nick, m.Source)
-		change := strings.Join(p[1:], " ")
+		change := strings.Join(p[min(1, len(p)):], " ")
 		if !n.IsChannel(arg(0)) {
 			n.Umodes = applyFlags(n.Umodes, arg(1))
 			line(status, state.RoleEvent, "* "+who+" sets mode: "+change)
@@ -501,7 +501,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 	case "730", "731": // RPL_MONONLINE, RPL_MONOFFLINE: the notify list
 		a.monitorReply(n, m)
 	case "376", "422": // the end of the MOTD (or none): registration is done
-		line(status, state.RoleNormal, strings.Join(p[1:], " "))
+		line(status, state.RoleNormal, strings.Join(p[min(1, len(p)):], " "))
 		if n != a.home {
 			a.monitor(n)     // now ISUPPORT has said whether there's MONITOR
 			if a.invisible { // Options > Messages
@@ -540,7 +540,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		if strings.EqualFold(arg(1), "LIST") {
 			a.listFailed(n, tryAgainText(arg(2)))
 		}
-		line(a.whoisWin(n), state.RoleInfo, "* "+strings.Join(p[1:], " "))
+		line(a.whoisWin(n), state.RoleInfo, "* "+strings.Join(p[min(1, len(p)):], " "))
 	case "ERROR":
 		line(status, state.RoleQuit, "* "+arg(0))
 	case "FAIL", "WARN", "NOTE":
@@ -568,7 +568,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		if code >= 400 && code < 600 && a.active.Net == n {
 			w = a.active // errors show where you are, like mIRC
 		}
-		line(w, state.RoleNormal, strings.Join(p[1:], " "))
+		line(w, state.RoleNormal, strings.Join(p[min(1, len(p)):], " "))
 	}
 	return nil
 }
