@@ -87,6 +87,26 @@ func (a *App) serv(n *state.Network, reply *state.Window, quiet bool, args ...st
 	return true
 }
 
+// servLost forgets the BouncerServ commands sent on n's connection, which
+// just died: their replies won't come, and the next connection's
+// BouncerServ messages mustn't be taken for them. A list's caller hears
+// it failed (soju may still have done a change, so the rest only say
+// there was no answer).
+func (a *App) servLost(n *state.Network) {
+	a.serving = slices.DeleteFunc(a.serving, func(c *servCmd) bool {
+		if c.conn != n {
+			return false
+		}
+		switch {
+		case c.onError != nil:
+			c.onError("error: the connection to the bouncer died before it answered")
+		case !c.quiet && c.reply != nil && slices.Contains(c.reply.Net.Wins, c.reply):
+			a.addLine(c.reply, state.RoleQuit, "* Bouncer: no answer, the connection died first")
+		}
+		return true
+	})
+}
+
 // servQuote joins arguments for BouncerServ, which splits them like a
 // shell does.
 func servQuote(args []string) string {

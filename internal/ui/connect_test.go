@@ -547,3 +547,29 @@ func TestNetworkCertificate(t *testing.T) {
 		t.Fatalf("after editing the network, a failure sent %q", got)
 	}
 }
+
+// TestServLost drops the bouncer's connection while BouncerServ owes trout
+// answers: a list's caller hears it failed, and what BouncerServ says on
+// the next connection isn't taken for the old commands' replies.
+func TestServLost(t *testing.T) {
+	a, sent := fakeSoju(t)
+	var got []string
+	gotErr := ""
+	a.servList([]string{"network", "status"}, func(lines []string, err string) { got, gotErr = lines, err })
+	a.serv(a.home, a.home.Status(), false, "network", "update", "x", "-enabled=false")
+	for range 3 {
+		<-sent
+	}
+	a.Update(ircDownMsg{a.home, errors.New("EOF")})
+	if len(a.serving) != 0 || got != nil || !strings.Contains(gotErr, "connection to the bouncer died") {
+		t.Errorf("after the connection died: serving %d, list %q, err %q", len(a.serving), got, gotErr)
+	}
+	if !strings.Contains(strings.Join(lineTexts(a.home.Status()), "\n"), "no answer, the connection died first") {
+		t.Errorf("status:\n%s", strings.Join(lineTexts(a.home.Status()), "\n"))
+	}
+	m, _ := ircmsg.ParseLine(":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :hello again")
+	a.Update(ircLineMsg{a.home, m})
+	if q := a.home.Find(state.KQuery, "BouncerServ"); q == nil || !strings.Contains(strings.Join(lineTexts(q), "\n"), "hello again") {
+		t.Error("BouncerServ's next message was swallowed as an old command's reply")
+	}
+}

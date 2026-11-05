@@ -152,6 +152,7 @@ func (a *App) updateIRC(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		a.notSent(n)
+		a.servLost(n)
 		// Every channel says so, like mIRC's "* Disconnected" in each.
 		for _, w := range n.Wins {
 			if w.Kind == state.KChannel && w.Joined {
