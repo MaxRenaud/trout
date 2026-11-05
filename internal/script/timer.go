@@ -74,6 +74,7 @@ func (e *Engine) Tick(h Host) []Action {
 		if t.paused || t.next.After(now) || !slices.Contains(e.timers, t) {
 			continue
 		}
+		r.steps = 0 // each timer's command is a run of its own
 		r.fire(t, now)
 	}
 	return r.finish()
@@ -91,7 +92,6 @@ func (r *run) fire(t *timer, now time.Time) {
 	}
 	t.next = now.Add(max(t.interval, time.Millisecond))
 	r.e.ctimer = t.name
-	r.steps = 0
 	fr := &frame{network: t.network, window: t.window}
 	r.report(fr, r.command(fr, t.command))
 	if last {
@@ -125,7 +125,11 @@ func (r *run) cmdTimer(fr *frame, name, rest string) error {
 			case strings.EqualFold(line, "off"):
 				r.e.timers = slices.DeleteFunc(r.e.timers, func(x *timer) bool { return x == t })
 			case strings.Contains(sw, "e"):
+				// Inside this script's run, on its step budget, so a loop
+				// of /timer -e still stops.
+				ctimer := r.e.ctimer
 				r.fire(t, r.h.Now())
+				r.e.ctimer = ctimer
 			case strings.Contains(sw, "r"):
 				t.paused = false
 			case strings.ContainsAny(sw, "pP"):

@@ -2,6 +2,7 @@ package script
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -178,8 +179,26 @@ func (r *run) step() error {
 }
 
 // block runs statements, handling /goto to labels in it.
-func (r *run) block(fr *frame, stmts []stmt) error {
+func (r *run) block(fr *frame, stmts []stmt) (err error) {
+	defer recovered(&err)
 	return r.blockFrom(fr, stmts, 0)
+}
+
+// recovered, deferred, turns a panic into a script error: a bug in trout's
+// scripting, reachable from text someone sends a script, stops that script
+// with an error to report, not trout. block and command do it, so every
+// handler, alias, timer and menu item does.
+func recovered(err *error) {
+	if p := recover(); p != nil {
+		*err = errorf("script stopped: trout's scripting failed (", fmt.Sprint(p), "); please report it")
+	}
+}
+
+// evalTop is eval where a script starts outside block and command (a
+// menu's labels, an editbox line's //), recovering like them.
+func (r *run) evalTop(fr *frame, text string) (v string, err error) {
+	defer recovered(&err)
+	return r.eval(fr, text)
 }
 
 // blockFrom runs statements from stmts[start].
@@ -260,7 +279,8 @@ func (r *run) at(fr *frame, s stmt, err error) error {
 }
 
 // command runs one command line.
-func (r *run) command(fr *frame, text string) error {
+func (r *run) command(fr *frame, text string) (err error) {
+	defer recovered(&err)
 	if t := strings.TrimSpace(text); t == "=" || t == "!" {
 		// An event whose commands are = or ! is there to stop users from
 		// getting lower levels' events, like mIRC's: it does nothing.

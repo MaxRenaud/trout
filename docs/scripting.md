@@ -233,6 +233,8 @@ trout's own commands, and anything trout doesn't know goes to the server.
 
 - A handler that runs too long (100,000 steps) is stopped with an error, where mIRC
   freezes.
+- A binary variable holds up to 64 MB (`/bset` and `/bcopy` past that are errors), so a
+  position from someone's text can't make trout allocate gigabytes.
 - Hash table items come out in the order they were added; mIRC's order is its hash's.
 - Typed in the editbox, an identifier that doesn't exist stays as typed (as in mIRC); in a
   script it's `$null`, or with Options > Identifier Warning an error that stops the

@@ -39,6 +39,17 @@ func spaceFields(s string) []string {
 	return out
 }
 
+// maxBin is the most a binary variable holds, 64 MB like $urlget's
+// downloads into one: a position from someone's text (/bset &x $2 1)
+// mustn't make trout allocate gigabytes, or overflow an int.
+const maxBin = 64 << 20
+
+// binFits reports whether size bytes at 1-based position n stay within
+// maxBin.
+func binFits(n float64, size int) bool {
+	return n >= 1 && n-1+float64(size) <= maxBin
+}
+
 // putBytes writes src into dst at 1-based position n, padding with zeros
 // past the end; chop drops whatever follows.
 func putBytes(dst []byte, n int, src []byte, chop bool) []byte {
@@ -104,6 +115,9 @@ func (r *run) cmdBset(fr *frame, rest string) error {
 			data = append(data, byteValue(w))
 		}
 	}
+	if !binFits(n, len(data)) {
+		return errorf("/bset: more than ", itoa(maxBin>>20), " MB")
+	}
 	b, _ := r.bin(words[0])
 	r.setBin(words[0], putBytes(b, int(n), data, strings.Contains(sw, "c")))
 	return nil
@@ -139,13 +153,16 @@ func (r *run) cmdBcopy(fr *frame, rest string) error {
 	n, ok1 := parseNum(w[1])
 	s, ok2 := parseNum(w[3])
 	m, ok3 := parseNum(w[4])
-	if !ok || !ok1 || !ok2 || !ok3 || n < 1 || s < 1 || int(s) > len(src) {
+	if !ok || !ok1 || !ok2 || !ok3 || n < 1 || s < 1 || s > float64(len(src)) {
 		return errorf("/bcopy: invalid parameters")
 	}
 	from := int(s) - 1
 	to := len(src)
-	if m >= 0 {
-		to = min(to, from+int(m))
+	if m >= 0 && m < float64(to-from) { // compared as floats: m can be 1e20
+		to = from + int(m)
+	}
+	if !binFits(n, to-from) {
+		return errorf("/bcopy: more than ", itoa(maxBin>>20), " MB")
 	}
 	part := append([]byte(nil), src[from:to]...)
 	if strings.Contains(sw, "z") {

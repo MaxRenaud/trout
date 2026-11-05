@@ -56,6 +56,58 @@ func TestRandHuge(t *testing.T) {
 	}
 }
 
+// TestBinvarHuge: /bset and /bcopy with positions and lengths from
+// someone else's text are errors, not panics or gigabytes.
+func TestBinvarHuge(t *testing.T) {
+	e := New(Options{})
+	load(t, e, "bin.mrc", `on *:TEXT:!b *:#:{
+  bset &x $2 1
+  bset &y 1 1 2 3
+  bcopy &x $iif($5,$5,1) &y $3 $4
+  echo # $bvar(&x,0)
+}`)
+	for text, want := range map[string]string{
+		"!b 99999999999999999999 1 1": "/bset: more than 64 MB",
+		"!b 9223372036854775807 1 1":  "/bset: more than 64 MB",
+		"!b 2000000000 1 1":           "/bset: more than 64 MB",
+		"!b 1 2 99999999999999999999": "#trout: 2",
+		"!b 1 9223372036854775807 1":  "/bcopy: invalid parameters",
+		"!b 1 1 2 67108864":           "/bcopy: more than 64 MB",
+	} {
+		got := dispatchText(e, evalHost(), text)
+		if len(got) == 0 || !strings.Contains(got[len(got)-1], want) {
+			t.Errorf("%s: %q, want %q", text, got, want)
+		}
+	}
+}
+
+// TestRecovered: a panic in the engine, a bug in trout, stops the script
+// with an error instead of trout.
+func TestRecovered(t *testing.T) {
+	err := func() (err error) {
+		defer recovered(&err)
+		var s []int
+		_ = s[1]
+		return nil
+	}()
+	if err == nil || !strings.Contains(err.Error(), "trout's scripting failed (runtime error: index out of range") {
+		t.Errorf("got %v", err)
+	}
+}
+
+// TestTimerExecLoop: /timer -e runs a timer inside the script's own run,
+// so a loop of it still runs out of steps, and $ctimer comes back.
+func TestTimerExecLoop(t *testing.T) {
+	start := time.Now()
+	got := runAlias(t, `alias t { .timerq 0 100 noop | while (1) { .timerq -e } }`, "")
+	if len(got) != 1 || !strings.Contains(got[0], "script stopped") {
+		t.Errorf("got %q", got)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
 // TestBareIdentifiers: identifiers used without their arguments are
 // errors, not panics.
 func TestBareIdentifiers(t *testing.T) {

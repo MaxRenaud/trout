@@ -416,7 +416,7 @@ func (e *Engine) Command(network, window, line string, eval bool, h Host) (actio
 	}
 	if a := e.alias(nil, name); a != nil && !strings.Contains(word, "!") {
 		if eval {
-			v, err := r.eval(fr, args)
+			v, err := r.evalTop(fr, args)
 			if err != nil {
 				r.report(fr, err)
 				return r.finish(), true

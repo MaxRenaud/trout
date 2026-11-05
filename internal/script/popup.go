@@ -199,7 +199,7 @@ func (r *run) menuItems(fr *frame, items []popupItem, i, depth int, id string) (
 			continue
 		}
 		r.steps = 0
-		label, err := r.eval(fr, it.label)
+		label, err := r.evalTop(fr, it.label)
 		m := MenuItem{}
 		if err == nil {
 			m.Label, m.Checked, m.Disabled = readStyle(label)
@@ -260,7 +260,7 @@ func (r *run) submenu(fr *frame, inner, id string) []MenuItem {
 		}
 		saved := fr.params
 		fr.params = []string{param}
-		v, _ := r.eval(fr, inner)
+		v, _ := r.evalTop(fr, inner)
 		fr.params = saved
 		return v
 	}
