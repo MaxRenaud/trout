@@ -392,12 +392,13 @@ func (r *run) cmdScid(fr *frame, name, rest string) error {
 		return err
 	}
 	// -1 (the active connection) isn't a switch.
-	sw := ""
+	var sws []string
 	for strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "-1") {
 		w, more, _ := strings.Cut(line, " ")
-		sw += w[1:]
+		sws = append(sws, w[1:])
 		line = strings.TrimSpace(more)
 	}
+	sw := strings.Join(sws, "")
 	if strings.Contains(sw, "r") {
 		if fr.home != "" {
 			fr.network = fr.home

@@ -26,7 +26,7 @@ func compileRegex(pattern string) (re *regexp.Regexp, global, strip bool, err er
 			p, flags = p[1:end], p[end+1:]
 		}
 	}
-	var mods string
+	var mods []rune
 	for _, f := range flags {
 		switch f {
 		case 'g':
@@ -34,7 +34,7 @@ func compileRegex(pattern string) (re *regexp.Regexp, global, strip bool, err er
 		case 'S':
 			strip = true
 		case 'i', 'm', 's', 'U':
-			mods += string(f)
+			mods = append(mods, f)
 		case 'x':
 			// RE2 has no extended mode: take out the whitespace and comments
 			// it would ignore.
@@ -47,8 +47,8 @@ func compileRegex(pattern string) (re *regexp.Regexp, global, strip bool, err er
 			}
 		}
 	}
-	if mods != "" {
-		p = "(?" + mods + ")" + p
+	if len(mods) > 0 {
+		p = "(?" + string(mods) + ")" + p
 	}
 	re, err = regexp.Compile(p)
 	if err != nil {

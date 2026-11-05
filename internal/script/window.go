@@ -548,11 +548,12 @@ func (r *run) cmdSavebuf(fr *frame, line string) error {
 // supported.
 func (r *run) cmdFilter(fr *frame, line string) error {
 	words := strings.Fields(line)
-	raw := ""
+	var raws []string
 	for len(words) > 0 && len(words[0]) > 1 && words[0][0] == '-' {
-		raw += words[0][1:]
+		raws = append(raws, words[0][1:])
 		words = words[1:]
 	}
+	raw := strings.Join(raws, "")
 	sw := winSwitches(raw)
 	has := func(c byte) bool { _, ok := sw[c]; return ok }
 	if has('a') {
@@ -582,10 +583,10 @@ func (r *run) cmdFilter(fr *frame, line string) error {
 		match = "*"
 	}
 	// Which are windows: -f and -w in order, else a name with an @.
-	kinds := ""
-	for _, c := range raw {
+	var kinds []byte
+	for _, c := range []byte(raw) {
 		if c == 'f' || c == 'w' {
-			kinds += string(c)
+			kinds = append(kinds, c)
 		}
 	}
 	isWin := func(i int, name string) bool {
