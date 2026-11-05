@@ -36,7 +36,7 @@ type Config struct {
 	Caps       []string // capabilities to request when the server offers them
 	Bind       string   // soju network ID to bind to (soju.im/bouncer-networks)
 
-	// Debug, if set, sees every raw line; dir is "<-" or "->".
+	// Debug, if set, sees every raw line, Redacted; dir is "<-" or "->".
 	Debug func(dir, line string)
 
 	// Liveness, for a server that vanishes without closing the connection
@@ -313,7 +313,7 @@ func (c *Conn) read() (ircmsg.Message, error) {
 			continue
 		}
 		if c.cfg.Debug != nil {
-			c.cfg.Debug("<-", line)
+			c.cfg.Debug("<-", Redact(line))
 		}
 		m, err := ircmsg.ParseLine(line)
 		if err != nil {
@@ -337,7 +337,7 @@ func (c *Conn) Send(command string, params ...string) error {
 func (c *Conn) Raw(line string) error {
 	line = strings.TrimRight(line, "\r\n")
 	if c.cfg.Debug != nil {
-		c.cfg.Debug("->", line)
+		c.cfg.Debug("->", Redact(line))
 	}
 	if err := c.write(line); err != nil {
 		return err

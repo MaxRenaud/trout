@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,8 +60,11 @@ func TestDialRegisters(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
+	var mu sync.Mutex
+	var logged []string
+	debug := func(dir, line string) { mu.Lock(); logged = append(logged, dir+" "+line); mu.Unlock() }
 	c, err := Dial(ctx, Config{Addr: ln.Addr().String(), Nick: "trout", User: "trout", Password: "pw",
-		Caps: []string{"server-time", "soju.im/bouncer-networks", "batch"}, Bind: "7"})
+		Caps: []string{"server-time", "soju.im/bouncer-networks", "batch"}, Bind: "7", Debug: debug})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +78,12 @@ func TestDialRegisters(t *testing.T) {
 	want := []string{"AUTHENTICATE " + creds, "BOUNCER BIND 7", "CAP END"}
 	if tail := seen[len(seen)-3:]; strings.Join(tail, "|") != strings.Join(want, "|") {
 		t.Errorf("last lines sent = %q, want %q", tail, want)
+	}
+	mu.Lock()
+	log := strings.Join(logged, "\n")
+	mu.Unlock()
+	if strings.Contains(log, creds) || !strings.Contains(log, "-> AUTHENTICATE PLAIN\n") || !strings.Contains(log, "-> AUTHENTICATE <hidden>\n") {
+		t.Errorf("the debug log should hide SASL's credentials and nothing else of it:\n%s", log)
 	}
 	if c.Nick != "trout" || len(c.early) != 1 || c.early[0].Command != "001" {
 		t.Errorf("after registration nick = %q, early = %v", c.Nick, c.early)
