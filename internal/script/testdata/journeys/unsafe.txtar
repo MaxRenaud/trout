@@ -1,0 +1,19 @@
+Commands that evaluate their line again (/timer, /scon) evaluate what
+someone said too, so it can run as code; $unsafe stops that, like mIRC's.
+
+-- relay.mrc --
+on *:TEXT:!later *:#:.timer 1 5 echo $chan later: $2-
+on *:TEXT:!safe *:#:.timer 1 5 echo $chan safe: $unsafe($2-)
+on *:TEXT:!all *:#:scon -a echo $chan all: $unsafe($2-)
+-- transcript --
+me trout
+chan #trout @trout mallory
+active #trout
+< :mallory!m@host PRIVMSG #trout :!later I am $me
+@ +5s
+= #trout: later: I am trout
+< :mallory!m@host PRIVMSG #trout :!safe I am $me %x $+ $chr(41)
+@ +5s
+= #trout: safe: I am $me %x $+ $chr(41)
+< :mallory!m@host PRIVMSG #trout :!all $calc(1+1) [ $me ]
+= #trout: all: $calc(1+1) [ $me ]

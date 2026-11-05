@@ -30,7 +30,8 @@ import (
 // Loaded scripts are config.toml's scripts, in order. They live in the
 // scripts folder next to config.toml (or anywhere, by full path); their
 // variables and Users list are vars.ini and users.ini there, like mIRC's,
-// and their own files ($read, /write, /hsave) can only be in that folder.
+// and their own files ($read, /write, /hsave) are named from it (see
+// scriptFile).
 
 // scriptTickMsg wakes the engine for a timer, or a -uN variable to unset.
 type scriptTickMsg struct{}
@@ -52,9 +53,19 @@ func (a *App) scriptsDir() string {
 
 // scriptFile is where a script's file is, like mIRC's: a full path is
 // itself, anywhere; any other name is in the scripts folder ($mircdir),
-// .. and all. mIRC's backslashes work too. Only an empty name isn't a file.
+// and a leading .. goes above it. mIRC's backslashes work too.
+//
+// Unlike mIRC, a .. after a folder's name (logs\#x\..\..) isn't a file:
+// names that come from IRC, like a channel's, can have \ and .. in them,
+// so write logs\ $+ $chan $+ .log in a channel named #x\..\..\..\foo
+// would write outside the folder its script meant. Nobody writes dir\..
+// on purpose. Max agreed to this one (2026-11-05).
 func (a *App) scriptFile(name string) (string, bool) {
-	name = filepath.Clean(filepath.FromSlash(strings.ReplaceAll(name, `\`, "/")))
+	name = strings.ReplaceAll(name, `\`, "/")
+	if climbs(name) {
+		return "", false
+	}
+	name = filepath.Clean(filepath.FromSlash(name))
 	switch {
 	case name == "" || name == ".":
 		return "", false
@@ -62,6 +73,26 @@ func (a *App) scriptFile(name string) (string, bool) {
 		return name, true
 	}
 	return filepath.Join(a.scriptsDir(), name), true
+}
+
+// climbs reports whether a /-separated path has a .. after a folder's
+// name (or a drive's, or the root), undoing part of itself.
+func climbs(name string) bool {
+	named := false
+	for seg := range strings.SplitSeq(name, "/") {
+		switch seg {
+		case "..":
+			if named {
+				return true
+			}
+		case ".":
+		case "":
+			named = named || name[0] == '/' // the root, not a doubled /
+		default:
+			named = true
+		}
+	}
+	return false
 }
 
 func (a *App) scriptReadFile(name string) (string, bool) {
@@ -96,7 +127,7 @@ func (a *App) scriptWriteFile(f *script.File) error {
 	}
 	path, ok := a.scriptFile(f.Name)
 	if !ok {
-		return errors.New(f.Name + " isn't in the scripts folder")
+		return errors.New(f.Name + ": a .. after a folder's name isn't allowed")
 	}
 	if f.Delete {
 		return os.Remove(path)
@@ -984,8 +1015,8 @@ func nearestPal(t *Theme, rgb RGB) int {
 	return best
 }
 
-// ListDir is a folder of the scripts folder, for $findfile: the folder
-// itself for "", and nothing outside it.
+// ListDir is a folder for $findfile, named like a script's other files:
+// the scripts folder itself for "".
 func (h scriptHost) ListDir(dir string) ([]script.DirEntry, bool) {
 	a := h.a
 	if a.scriptsDir() == "" {

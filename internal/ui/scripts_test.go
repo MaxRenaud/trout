@@ -245,6 +245,19 @@ func runMenuItem(a *App, label string) bool {
 	return false
 }
 
+func TestClimbs(t *testing.T) {
+	for name, want := range map[string]bool{
+		"notes.txt": false, "../notes.txt": false, "../../a/b.txt": false, "./../x": false,
+		"/home/me/notes.txt": false, "C:/mirc/x.txt": false, "logs/#x.log": false,
+		"logs/#x/../../../foo.log": true, "a/..": true, "/home/me/../x": true,
+		"C:/../x": true, "/../x": true, "../a/../b": true, "logs//../x": true,
+	} {
+		if got := climbs(name); got != want {
+			t.Errorf("climbs(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
 // TestScriptsFolder runs scripts from a real config: loaded at startup
 // from the scripts folder, with on START, vars.ini and users.ini written
 // there, and a file a script writes outside it (mIRC lets it).
@@ -258,6 +271,8 @@ func TestScriptsFolder(t *testing.T) {
   inc %starts
   write notes.txt started
   write ..\escape.txt nope
+  write logs\#x\..\..\..\climbed.txt nope
+  write $mircdir $+ logs\#x\..\..\climbed.txt nope
 }
 alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	os.WriteFile(filepath.Join(folder, "settings.ini"), []byte("[main]\r\ngreeting=hello\r\n"), 0o600)
@@ -277,6 +292,13 @@ alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	}
 	if got, err := os.ReadFile(filepath.Join(dir, "escape.txt")); err != nil || string(got) != "nope\r\n" {
 		t.Errorf("..\\escape.txt, outside the folder like mIRC's: %q, %v", got, err)
+	}
+	// A .. after a folder's name, as a channel's name can put there, is
+	// no file, relative or full.
+	for _, p := range []string{filepath.Join(dir, "climbed.txt"), filepath.Join(filepath.Dir(dir), "climbed.txt")} {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%s written", p)
+		}
 	}
 	actions, ok := a.scripts.Command(a.home.Name, "", "who", false, a.scriptHost())
 	if !ok {

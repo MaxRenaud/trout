@@ -129,6 +129,7 @@ var miscIdents = map[string]builtin{
 	"pi":        str("3.14159265358979323846"),
 	"bytes":     bytesIdent,
 	"base":      baseIdent,
+	"unsafe":    unsafeIdent,
 	"encode":    func(r *run, fr *frame, c *call) (string, error) { return codec(r, c, true) },
 	"decode":    func(r *run, fr *frame, c *call) (string, error) { return codec(r, c, false) },
 	"md5":       hashIdent(md5.New),
@@ -376,6 +377,26 @@ func baseIdent(r *run, fr *frame, c *call) (string, error) {
 
 // codec is $encode and $decode with m (base64), a (base32), x (percent
 // encoding) or u (uuencode, the default).
+// unsafeIdent is $unsafe(text): text made safe for a command that
+// evaluates its line again (/timer, /scon, /scid), like mIRC's. It's
+// $unsafe(base64).undo, which that second evaluation turns back into the
+// text, not evaluated further, so $1- from someone's message can't run as
+// code there. Checked in mIRC 7.86: the base64 is of the UTF-8, .undo
+// decodes it, other properties are $null, and two parameters are an error.
+func unsafeIdent(r *run, fr *frame, c *call) (string, error) {
+	if len(c.args) > 1 {
+		return "", errorf("$unsafe: invalid parameters")
+	}
+	switch c.prop {
+	case "":
+		return "$unsafe(" + base64.StdEncoding.EncodeToString([]byte(c.arg(0))) + ").undo", nil
+	case "undo":
+		b, _ := base64.StdEncoding.DecodeString(c.arg(0)) // what decodes, like mIRC
+		return string(b), nil
+	}
+	return "", nil
+}
+
 func codec(r *run, c *call, encode bool) (string, error) {
 	opts := c.arg(1)
 	if strings.ContainsAny(opts, "celv") {

@@ -1043,7 +1043,7 @@ func (a *App) writeScript(name, data string) error {
 		return os.WriteFile(name, []byte(data), 0o600)
 	}
 	if _, ok := a.scriptFile(name); !ok {
-		return errors.New(name + " isn't in the scripts folder")
+		return errors.New(name + ": a .. after a folder's name isn't allowed")
 	}
 	return a.scriptWriteFile(&script.File{Name: name, Data: data})
 }

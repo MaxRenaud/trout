@@ -53,6 +53,12 @@ var evalCases = []struct{ in, want string }{
 	{"%n apples", "5 apples"},
 	{"%nope", ""},
 	{"%sp", "a b"},
+	// $unsafe, for commands that evaluate again (checked in mIRC 7.86).
+	{"$unsafe(hello)", "$unsafe(aGVsbG8=).undo"},
+	{"$unsafe(aGVsbG8=).undo", "hello"},
+	{"$unsafe()", "$unsafe().undo"},
+	{"$unsafe(abc).foo", ""},
+	{"$eval($unsafe(a $!me %n b),2)", "a $me 5 b"},
 	// Evaluation brackets, from mIRC's Aliases help: one evaluation,
 	// then a second with another bracket.
 	{"[ %x ]", "%y"},

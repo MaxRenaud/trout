@@ -33,7 +33,13 @@ It holds mIRC's own files, in mIRC's format, so you can copy yours over:
 Other scripts (`.mrc` files) go there too, and anything a script reads or writes
 (`/write`, `$read`, `/hsave`, `/writeini`): names are relative to it, and `$mircdir` is
 its full path. Like mIRC, a full path reaches any file (`$read(/home/me/notes.txt)`), and
-so does `..`: a script can read and write what you can, so load only scripts you trust.
+so does a leading `..`: a script can read and write what you can, so load only scripts you
+trust. A `..` after a folder's name (`logs\#x\..\..`) isn't allowed (see
+[Where trout differs](#where-trout-differs-from-mirc)).
+
+`/timer`, `/scon` and `/scid` evaluate their command again when it runs, so text from
+someone else in it, like `$1-` of their message, would run as script code. Pass it through
+`$unsafe($1-)`, as in mIRC: `.timer 1 5 msg $chan $unsafe($1-)`.
 
 `config.toml` remembers what's loaded, in order (`scripts`), and the switches below
 (`scripts-off`, `script-level`, `script-options`).
@@ -231,6 +237,10 @@ trout's own commands, and anything trout doesn't know goes to the server.
 - Typed in the editbox, an identifier that doesn't exist stays as typed (as in mIRC); in a
   script it's `$null`, or with Options > Identifier Warning an error that stops the
   script, with mIRC's "No such identifier" message.
+- A file name with a `..` after a folder's name, like `logs\#x\..\..\foo.log`, isn't a
+  file (`/write` and the rest give an error). A channel's name can have `\` and `..` in
+  it, so `write logs\ $+ $chan $+ .log` could otherwise write anywhere. A leading `..`
+  and full paths work as in mIRC.
 - Timers run outside any script, so they can't call another script's `alias -l`.
 - `isop` counts owners and admins (`~`, `&`) as ops.
 - Custom windows are always full size, like trout's other windows: their positions,
