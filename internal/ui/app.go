@@ -314,7 +314,9 @@ func Run(opts Options) error {
 	a.term, a.termHome = termkeys.Detect(env), env.Home
 	a.termColors = termkeys.Colors(env.Getenv)
 	a.notify, a.inTmux = termkeys.NotifyFor(env.Getenv), env.Getenv("TMUX") != ""
+	stopHup := quitOnHangup(p.Quit)
 	_, err := p.Run()
+	stopHup()
 	a.stopITermProfile() // back to the tab's own profile
 	a.local.Stop()       // trout's own soju, if it started one
 	a.closeSockets()     // scripts' sockets
