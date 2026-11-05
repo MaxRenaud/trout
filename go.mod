@@ -2,6 +2,8 @@ module github.com/MaxRenaud/trout
 
 go 1.26.0
 
+toolchain go1.26.10
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbletea v1.3.10
