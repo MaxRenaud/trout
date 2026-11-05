@@ -558,3 +558,39 @@ alias t2 if (1 == 1) && ($a.b($1) == x) return yes | return no`)
 		}
 	}
 }
+
+// bigUptime is a host whose computer has been up 31 days: more
+// milliseconds than a 32-bit int holds.
+type bigUptime struct{ *fakeHost }
+
+func (bigUptime) Uptime(_, item string) time.Duration { return 2690793390 * time.Millisecond }
+
+// TestBigNumbers: numbers past 2^31 come out whole on 32-bit systems too
+// (Jinx's Raspberry Pi had $ticks and $not(0) negative): $ticks, $uptime,
+// the bit identifiers, $bvar().long.
+func TestBigNumbers(t *testing.T) {
+	e := New(Options{})
+	r := e.newRun(bigUptime{evalHost()})
+	fr := &frame{network: "TestNet"}
+	for in, want := range map[string]string{
+		"$ticks":                      "2690793390",
+		"$uptime(system)":             "2690793390",
+		"$uptime(system,3)":           "2690793",
+		"$not(0)":                     "4294967295",
+		"$not(1)":                     "4294967294",
+		"$and(4294967295,4294967295)": "4294967295",
+		"$or(2147483648,1)":           "2147483649",
+		"$xor(4294967295,1)":          "4294967294",
+		"$biton(0,32)":                "2147483648",
+	} {
+		if got, err := r.eval(fr, in); err != nil || got != want {
+			t.Errorf("%s = %q (%v), want %q", in, got, err, want)
+		}
+	}
+	if err := r.command(fr, "bset &x 1 255 255 255 255"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.eval(fr, "$bvar(&x,1).long"); got != "4294967295" {
+		t.Errorf("$bvar().long = %q", got)
+	}
+}

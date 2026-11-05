@@ -82,17 +82,17 @@ var timeIdents = map[string]builtin{
 		if c.hasArgs {
 			return "", errorf("$ctime(date) isn't supported yet")
 		}
-		return itoa(int(r.h.Now().Unix())), nil
+		return itoa64(r.h.Now().Unix()), nil
 	},
 	"gmt": func(r *run, fr *frame, c *call) (string, error) {
 		if c.hasArgs {
 			return asctime(r.h.Now().UTC(), c.arg(0)), nil
 		}
-		return itoa(int(r.h.Now().Unix())), nil
+		return itoa64(r.h.Now().Unix()), nil
 	},
 	// $ticks is milliseconds since the computer started, like mIRC's.
 	"ticks": func(r *run, fr *frame, c *call) (string, error) {
-		return itoa(int(r.h.Uptime("", "system").Milliseconds())), nil
+		return itoa64(r.h.Uptime("", "system").Milliseconds()), nil
 	},
 	// $uptime(mirc|server|system,N): how long trout, the network's
 	// connection or the computer has been up, in milliseconds; N = 1 as
@@ -113,7 +113,7 @@ var timeIdents = map[string]builtin{
 		case 3:
 			return itoa(secs), nil
 		}
-		return itoa(int(d.Milliseconds())), nil
+		return itoa64(d.Milliseconds()), nil
 	},
 	"time": timeFormat("HH:nn:ss"),
 	"date": timeFormat("dd/mm/yyyy"),

@@ -10,8 +10,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ergochat/irc-go/ircmsg"
 
 	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -205,5 +207,57 @@ alias pick echo -s picked $sfile(logs,Pick one) $sfstate`}
 	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if got := last(); got != "picked logs/a.txt" {
 		t.Errorf("after picking: %q", got)
+	}
+}
+
+// TestScriptNetIdents: $network is the 005 NETWORK= once the server says
+// it, $ip and $serverip the two ends of trout's connection, and
+// $troutversion trout's version.
+func TestScriptNetIdents(t *testing.T) {
+	a, _ := fakeSoju(t)
+	a.opts.Version = "v0.5.0"
+	a.scripts = script.New(script.Options{Version: a.opts.Version})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	m, _ := ircmsg.ParseLine("BOUNCER NETWORK 7 name=irc.example.net;state=connected")
+	a.Update(ircLineMsg{a.home, m})
+	n := a.nets[1]
+	n.Nick = "max"
+	a.conns[n] = a.control
+	ask := func(expr string) string {
+		t.Helper()
+		acts, _ := a.scripts.Command(n.Name, "", "echo -s "+expr, true, a.scriptHost())
+		if len(acts) == 0 || acts[0].Echo == nil {
+			t.Fatalf("%s: %+v", expr, acts)
+		}
+		return acts[0].Echo.Text
+	}
+	if got := ask("$network"); got != "irc.example.net" {
+		t.Errorf("before 005: %q", got)
+	}
+	m, _ = ircmsg.ParseLine(":srv 005 max NETWORK=Libera.Chat CHANTYPES=# :are supported")
+	a.Update(ircLineMsg{n, m})
+	if got := ask("$network $ip $serverip $troutversion"); got != "Libera.Chat 127.0.0.1 127.0.0.1 0.5.0" {
+		t.Errorf("after 005: %q", got)
+	}
+}
+
+// TestScriptFullPaths: $mircdir is the scripts folder, and a full path
+// into it works like a name in it; one outside it doesn't.
+func TestScriptFullPaths(t *testing.T) {
+	cfg, err := config.Load(filepath.Join(t.TempDir(), "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Config: cfg})
+	dir := a.scriptsDir()
+	if err := errors.Join(os.MkdirAll(dir, 0o755), os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("first line\r\n"), 0o644)); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	os.WriteFile(outside, []byte("nope\r\n"), 0o644)
+	acts, _ := a.scripts.Command(a.home.Name, "", "echo -s dir= $+ $mircdir full= $+ $read($mircdir $+ notes.txt,1) / $read(notes.txt,1) / outside= $+ $read("+outside+",1)", true, a.scriptHost())
+	want := "dir=" + dir + string(filepath.Separator) + " full=first line / first line / outside="
+	if len(acts) == 0 || acts[0].Echo == nil || acts[0].Echo.Text != want {
+		t.Errorf("got %q, want %q", acts[0].Echo.Text, want)
 	}
 }

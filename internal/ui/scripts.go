@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,6 +55,12 @@ func (a *App) scriptsDir() string {
 // backslashes work too.
 func (a *App) scriptFile(name string) (string, bool) {
 	name = filepath.Clean(filepath.FromSlash(strings.ReplaceAll(name, `\`, "/")))
+	// A full path is fine if it's in the folder: $mircdir $+ file.
+	if filepath.IsAbs(name) && a.scriptsDir() != "" {
+		if rel, err := filepath.Rel(a.scriptsDir(), name); err == nil {
+			name = rel
+		}
+	}
 	if name == "" || !filepath.IsLocal(name) {
 		return "", false
 	}
@@ -800,6 +807,9 @@ func (h scriptHost) Info(network string) script.NetInfo {
 		Idle:       time.Since(a.lastTyped),
 		RealName:   cmp.Or(n.Attrs["realname"], a.home.Attrs["realname"]),
 	}
+	if c := a.connFor(n); c != nil {
+		info.IP, info.ServerIP = addrHost(c.LocalAddr()), addrHost(c.RemoteAddr())
+	}
 	if a.opts.Demo {
 		info.Connected = true
 	}
@@ -1146,4 +1156,16 @@ func (h scriptHost) Notify(network string) []script.NotifyEntry {
 		out = append(out, script.NotifyEntry{Nick: e.nick, Note: e.note, Whois: e.whois, On: n.Online[n.Fold(e.nick)]})
 	}
 	return out
+}
+
+// addrHost is an address's IP, without the port.
+func addrHost(addr net.Addr) string {
+	if addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String()
+	}
+	return host
 }

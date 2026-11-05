@@ -456,9 +456,7 @@ func (a *App) drawTreebar(c *Canvas, x, y, w, h int) {
 			row++
 		}
 	}
-	for j := y; j < y+h; j++ {
-		c.Set(x+w, j, ' ', Style{BG: t.Face})
-	}
+	a.drawSplit(c, x+w, y, h)
 	a.addRegion(Region{X: x + w, Y: y, W: 1, H: h, Kind: HitTreeSplit})
 }
 
@@ -493,9 +491,7 @@ func (a *App) drawWindow(c *Canvas, win *state.Window, x, y, w, h int) {
 			a.nickLeftX = x
 		}
 		a.drawNicklist(c, win, nx, y, a.nickW, ph)
-		for j := y; j < y+ph; j++ {
-			c.Set(sx, j, ' ', Style{BG: t.Face})
-		}
+		a.drawSplit(c, sx, y, ph)
 		a.addRegion(Region{X: sx, Y: y, W: 1, H: ph, Kind: HitNickSplit})
 		if a.nickLeftX >= 0 {
 			left = sx + 1
@@ -883,4 +879,17 @@ func (a *App) nickLinks(win *state.Window, r textRow, nicks map[string]string, x
 		cx += runewidth.RuneWidth(sr.R)
 	}
 	flush(len(r.runes))
+}
+
+// drawSplit draws the edge between two panes, x, from y for h rows: a bar
+// of the window's face, or a thin line for a theme that has them.
+func (a *App) drawSplit(c *Canvas, x, y, h int) {
+	t := a.theme()
+	for j := y; j < y+h; j++ {
+		if t.ThinSplits {
+			c.Set(x, j, '│', Style{FG: t.SplitLine, BG: t.TextBG})
+		} else {
+			c.Set(x, j, ' ', Style{BG: t.Face})
+		}
+	}
 }

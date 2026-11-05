@@ -139,6 +139,11 @@ type Options struct {
 	Rand *rand.Rand
 	// Exe is the client's program file, for $mircexe.
 	Exe string
+	// Version is the client's version, for $troutversion: "v0.5.0", or ""
+	// for a build from source.
+	Version string
+	// Dir is the scripts folder, which script file names are in: $mircdir.
+	Dir string
 }
 
 // Engine is a set of loaded scripts and their variables. It isn't safe

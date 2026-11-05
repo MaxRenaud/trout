@@ -204,9 +204,7 @@ func (a *App) drawCustom(c *Canvas, win *state.Window, x, y, w, h int) {
 	if cu.SideW > 0 {
 		sw := clamp(cu.SideW+2, 6, w/2)
 		a.drawCustomList(c, win, true, right-sw, y, sw, ph)
-		for j := y; j < y+ph; j++ {
-			c.Set(right-sw-1, j, ' ', Style{BG: t.Face})
-		}
+		a.drawSplit(c, right-sw-1, y, ph)
 		right -= sw + 1
 	}
 	if cu.Listbox {

@@ -22,6 +22,10 @@ type Theme struct {
 	TrackFG, TrackBG               RGB // the dithered scrollbar track
 	ActEvent, ActMsg, ActHi        RGB // switchbar and treebar activity
 	Warn                           RGB // errors in dialogs, on Face
+	// SplitLine, when ThinSplits is set, is the treebar's and nicklist's
+	// edges as a │ line on TextBG, like Weechat's, instead of a Face bar.
+	SplitLine  RGB
+	ThinSplits bool
 }
 
 // namedTheme is a theme with the name config.toml and theme files use,
@@ -44,6 +48,7 @@ var builtinThemes = []namedTheme{
 	{"solarized", "Solarized", &solarizedTheme},
 	{"gruvbox", "Gruvbox", &gruvboxTheme},
 	{"nord", "Nord", &nordTheme},
+	{"black", "Black", &blackTheme},
 }
 
 // themeList is the built-in themes and the theme files'.

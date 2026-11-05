@@ -31,8 +31,9 @@ It holds mIRC's own files, in mIRC's format, so you can copy yours over:
 | `vars.ini` | the variables scripts keep between sessions |
 
 Other scripts (`.mrc` files) go there too, and anything a script reads or writes
-(`/write`, `$read`, `/hsave`, `/writeini`). A script can't reach outside the folder; you
-can still `/load` a script from anywhere by its full path.
+(`/write`, `$read`, `/hsave`, `/writeini`): names are relative to it, and `$mircdir` is
+its full path, which works too. A script can't reach outside the folder; you can still
+`/load` a script from anywhere by its full path.
 
 `config.toml` remembers what's loaded, in order (`scripts`), and the switches below
 (`scripts-off`, `script-level`, `script-options`).
@@ -159,6 +160,10 @@ error.
   file dialog) and `$sfstate`, `$readn`, `$longip`, `$isalias`, `$alias`, `$finddir`,
   `$mklogfn`, `$fullname`, `$mircexe`; `$insong`/`$inwave` are `$false` and `$anick`
   and `$emailaddr` empty, since trout has no sounds, alternate nick or email.
+- **The connection**: `$network` is the network's own name (the server's 005
+  `NETWORK=`, as in mIRC), `$ip` this computer's address and `$serverip` the server's
+  (with a bouncer, the bouncer's). `$version` is the mIRC version trout's scripting
+  follows (7.86), for scripts' checks; `$troutversion` is trout's.
 - **Uptime**: `$uptime(mirc)` is trout's, `$uptime(server)` the network connection's, and
   `$uptime(system)` (and `$ticks`) the computer's, in milliseconds or, with N, as
   `$duration` does it.

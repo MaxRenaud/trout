@@ -125,15 +125,16 @@ func TestThemes(t *testing.T) {
 		t.Fatalf("settings say theme %q, want nord", s)
 	}
 
-	// The Colors dialog: S drops the Scheme list down on Nord; Down and
-	// Enter pick the next, the theme file's, past the separator.
+	// The Colors dialog: S drops the Scheme list down on Nord; Down twice
+	// and Enter pick the theme file's, past Black and the separator.
 	a.openColors()
 	a.View() // lays the dialog out
 	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	if len(a.menus) != 1 || a.menus[0].Items[a.menus[0].Sel].Label != "Nord" {
 		t.Fatalf("S in Colors: %d menus", len(a.menus))
 	}
-	key(tea.KeyDown) // over the separator
+	key(tea.KeyDown) // Black, then over the separator
+	key(tea.KeyDown)
 	key(tea.KeyEnter)
 	if got := a.themeList()[a.themeIdx].name; got != "paper" {
 		t.Fatalf("picked %q from the Scheme list, want paper", got)

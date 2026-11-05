@@ -232,7 +232,7 @@ func notifyIdent(r *run, fr *frame, c *call) (string, error) {
 	case "addr":
 		return e.Addr, nil
 	case "network":
-		return fr.network, nil
+		return r.networkName(fr.network), nil
 	}
 	return "", nil
 }

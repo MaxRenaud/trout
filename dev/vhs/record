@@ -15,7 +15,7 @@ for t in $tapes; do
 done
 case $tapes in *themes.tape*)
 	# Tile the theme screenshots two across, in 256 colors to keep it small,
-	# with the ffmpeg in VHS's image.
+	# with the ffmpeg in VHS's image; an odd one out leaves a white cell.
 	inputs="" filters="" stack="" layout="" i=0
 	for s in $(ls dev/vhs/shots/theme-*.png | sort -t- -k2 -n); do
 		inputs="$inputs -i $s"
@@ -27,7 +27,7 @@ case $tapes in *themes.tape*)
 		i=$((i + 1))
 	done
 	docker run --rm -v "$PWD":/vhs -w /vhs --entrypoint ffmpeg ghcr.io/charmbracelet/vhs:v0.12.1 -y -v error $inputs \
-		-filter_complex "${filters}${stack}xstack=inputs=$i:layout=${layout#|},split[a][b];[a]palettegen=max_colors=256[p];[b][p]paletteuse=dither=none" \
+		-filter_complex "${filters}${stack}xstack=inputs=$i:layout=${layout#|}:fill=white,split[a][b];[a]palettegen=max_colors=256[p];[b][p]paletteuse=dither=none" \
 		docs/gifs/themes.png
 	;;
 esac

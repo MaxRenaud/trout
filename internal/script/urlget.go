@@ -113,13 +113,13 @@ func (u *urlGet) prop(p string) string {
 	case "state":
 		return u.state
 	case "size":
-		return itoa(int(u.size))
+		return itoa64(u.size)
 	case "rcvd":
-		return itoa(int(u.rcvd))
+		return itoa64(u.rcvd)
 	case "resume":
 		return boolStr01(u.resume)
 	case "time":
-		return itoa(int(u.took.Milliseconds()))
+		return itoa64(u.took.Milliseconds())
 	case "reply":
 		return u.reply
 	}

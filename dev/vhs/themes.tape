@@ -1,5 +1,5 @@
 # The README's theme composite (docs/gifs/themes.png): each theme from
-# View > Themes, oldest look first, with the Tools menu open. dev/vhs/record
+# View > Themes, oldest look first (then Black), with the Tools menu open. dev/vhs/record
 # tiles the screenshots.
 Output dev/vhs/shots/themes.gif
 Source dev/vhs/settings.tape
@@ -127,5 +127,17 @@ Sleep 300ms
 Alt+t
 Sleep 600ms
 Screenshot dev/vhs/shots/theme-10-nord.png
+Escape
+Sleep 500ms
+
+Alt+v
+Down 6
+Right
+Down 10
+Enter
+Sleep 300ms
+Alt+t
+Sleep 600ms
+Screenshot dev/vhs/shots/theme-11-black.png
 Escape
 Sleep 500ms

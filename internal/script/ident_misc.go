@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -118,12 +119,12 @@ var miscIdents = map[string]builtin{
 		s := c.arg(0)
 		return s[:strings.LastIndexAny(s, `\/`)+1], nil
 	},
-	// The folders scripts might build paths from are all the scripts
-	// folder, which file names are already relative to: "" works as a
-	// prefix, as in $scriptdir $+ seen.hsh.
-	"mircdir":   str(""),
-	"scriptdir": str(""),
-	"logdir":    str(""),
+	// The folders scripts build paths from are all the scripts folder,
+	// with a separator at the end like mIRC's, so $scriptdir $+ seen.hsh
+	// works; file names are relative to it anyway. "" without a folder.
+	"mircdir":   scriptsDir,
+	"scriptdir": scriptsDir,
+	"logdir":    scriptsDir,
 	"getdir":    str(""),
 	"pi":        str("3.14159265358979323846"),
 	"bytes":     bytesIdent,
@@ -154,7 +155,7 @@ var miscIdents = map[string]builtin{
 	"biton":  bits(func(a, n uint32) uint32 { return a | 1<<(n-1) }),
 	"bitoff": bits(func(a, n uint32) uint32 { return a &^ (1 << (n - 1)) }),
 	"not": func(r *run, fr *frame, c *call) (string, error) {
-		return itoa(int(^uint32(int64(c.num(0))))), nil
+		return utoa(^uint32(int64(c.num(0)))), nil
 	},
 	// $isbit(A,N) is 1 or 0 (checked in mIRC).
 	"isbit": func(r *run, fr *frame, c *call) (string, error) {
@@ -229,7 +230,7 @@ func trig(f func(float64) float64, inverse bool) builtin {
 
 func bits(f func(a, b uint32) uint32) builtin {
 	return func(r *run, fr *frame, c *call) (string, error) {
-		return itoa(int(f(uint32(int64(c.num(0))), uint32(int64(c.num(1)))))), nil
+		return utoa(f(uint32(int64(c.num(0))), uint32(int64(c.num(1))))), nil
 	}
 }
 
@@ -497,4 +498,14 @@ func hashIdent(h func() hash.Hash) builtin {
 		d.Write([]byte(data))
 		return hex.EncodeToString(d.Sum(nil)), nil
 	}
+}
+
+// scriptsDir is $mircdir and $scriptdir: the scripts folder, ending in a
+// separator.
+func scriptsDir(r *run, fr *frame, c *call) (string, error) {
+	d := r.e.opts.Dir
+	if d == "" || strings.HasSuffix(d, string(filepath.Separator)) {
+		return d, nil
+	}
+	return d + string(filepath.Separator), nil
 }

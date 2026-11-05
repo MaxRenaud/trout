@@ -193,3 +193,30 @@ var nordTheme = Theme{
 	ActEvent: 0xD08770, ActMsg: 0xBF616A, ActHi: 0x88C0D0,
 	Warn: 0xBF616A,
 }
+
+// blackTheme is true black, with blue lines between the panes and round
+// the chrome, like Weechat's: asked for by Jinx, for a terminal that's
+// black (Dark's #1E1E1E looks grey beside it) where High Contrast's white
+// edges are too loud.
+var blackTheme = Theme{
+	Pal: [16]RGB{
+		0x000000, 0xE0E0E0, 0x5C8CFF, 0x4EC94E, 0xFF5C5C, 0xD08770, 0xC678DD, 0xFFA040,
+		0xFFE066, 0x8AFF8A, 0x3CC8C8, 0x7FFFFF, 0x7AA2FF, 0xFF7AFF, 0x9A9A9A, 0x505050,
+	},
+	Roles: [state.RoleCount]RGB{
+		state.RoleNormal: 0xD0D0D0, state.RoleOwn: 0xF0F0F0, state.RoleAction: 0xC678DD, state.RoleEvent: 0x6CC36C,
+		state.RoleQuit: 0x7A9BFF, state.RoleNotice: 0xD19A66, state.RoleInfo: 0x7A9BFF, state.RoleHighlight: 0xFF6B6B,
+		state.RoleTimestamp: 0x6A6A6A,
+	},
+	Face: 0x000000, FaceText: 0xC8C8C8, Light: 0x3465A4, Shadow: 0x1A3352,
+	Hover: 0x1A2A40, Pressed: 0x000000, ButtonDown: 0x223A5C,
+	TitleA: 0x16325C, TitleB: 0x3465A4, TitleText: 0xFFFFFF,
+	MenuSel: 0x3465A4, MenuSelText: 0xFFFFFF, Disabled: 0x5A5A5A,
+	TextBG: 0x000000, TextFG: 0xD0D0D0, SelBG: 0x24477A, SelFG: 0xFFFFFF,
+	ShadeBG: 0x0E0E0E, Marker: 0xB05050,
+	Lines:   0x3465A4,
+	TrackFG: 0x1A3352, TrackBG: 0x000000,
+	ActEvent: 0xD19A66, ActMsg: 0xFF6B6B, ActHi: 0x6FA8FF,
+	Warn:      0xFF7A7A,
+	SplitLine: 0x3465A4, ThinSplits: true,
+}

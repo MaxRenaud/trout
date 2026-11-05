@@ -338,7 +338,7 @@ func bvarIdent(r *run, fr *frame, c *call) (string, error) {
 		default:
 			v = uint64(binary.BigEndian.Uint32(w))
 		}
-		return itoa(int(v)), nil
+		return itoa64(int64(v)), nil
 	}
 	m := 1
 	switch {

@@ -843,6 +843,11 @@ func fields(s string) []string { return strings.Fields(s) }
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
+// itoa64 and utoa are for numbers that can pass 2^31: on 32-bit systems
+// (a Raspberry Pi's) int is 32 bits, and $ticks or $not(0) would wrap.
+func itoa64(n int64) string { return strconv.FormatInt(n, 10) }
+func utoa(n uint32) string  { return strconv.FormatUint(uint64(n), 10) }
+
 // atoi is n, or 0 if s isn't a number.
 func atoi(s string) int {
 	n, _ := strconv.Atoi(s)

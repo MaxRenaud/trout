@@ -140,8 +140,10 @@ var eventIdents = map[string]builtin{
 	"me": func(r *run, fr *frame, c *call) (string, error) {
 		return r.h.Me(fr.network), nil
 	},
+	// $network is the network's own name, its 005 NETWORK= (as mIRC
+	// has it); before that, or without one, the bouncer's name for it.
 	"network": func(r *run, fr *frame, c *call) (string, error) {
-		return fr.network, nil
+		return r.networkName(fr.network), nil
 	},
 	"active": func(r *run, fr *frame, c *call) (string, error) {
 		_, w := r.h.Active()
@@ -270,12 +272,17 @@ var coreIdents = map[string]builtin{
 	// $version is the mIRC version trout's scripting follows, so scripts'
 	// version checks pass.
 	"version": str("7.86"),
-	"null":    str(""),
-	"true":    str("$true"),
-	"false":   str("$false"),
-	"cr":      str("\r"),
-	"lf":      str("\n"),
-	"crlf":    str("\r\n"),
+	// $troutversion is trout's own, like 0.5.0 ("dev" for a build from
+	// source).
+	"troutversion": func(r *run, fr *frame, c *call) (string, error) {
+		return strings.TrimPrefix(cmpOr(r.e.opts.Version, "dev"), "v"), nil
+	},
+	"null":  str(""),
+	"true":  str("$true"),
+	"false": str("$false"),
+	"cr":    str("\r"),
+	"lf":    str("\n"),
+	"crlf":  str("\r\n"),
 	"v1": func(r *run, fr *frame, c *call) (string, error) {
 		return fr.v1, nil
 	},

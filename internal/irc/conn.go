@@ -78,6 +78,11 @@ type Conn struct {
 	partial  string // a line cut off by a read deadline
 }
 
+// LocalAddr and RemoteAddr are the connection's two ends: this computer's
+// and the server's (through a proxy, the proxy's).
+func (c *Conn) LocalAddr() net.Addr  { return c.nc.LocalAddr() }
+func (c *Conn) RemoteAddr() net.Addr { return c.nc.RemoteAddr() }
+
 // ErrNoReply is a server that stopped answering, even PINGs.
 var ErrNoReply = errors.New("no answer, even to a ping")
 

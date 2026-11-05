@@ -100,7 +100,7 @@ any browser.
 - The multi-line editbox (Alt+Enter), the second editbox (Alt+Q), per-window options in
   each button's popup, a proxy (SOCKS4, SOCKS5, HTTP) for the bouncer and DCC.
 - mIRC scripts and the Scripts Editor (see [Scripting](#scripting)).
-- Ten color themes, from green phosphor to Nord, and your own (see [Themes](#themes)).
+- Eleven color themes, from green phosphor to Nord and true black, and your own (see [Themes](#themes)).
 
 F1 lists the keys. Right-click, Ctrl+click or a long press opens popups.
 
@@ -120,13 +120,13 @@ custom windows or DLLs, which need Windows. See [docs/scripting.md](docs/scripti
 ## Themes
 
 View > Themes, or the Scheme list in Tools > Colors: Green Phosphor, Amber, DOS Blue, BBS,
-Classic (mIRC's own colors, the default), High Contrast, Solarized, Gruvbox, Dark and
-Nord. F2 switches between Classic and Dark. The Colors dialog then changes any kind of
+Classic (mIRC's own colors, the default), High Contrast, Solarized, Gruvbox, Dark,
+Nord, and Black (true black with thin blue lines between the panes, like Weechat). F2 switches between Classic and Dark. The Colors dialog then changes any kind of
 text to one of the theme's 16 colors, like mIRC's. To make your own, put a `.toml` file
 in the `themes` folder next to `config.toml`: it starts from a built-in theme and
 changes the colors you list. See [docs/themes.md](docs/themes.md).
 
-![The ten themes, oldest look first: Green Phosphor, Amber, DOS Blue, BBS, Classic, High Contrast, Solarized, Gruvbox, Dark, Nord](docs/gifs/themes.png)
+![The eleven themes, oldest look first: Green Phosphor, Amber, DOS Blue, BBS, Classic, High Contrast, Solarized, Gruvbox, Dark, Nord, then Black](docs/gifs/themes.png)
 
 ## Terminal notes
 

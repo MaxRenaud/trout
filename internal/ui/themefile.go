@@ -50,6 +50,8 @@ func themeColors(t *Theme) map[string]*RGB {
 		"track-fg": &t.TrackFG, "track-bg": &t.TrackBG,
 		"act-event": &t.ActEvent, "act-message": &t.ActMsg, "act-highlight": &t.ActHi,
 		"warn": &t.Warn,
+		// split-line draws the panes' edges as lines of this color.
+		"split-line": &t.SplitLine,
 	}
 }
 
@@ -106,6 +108,9 @@ func parseThemeFile(data string) (label string, t *Theme, problems []string) {
 			continue
 		}
 		*p = c
+		if k == "split-line" {
+			th.ThinSplits = true
+		}
 	}
 	return f.Label, &th, problems
 }

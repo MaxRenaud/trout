@@ -1,6 +1,6 @@
 # Themes
 
-trout has ten themes, in View > Themes and in the Scheme list of Tools > Colors:
+trout has eleven themes, in View > Themes and in the Scheme list of Tools > Colors:
 
 | Theme | Name in files | The look |
 |---|---|---|
@@ -14,6 +14,7 @@ trout has ten themes, in View > Themes and in the Scheme list of Tools > Colors:
 | Solarized | `solarized` | Solarized's dark palette |
 | Gruvbox | `gruvbox` | gruvbox's dark palette |
 | Nord | `nord` | Nord's palette |
+| Black | `black` | true black, with thin blue lines between the panes, like Weechat |
 
 F2 switches between Classic and Dark. The theme you pick is saved in `config.toml` by its
 name, as `theme = "nord"`.
@@ -93,3 +94,4 @@ Window chrome (menus, dialogs, the toolbar and switchbar):
 | `disabled` | greyed-out items |
 | `act-event`, `act-message`, `act-highlight` | switchbar and treebar activity |
 | `warn` | errors in dialogs |
+| `split-line` | draws the edges between the treebar, the text and the nicklist as thin lines of this color (as Black does), instead of bars of `face` |

@@ -23,6 +23,8 @@ type NetInfo struct {
 	AwayMsg    string
 	Idle       time.Duration // since we last said something
 	RealName   string        // $fullname
+	IP         string        // this computer\'s address on the connection: $ip
+	ServerIP   string        // the server\'s (through a bouncer, the bouncer\'s): $serverip
 }
 
 // isupport is a 005 token, or mIRC's default for it when not connected.
@@ -31,6 +33,15 @@ func (r *run) isupport(network, token string) string {
 		return v
 	}
 	return map[string]string{"PREFIX": "(ohv)@%+", "CHANMODES": "bIe,k,l", "CHANTYPES": "#&", "MODES": "3"}[token]
+}
+
+// networkName is what $network says: the network's 005 NETWORK=, or the
+// client's name for it.
+func (r *run) networkName(network string) string {
+	if v := r.h.Info(network).ISupport["NETWORK"]; v != "" {
+		return v
+	}
+	return network
 }
 
 // cid is a network's connection id: its place in the client's list, from 1.
@@ -182,6 +193,10 @@ var connIdents = map[string]builtin{
 		return "", nil
 	},
 	"ssl": func(r *run, fr *frame, c *call) (string, error) { return boolStr(r.h.Info(fr.network).SSL), nil },
+	// $ip is this computer's address on the connection; $serverip the
+	// server's, which with a bouncer is the bouncer's.
+	"ip":       func(r *run, fr *frame, c *call) (string, error) { return r.h.Info(fr.network).IP, nil },
+	"serverip": func(r *run, fr *frame, c *call) (string, error) { return r.h.Info(fr.network).ServerIP, nil },
 	"status": func(r *run, fr *frame, c *call) (string, error) {
 		info := r.h.Info(fr.network)
 		switch {
