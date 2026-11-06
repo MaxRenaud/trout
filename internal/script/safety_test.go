@@ -605,7 +605,33 @@ func TestInputBoxes(t *testing.T) {
 	}
 }
 
-// TestCalcDeep: $calc nested too deep for the stack is an error, not a
+// TestLineTooLong: text can't grow past maxLine, so a script can't take
+// all the memory or freeze trout making it; it stops with mIRC's error.
+func TestLineTooLong(t *testing.T) {
+	start := time.Now()
+	for src, want := range map[string]string{
+		`alias t var %x = a | while (1) { %x = %x $+ %x } | echo -a done`:                  "Line too long: $+",
+		`alias t var %x = a | while (1) { %x = %x %x } | echo -a done`:                     "Line too long",
+		`alias t echo -a $len($str($str(abcdefghij,10000),10000))`:                         "Line too long: $str",
+		`alias t echo -a $len($replace($str(a,60000),a,$str(b,60000)))`:                    "Line too long: $replace",
+		`alias t echo -a $len($replacex($str(a,60000),a,$str(b,60000)))`:                   "Line too long: $replacex",
+		`alias t echo -a $len($regsubex($str(a,60000),/a/g,$str(b,60000)))`:                "Line too long: $regsubex",
+		`alias t noop $regsub($str(a,60000),/a/g,$str(b,60000),%r) | echo -a $len(%r)`:     "Line too long: $regsub",
+		`alias t echo -a $len($+($str(abcdefghij,6000),$str(abcdefghij,6000)))`:            "Line too long: $+",
+		`alias t echo -a $len($base(1,10,10,99999999999999999999))`:                        "Line too long: $base",
+		`alias t var %x = $str(abcdefghij,6000) | echo -a $len(%x) $len($replace(%x,a,b))`: "#trout: 60000 60000",
+	} {
+		got := runAlias(t, src, "")
+		if len(got) != 1 || !strings.Contains(got[0], want) {
+			t.Errorf("%s: got %q, want %q", src, got, want)
+		}
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
+// TestCalcDeep:$calc nested too deep for the stack is an error, not a
 // crash Go can't recover from.
 func TestCalcDeep(t *testing.T) {
 	if _, ok := calc(strings.Repeat("(", 10_000_000) + "1"); ok {

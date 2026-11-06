@@ -137,10 +137,22 @@ func closeBracket(words []string, open int) int {
 	return len(words)
 }
 
+// maxLine is the longest text a line or an identifier can make, in bytes.
+// mIRC stops a script with "Line too long" at about 10,300 characters
+// (checked); trout's limit is higher, to fit any line mIRC can hold in
+// UTF-8, but there is one, so a loop doubling a variable or
+// $str($str(x,10000),10000) can't take all the memory.
+const maxLine = 64 << 10
+
+// errLong is mIRC's error for text that got too long, by what made it:
+// "Line too long: $str" (checked).
+func errLong(by string) error { return errorf("Line too long: ", by) }
+
 // evalPieces evaluates each piece and joins them: with spaces, or with
 // nothing around $+. Empty values ($null) drop out with their space.
 func (r *run) evalPieces(fr *frame, pieces []piece) (string, error) {
 	var out []string
+	size := 0
 	join := false
 	for _, p := range pieces {
 		if p.text == "$+" && !p.done {
@@ -156,8 +168,14 @@ func (r *run) evalPieces(fr *frame, pieces []piece) (string, error) {
 		}
 		switch {
 		case join && len(out) > 0:
+			if size += len(v); size > maxLine {
+				return "", errLong("$+")
+			}
 			out[len(out)-1] += v
 		case v != "":
+			if size += len(v) + 1; size > maxLine+1 {
+				return "", errorf("Line too long")
+			}
 			out = append(out, v)
 		}
 		join = false
@@ -402,6 +420,9 @@ func (r *run) ident(fr *frame, name string, c *call) (string, error) {
 		v, err := f(r, fr, c)
 		if err == errNull {
 			return "", nil
+		}
+		if len(v) > maxLine {
+			return "", errLong("$" + key)
 		}
 		return v, err
 	}
