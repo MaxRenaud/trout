@@ -429,6 +429,53 @@ func TestDCCSameName(t *testing.T) {
 	}
 }
 
+// TestDCCFlood: a flood of DCC offers while you're in a dialog leaves one
+// chat dialog to answer (for the newest offer), a few file offers from
+// the sender, said once, and only so many from many senders.
+func TestDCCFlood(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn = false
+	a.downloadDir = t.TempDir()
+	typing := &formBox{Title: "Typing", Buttons: []string{"OK", "Cancel"}, Fields: []*formField{newField("Text:", "", false)}}
+	a.openDialog(typing)
+	for i := range 50 {
+		feed(":bob!b@h PRIVMSG max :\x01DCC CHAT chat 134744072 " + strconv.Itoa(5000+i) + "\x01")
+	}
+	if len(a.waiting) != 1 {
+		t.Fatalf("50 chat offers: %d waiting", len(a.waiting))
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if d, ok := a.dlg.(*msgBox); !ok || d.Title != "DCC Chat" {
+		t.Fatalf("after the dialog, %T", a.dlg)
+	}
+	a.dlg.key(a, "enter") // Accept; the connection isn't made here
+	if a.dlg != nil || len(a.chats) != 1 || a.chats[0].addr != "8.8.8.8:5049" {
+		t.Fatalf("after the chat dialog: %T, chats %+v", a.dlg, a.chats)
+	}
+	a.closeWindow(a.chats[0].win)
+
+	a.openDialog(typing)
+	for range 50 {
+		feed(":bob!b@h PRIVMSG max :\x01DCC SEND f.bin 134744072 6800 1024\x01")
+	}
+	notes := 0
+	for _, l := range n.Status().Lines {
+		if strings.Contains(l.Text, "Ignoring DCC offers from bob") {
+			notes++
+		}
+	}
+	if len(a.waiting) != dccQueueSender || notes != 1 {
+		t.Fatalf("50 file offers: %d waiting, noted %d times", len(a.waiting), notes)
+	}
+	for i := range 20 {
+		feed(":bot" + strconv.Itoa(i) + "!b@h PRIVMSG max :\x01DCC SEND f.bin 134744072 6800 1024\x01")
+	}
+	if a.dccFlood.waiting != dccQueueMax || len(a.waiting) != dccQueueMax {
+		t.Fatalf("%d offers wait (%d dialogs), want %d", a.dccFlood.waiting, len(a.waiting), dccQueueMax)
+	}
+	a.dlg, a.waiting = nil, nil
+}
+
 // TestDCCReplay: offers in history the bouncer replays are dropped, chats
 // like files: their senders stopped listening long ago.
 func TestDCCReplay(t *testing.T) {

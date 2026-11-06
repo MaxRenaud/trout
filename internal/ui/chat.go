@@ -91,7 +91,7 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 		a.openDialog(d)
 		return nil
 	}
-	a.whenFree(func(a *App) tea.Cmd {
+	open := func(a *App) tea.Cmd {
 		if !a.dccWarn {
 			return decide(a)
 		}
@@ -112,6 +112,22 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 		}
 		a.openDialog(d)
 		return nil
+	}
+	// A newer offer from them while one waits replaces it, as they listen
+	// for the newest.
+	key := dccKey(n, nick)
+	if _, ok := a.dccFlood.chat[key]; ok {
+		a.dccFlood.chat[key] = open
+		return
+	}
+	if a.dccFlooded(n, nick) {
+		return
+	}
+	a.dccFlood.chat[key] = open
+	a.dccWhenFree(n, nick, func(a *App) tea.Cmd {
+		open := a.dccFlood.chat[key]
+		delete(a.dccFlood.chat, key)
+		return open(a)
 	})
 }
 

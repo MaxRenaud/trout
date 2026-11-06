@@ -113,14 +113,82 @@ func (a *App) dccOffer(n *state.Network, m ircmsg.Message, args string, t time.T
 	case a.dccTypeIgnored(safeName(file)):
 		a.dccIgnoredLine(n, file, nick, t)
 		return
+	case a.dccFlooded(n, nick):
+		return
 	}
 	tr := &transfer{net: n, nick: nick, trusted: a.dccTrusted(m.Source), file: file, addr: net.JoinHostPort(ip.String(), port), port: port, size: size}
-	a.whenFree(func(a *App) tea.Cmd {
+	a.dccWhenFree(n, nick, func(a *App) tea.Cmd {
 		if a.dccWarn {
 			a.openDialog(a.dccPrivacyBox(tr, ip))
 			return nil
 		}
 		return a.dccDecide(tr, ip)
+	})
+}
+
+// A flood of DCC offers mustn't bury you in dialogs or Get windows: like
+// CTCP replies (ctcpBurst), only dccBurst offers from one sender in
+// dccWindow get through, and behind an open dialog at most dccQueueSender
+// of theirs wait, and dccQueueMax in all. A sender's newer chat offer
+// replaces one that waits (chatOffer).
+const (
+	dccBurst       = 10
+	dccWindow      = 30 * time.Second
+	dccQueueSender = 3
+	dccQueueMax    = 10
+)
+
+// dccFlood is what's needed for that, by sender (dccKey): their recent
+// offers, their offers waiting (and all of them), the flood noted in the
+// status window, and the chat offer that waits.
+type dccFlood struct {
+	offers  map[string][]time.Time
+	queued  map[string]int
+	waiting int
+	noted   map[string]bool
+	chat    map[string]func(a *App) tea.Cmd
+}
+
+// dccKey names nick on n for dccFlood.
+func dccKey(n *state.Network, nick string) string { return n.ID + " " + n.Fold(nick) }
+
+// dccFlooded reports whether an offer from nick is one too many, and says
+// so once a flood.
+func (a *App) dccFlooded(n *state.Network, nick string) bool {
+	f := &a.dccFlood
+	if f.offers == nil {
+		f.offers, f.queued, f.noted, f.chat = map[string][]time.Time{}, map[string]int{}, map[string]bool{}, map[string]func(*App) tea.Cmd{}
+	}
+	key := dccKey(n, nick)
+	for k, ts := range f.offers {
+		if f.offers[k] = slices.DeleteFunc(ts, func(at time.Time) bool { return time.Since(at) > dccWindow }); len(f.offers[k]) == 0 {
+			delete(f.offers, k)
+			delete(f.noted, k)
+		}
+	}
+	busy := a.dlg != nil || len(a.menus) > 0 // so whenFree would hold it
+	if len(f.offers[key]) < dccBurst && (!busy || f.queued[key] < dccQueueSender && f.waiting < dccQueueMax) {
+		f.offers[key] = append(f.offers[key], time.Now())
+		return false
+	}
+	if !f.noted[key] {
+		f.noted[key] = true
+		a.addLine(n.Status(), state.RoleInfo, "* Ignoring DCC offers from "+nick+" for now: too many at once")
+	}
+	return true
+}
+
+// dccWhenFree is whenFree for an offer from nick, counted while it waits.
+func (a *App) dccWhenFree(n *state.Network, nick string, open func(a *App) tea.Cmd) {
+	f, key := &a.dccFlood, dccKey(n, nick)
+	f.waiting++
+	f.queued[key]++
+	a.whenFree(func(a *App) tea.Cmd {
+		f.waiting--
+		if f.queued[key]--; f.queued[key] <= 0 {
+			delete(f.queued, key)
+		}
+		return open(a)
 	})
 }
 
