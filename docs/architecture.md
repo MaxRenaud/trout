@@ -3,7 +3,7 @@
 ## Always through a bouncer
 
 trout only ever talks to soju. The client has one code path: connecting directly is soju
-running alongside it (the "None" bouncer, not built yet), and a remote bouncer is the same
+running alongside it (This Computer, `internal/local`), and a remote bouncer is the same
 protocol at a different address. soju is AGPL, so trout runs it as a separate process
 rather than linking it.
 

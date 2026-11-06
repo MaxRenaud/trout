@@ -112,8 +112,9 @@ trout runs mIRC scripts: aliases, popups, events, variables, timers, hash tables
 and the Users list, for the scripts that automate things (auto-op, greetings, `!seen`,
 trivia). The Scripts Editor (Tools > Scripts Editor, or Alt+R) works like mIRC's, with its Aliases,
 Popups, Remote, Users and Variables tabs and its files, so yours can be copied over. Every
-right-click menu comes from `popups.ini`, so you can change them. Not mIRC's dialogs,
-custom windows or DLLs, which need Windows. See [docs/scripting.md](docs/scripting.md).
+right-click menu comes from `popups.ini`, so you can change them. Custom `@windows` work,
+text and listboxes; not mIRC's dialogs, picture windows or DLLs, which need Windows. See
+[docs/scripting.md](docs/scripting.md).
 
 ![Scripting: aliases and an INPUT event typed into the Scripts Editor, then used in a channel, one asking in an input box](docs/gifs/scripts.gif)
 

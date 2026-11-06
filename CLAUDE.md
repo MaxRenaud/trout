@@ -64,29 +64,34 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files);
   `popups.go` the right-click menus and Commands, from popups.ini like mIRC's, and the
   `$?` input boxes; `theme.go` the theme list with Classic and Dark, `themes.go` the
-  other eight, `themefile.go` users' theme files (`docs/themes.md`), and `colors.go` the
-  Colors dialog.
+  other nine, `themefile.go` users' theme files (`docs/themes.md`), and `colors.go` the
+  Colors dialog. `canvas.go` is the cell buffer frames are drawn into, `select.go`
+  drag-selecting text, `palette.go` Ctrl+K's color picker, `chanlist.go` the Channels
+  List, `search.go` searching the bouncer's history from Find; per OS, `clipboard_*`,
+  `ttyin_*` (reading the terminal, and how long a lone Esc waits) and `uptime_*`
+  (`$uptime(system)`).
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/update`: trout updating itself: GitHub's latest release, how this trout was
   installed (Homebrew's Caskroom, an unpacked archive, `go install`, a build from source),
   `brew upgrade`, or replacing an archive's files in place (checked against
   checksums.txt; old ones kept as `.old` until the next start, since Windows can't delete
-  a running program). `ui/selfupdate.go` is Help > Check for Updates and the daily check.
+  a running program, and listed in `.trout-update-olds` so only those are removed). `ui/selfupdate.go` is Help > Check for Updates and the daily check.
 - `internal/install`: setting soju up on your server over the system `ssh`: probe, the
   root tiers, upload, the embedded `setup.sh`, and Check. The wizard is `ui/install.go`.
 - `cmd/trout-cert`: the helper trout uploads with soju (`setup.sh cert`) to get the
   bouncer a Let's Encrypt certificate for soju's own key (so the pin holds) and renew it
   from a systemd timer; `ui/certificate.go` asks (the wizard's last question, Bouncers >
   Server > Certificate) and watches it. `TROUT_ACME_DIRECTORY` points it at another CA.
-- `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens) or
-  Google Cloud (the gcloud command: free e2-micro, reserved IPv4, `trout-bouncer` firewall rule):
+- `internal/cloud`: a server for the bouncer at Hetzner or DigitalOcean (API tokens:
+  `hetzner.go`, `digitalocean.go`) or Google Cloud (`gcloud.go`, the gcloud command: free
+  e2-micro, reserved IPv4, `trout-bouncer` firewall rule):
   regions with the cheapest plan and price, create with your SSH key, delete. `ui/vps.go`
   puts it in the setup wizard, then hands the server to the same install, as root.
 - `internal/local`: trout's own soju for the This Computer bouncer, run while trout is
   open on 127.0.0.1 (a random port each time), in `soju/` next to config.toml;
   `ui/localbnc.go` starts it before connecting and `ui.Run` stops it.
 - `internal/termkeys`: which terminal this is, whether its Option key sends Alt, and the
-  fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `optionkey.go`
+  fix (an iTerm2 dynamic profile, a kitty/Ghostty config line, or steps); `ui/optionkey.go`
   asks at startup. `notify.go` is how it shows a notification (OSC 9, 777 or kitty's 99),
   for tips (`ui/away.go`'s `tipFor`, beside the bell).
 - `internal/script`: mIRC scripting (aliases, events, variables, identifiers, hash
@@ -140,7 +145,10 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   `daily_test.go` does the same for WHOIS, away, the bell, Find, favorites and key changes;
   `menus_test.go` for CTCP, ignore, notify, Channel Modes, DCC offers and downloads;
   `tier2_test.go` for the Address Book rules, perform and the Tier 2 options;
-  `tier3_test.go` for window options, editboxes, hotlinks, Order, DCC options and proxy.
+  `tier3_test.go` for window options, editboxes, hotlinks, Order, DCC options and proxy;
+  `tier1_test.go` and `audit_test.go` for fixes from audits (commands that went out
+  broken, long messages, pastes, history search...). `inert_test.go` walks every menu,
+  popup and toolbar button and fails on any that does nothing.
 - `connect_test.go` walks first run, failed logins, certificate trust, settings saving and
   Bouncer > Bouncers against a temp config, and soju network management against a scripted
   soju (`fakeSoju`); `TestCatchUp` covers history gaps, missed private messages and read
@@ -148,7 +156,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   not. `live_test.go` does the same against the dev soju as the `tester` user (not
   `trout`, so it stays out of your session), including two clients sharing a read marker;
   `control_live_test.go` has `tester2` and `tester3` join as raw IRC to test auto-op and
-  protect, and logs in through a small SOCKS5 proxy.
+  protect, and logs in through a small SOCKS5 proxy; `TestMoveNetworksLive` moves tester's
+  networks to a throwaway soju user it deletes afterwards. `pump_test.go` has
+  `liveAppWith` and `pump`, which plays Bubble Tea's role for these.
 - Anything trout tells soju goes through BouncerServ with `serv`; check soju's syntax with
   `sojuctl ... user run trout help <command>` (see the dev-env skill) rather than guessing.
 - `scripts_test.go` drives each scripting hook against a fake bouncer and a temp config;
@@ -156,17 +166,16 @@ go vet ./... && go fix -diff ./...                 # must both be clean
 - `internal/irc/conn_test.go` scripts a fake server for registration; `tls_test.go` pins
   a self-signed one.
 - `ui/install_test.go` walks the setup wizard against a fake server (`installHooks`):
-  sudo with and without a password, by hand, ssh needing you, uninstalling, and moving
-  networks. `install/install_test.go` checks the installer's commands against a fake
+  sudo with and without a password, by hand, ssh needing you, uninstalling, moving
+  networks, and removing the uploaded files after a failure or Cancel. `install/install_test.go` checks the installer's commands against a fake
   runner. With `-tags proxmox`, `install/proxmox_test.go` installs on all six Proxmox
   templates through every root tier, and `ui/proxmox_test.go` drives the wizard for real.
   Only touch VMs in the trout-test pool (IDs 9900-9999). With `-tags docker`,
   `install/docker_test.go` installs in a privileged systemd container (`dev/systemd`) and checks
   soju takes gamja's page's WebSockets (http-origin), which
   is arm64 on this Mac, or armv7l (32-bit Raspberry Pi OS's kind) under QEMU with
-  `TROUT_DOCKER_ARCH=arm`, which can't sandbox systemd units, so the test turns that off.
-  `TestMoveNetworksLive` moves tester's networks to a throwaway soju user it deletes
-  afterwards. With `-tags cloud` (tokens in `tmp/cloud.env`),
+  `TROUT_DOCKER_ARCH=arm`, which can't sandbox systemd units, so the test turns that off;
+  it also checks a `cert` that fails leaves nothing behind. With `-tags cloud` (tokens in `tmp/cloud.env`),
   `cloud/live_test.go` lists regions and makes and deletes a server per provider, and
   `ui/cloud_test.go` runs the whole wizard on one, gets it a real Let's Encrypt
   certificate and takes it away, then deletes it from Bouncers. Check
