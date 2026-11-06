@@ -97,6 +97,15 @@ func TestControl(t *testing.T) {
 	if got := <-sent; got != "MODE #go -o+o evil dave" {
 		t.Errorf("after a protected op's deop, sent %q", got)
 	}
+
+	// An entry for #go protects nobody in #other, from bans either.
+	a.memBook.Control = []config.ControlEntry{{Mask: "carol!*@*", Kinds: "p", Channels: []string{"#go"}}}
+	n.AddChannel(&state.Window{Kind: state.KChannel, Name: "#other", Joined: true,
+		Nicks: []state.Nick{{Prefix: "@", Name: "max"}, {Prefix: "@", Name: "carol"}}})
+	feed(":op2!o@h MODE #other +b *!*@*", ":op2!o@h MODE #other -o carol", ":evil!e@h MODE #go -o carol")
+	if got := <-sent; got != "MODE #go -o+o evil carol" {
+		t.Errorf("a protect entry for #go answered in #other: sent %q", got)
+	}
 }
 
 func TestAddressBook(t *testing.T) {

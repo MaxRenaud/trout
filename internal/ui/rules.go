@@ -120,15 +120,18 @@ func (a *App) nickRuleColor(w *state.Window, nick string) int {
 // ch: which of auto-op, auto-voice and protect apply.
 func (a *App) controlFor(n *state.Network, ch, mask string) (kinds string) {
 	for _, e := range a.book().Control {
-		if !onNetwork(e.Network, n) || !wildMatch(ignoreMask(e.Mask), mask) {
-			continue
+		if controlIn(e, n, ch) && wildMatch(ignoreMask(e.Mask), mask) {
+			kinds += e.Kinds
 		}
-		if len(e.Channels) > 0 && !slices.ContainsFunc(e.Channels, func(c string) bool { return n.Same(c, ch) }) {
-			continue
-		}
-		kinds += e.Kinds
 	}
 	return kinds
+}
+
+// controlIn reports whether a Control entry applies in channel ch on n:
+// its network (or all), and its channels (or all).
+func controlIn(e config.ControlEntry, n *state.Network, ch string) bool {
+	return onNetwork(e.Network, n) &&
+		(len(e.Channels) == 0 || slices.ContainsFunc(e.Channels, func(c string) bool { return n.Same(c, ch) }))
 }
 
 // controlDelay is how long auto-op waits, like mIRC's "random delay", so
@@ -209,10 +212,11 @@ func (a *App) protect(n *state.Network, w *state.Window, by, modes string, args 
 
 // protectedBan reports whether a ban mask covers someone protected there:
 // a protect entry's own mask, or someone in the channel whose address
-// (from the address list) is protected.
+// (from the address list) is protected. Only entries for that channel
+// count.
 func (a *App) protectedBan(n *state.Network, w *state.Window, ban string) bool {
 	for _, e := range a.book().Control {
-		if strings.Contains(e.Kinds, "p") && onNetwork(e.Network, n) && wildMatch(ban, ignoreMask(e.Mask)) {
+		if strings.Contains(e.Kinds, "p") && controlIn(e, n, w.Name) && wildMatch(ban, ignoreMask(e.Mask)) {
 			return true
 		}
 	}
