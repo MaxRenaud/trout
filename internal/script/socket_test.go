@@ -4,7 +4,6 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -242,20 +241,15 @@ on *:SOCKCLOSE:raw:set %closed yes`); len(p) > 0 {
 	}
 }
 
-// TestSockRecvLimit: data that never ends a line doesn't pile up without
-// end: past sockRecvMax the socket fails, on SOCKCLOSE with $sockerr 3,
-// where what's waiting can still be read, and the client is told to drop
-// it. Lines that do end are read as they come, however many arrive.
+// TestSockRecvLimit: data that never ends a line waits, and SockWaiting
+// says how much, so the client stops reading at SockHold, like mIRC. Lines
+// that do end are read as they come, however many arrive.
 func TestSockRecvLimit(t *testing.T) {
 	e := New(Options{})
 	if p := e.Load("t.mrc", `alias go sockopen raw example.com 80
 on *:SOCKREAD:raw:{
   sockread %l
   if ($sockbr) inc %lines
-}
-on *:SOCKCLOSE:raw:{
-  sockread -f %rest
-  set %closed $sockerr $sock(raw).wsmsg $sockbr
 }`); len(p) > 0 {
 		t.Fatal(p)
 	}
@@ -266,20 +260,20 @@ on *:SOCKCLOSE:raw:{
 	for range 1000 {
 		e.SockRead(id, []byte(strings.Repeat("x", 99)+"\n"), h)
 	}
-	if got := evalIn(t, e, "%lines $sock(raw).rq"); got != "1000 0" {
-		t.Fatalf("lines and rq: %s", got)
+	if got := evalIn(t, e, "%lines $sock(raw).rq"); got != "1000 0" || e.SockWaiting(id) != 0 {
+		t.Fatalf("lines and rq: %s, waiting %d", got, e.SockWaiting(id))
 	}
 	chunk := []byte(strings.Repeat("y", 4096))
-	dropped := false
-	for i := 0; i <= sockRecvMax/len(chunk) && !dropped; i++ {
-		for _, a := range e.SockRead(id, chunk, h) {
-			dropped = dropped || a.Sock != nil && a.Sock.Close && a.Sock.ID == id
+	for range 5 {
+		if acts := e.SockRead(id, chunk, h); slices.ContainsFunc(acts, func(a Action) bool { return a.Sock != nil && a.Sock.Close }) {
+			t.Fatal("unread data closed the socket")
 		}
 	}
-	if !dropped || evalIn(t, e, "$sock(raw,0)") != "0" {
-		t.Fatalf("a buffer past %d bytes kept the socket (rq %s)", sockRecvMax, evalIn(t, e, "$sock(raw).rq"))
+	if got := e.SockWaiting(id); got != 5*4096 || got < SockHold {
+		t.Fatalf("waiting %d", got)
 	}
-	if got, want := evalIn(t, e, "%closed"), "3 [0] Receive buffer full "+strconv.Itoa(sockRecvMax+len(chunk)); got != want {
-		t.Fatalf("on SOCKCLOSE: %q, want %q", got, want)
+	e.SockRead(id, []byte("\n"), h)
+	if got := evalIn(t, e, "%lines"); got != "1001" || e.SockWaiting(id) != 0 {
+		t.Fatalf("after the LF: lines %s, waiting %d", got, e.SockWaiting(id))
 	}
 }

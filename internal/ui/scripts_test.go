@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log"
 	"maps"
@@ -19,6 +20,7 @@ import (
 	"github.com/ergochat/irc-go/ircmsg"
 
 	"github.com/MaxRenaud/trout/internal/config"
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -1242,5 +1244,64 @@ func TestIniListNewlines(t *testing.T) {
 	got = readIniList("[users]\r\nn0=5:*!*@b\rn8=10:*!*@evil\r\nn1=6:*!*@c\r\n", "users")
 	if want := []string{"5:*!*@b", "6:*!*@c"}; !slices.Equal(got, want) {
 		t.Errorf("lone CR: got %q, want %q", got, want)
+	}
+}
+
+// TestSockHold: a peer sending lots with no line break makes trout stop
+// reading at script.SockHold unread, so the peer waits, like mIRC; the
+// socket stays open, and the line break lets it all through.
+func TestSockHold(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	wrote := make(chan struct{})
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		c.Write(bytes.Repeat([]byte("y"), 32<<20)) // more than the system buffers
+		c.Write([]byte("\n"))
+		close(wrote)
+		io.Copy(io.Discard, c)
+	}()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "scripts"), 0o700)
+	os.WriteFile(filepath.Join(dir, "scripts", "sock.mrc"), []byte(`alias go sockopen big 127.0.0.1 `+port+`
+on *:SOCKREAD:big:{ var %l | sockread %l }
+on *:SOCKCLOSE:big:echo -s closed`), 0o600)
+	cfg := &config.Config{Path: filepath.Join(dir, "config.toml"), Scripts: []string{"sock.mrc"}}
+	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max"}})
+	msgs := make(chan tea.Msg, 256)
+	a.send = func(m tea.Msg) { msgs <- m }
+	a.startScripts()
+	actions, _ := a.scripts.Command(a.home.Name, "", "go", false, a.scriptHost())
+	a.runScript(actions)
+	id := -1
+	for quiet := false; !quiet; {
+		select {
+		case m := <-msgs:
+			if o, ok := m.(sockOpenedMsg); ok {
+				id = o.id
+			}
+			a.Update(m)
+		case <-time.After(500 * time.Millisecond):
+			quiet = true
+		}
+	}
+	if got := a.scripts.SockWaiting(id); got < script.SockHold || got > script.SockHold+4096 {
+		t.Fatalf("%d bytes waiting, want about %d", got, script.SockHold)
+	}
+	select {
+	case <-wrote:
+		t.Fatal("the peer could send it all: trout kept reading")
+	default:
+	}
+	if len(a.socks) != 1 {
+		t.Fatal("the socket was closed")
 	}
 }

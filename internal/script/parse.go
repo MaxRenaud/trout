@@ -131,7 +131,7 @@ func sourceLines(src string) ([]srcLine, []Problem) {
 	var problems []Problem
 	inComment, ini := false, false
 	inSection := 0 // lines into an ini section: n0= is line 1, as the Scripts Editor shows it
-	cont := -1 // the line a $& continues, by index: appending moves lines
+	cont := -1     // the line a $& continues, by index: appending moves lines
 	for n, t := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
 		n++
 		t = strings.TrimSpace(t)

@@ -46,7 +46,7 @@ func (a *App) catchUp(n *state.Network, c *irc.Conn) {
 			// LoadBeforeTime(now, bound)), so a long outage loses its
 			// oldest lines, not the ones right before the live ones as
 			// AFTER would. A window keeps 500 by default anyway, and soju
-		// refuses more than 1000.
+			// refuses more than 1000.
 			c.Send("CHATHISTORY", "LATEST", w.Name, ircTime(w.Latest), "500")
 		}
 	}

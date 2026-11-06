@@ -143,7 +143,7 @@ func (c *Conn) register() error {
 		}
 	}
 	var offered []string
-	waiting := 0 // CAP REQs not answered yet
+	waiting := 0               // CAP REQs not answered yet
 	mechs := map[string]bool{} // sasl=PLAIN,EXTERNAL; no list means any
 	for {
 		m, err := c.read()

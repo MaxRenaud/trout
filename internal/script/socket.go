@@ -61,12 +61,12 @@ type socket struct {
 // sockMax is how much can wait in a socket's send queue, like mIRC's.
 const sockMax = 16384
 
-// sockRecvMax is how much can wait in a socket's receive buffer. mIRC
-// leaves what a script hasn't read in the system's buffer, which makes the
-// other end wait; trout reads it all in, so it needs a limit of its own:
-// past it, the socket fails like a connection that broke (on SOCKCLOSE
-// with $sockerr 3, where what's there can still be read with -f).
-const sockRecvMax = 1 << 20
+// SockHold is how much a socket can have waiting that its script hasn't
+// read (say, data that never ends a line for /sockread %var) before the
+// client stops taking more from the network, which makes the other end
+// wait, like mIRC (checked: 30000 bytes sent with no LF, 15000 waited in
+// $sock().rq and the rest stayed with the system; no error).
+const SockHold = 16384
 
 // lineEnd is how far a /sockread line goes: past the buffer's first LF,
 // or 0 if there isn't one. What it has looked through it remembers, so
@@ -411,13 +411,17 @@ func (e *Engine) SockRead(id int, data []byte, h Host) []Action {
 			break
 		}
 	}
-	if s := e.sockByID(id); s != nil && len(s.buf) > sockRecvMax {
-		s.wserr, s.wsmsg = 0, "[0] Receive buffer full"
-		r.sockEvent("SOCKCLOSE", s, 3)
-		e.dropSock(s)
-		r.actions = append(r.actions, Action{Sock: &Sock{ID: id, Close: true}})
-	}
 	return r.finish()
+}
+
+// SockWaiting is how many bytes a socket has that its script hasn't read,
+// or -1 for a socket that's gone. The client takes no more from the
+// network while it's SockHold or more.
+func (e *Engine) SockWaiting(id int) int {
+	if s := e.sockByID(id); s != nil {
+		return len(s.buf)
+	}
+	return -1
 }
 
 // SockWritten is the client saying it sent n bytes queued on a socket, or

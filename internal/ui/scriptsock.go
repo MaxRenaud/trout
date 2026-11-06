@@ -48,7 +48,22 @@ type scriptSock struct {
 	mu     sync.Mutex
 	queue  [][]byte
 	wake   chan struct{} // there's something in queue
-	done   chan struct{} // closed: the writer stops
+	more   chan struct{} // the reader can take more from the network
+	done   chan struct{} // closed: the writer and reader stop
+}
+
+// readMore lets the reader take the next chunk from the network, unless
+// the script has script.SockHold unread: then the other end waits, like
+// mIRC's, until a read makes room.
+func (a *App) readMore(id int) {
+	sc := a.socks[id]
+	if sc == nil || a.scripts.SockWaiting(id) >= script.SockHold {
+		return
+	}
+	select {
+	case sc.more <- struct{}{}:
+	default:
+	}
 }
 
 // sockHandshakeTimeout is how long an SSL socket's handshake can take.
@@ -82,7 +97,8 @@ func (a *App) sockOpen(s *script.Sock) {
 	if a.socks == nil {
 		a.socks = map[int]*scriptSock{}
 	}
-	a.socks[s.ID] = &scriptSock{cancel: cancel, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	a.socks[s.ID] = &scriptSock{cancel: cancel, wake: make(chan struct{}, 1),
+		more: make(chan struct{}, 1), done: make(chan struct{})}
 	send := a.send
 	go func() {
 		d := net.Dialer{Timeout: 30 * time.Second}
@@ -131,7 +147,11 @@ func (a *App) sockMsg(msg tea.Msg) tea.Cmd {
 	case sockOpenedMsg:
 		return a.sockOpened(m)
 	case sockReadMsg:
-		return a.scriptAsking(func() []script.Action { return a.scripts.SockRead(m.id, m.data, h) })
+		return a.scriptAsking(func() []script.Action {
+			acts := a.scripts.SockRead(m.id, m.data, h)
+			a.readMore(m.id)
+			return acts
+		})
 	case sockWrittenMsg:
 		return a.scriptAsking(func() []script.Action { return a.scripts.SockWritten(m.id, m.n, m.err, h) })
 	case sockClosedMsg:
@@ -150,6 +170,11 @@ func (sc *scriptSock) read(id int, send func(tea.Msg)) {
 		n, err := sc.conn.Read(buf)
 		if n > 0 {
 			send(sockReadMsg{id, append([]byte(nil), buf[:n]...)})
+			select { // until the script has taken it in (readMore)
+			case <-sc.more:
+			case <-sc.done:
+				return
+			}
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
