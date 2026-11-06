@@ -44,6 +44,9 @@ func (a *App) setBouncer(b config.Bouncer, password string) {
 	clear(a.upAt)
 	a.goingTo = nil
 	a.serving, a.focusNet = nil, ""
+	// Another bouncer may take the certificate this one refused, and may
+	// have no networks yet either.
+	a.certFailed, a.toldNoNetworks = false, false
 }
 
 // switchBouncer drops every connection and connects through b instead.

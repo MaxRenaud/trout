@@ -590,3 +590,15 @@ func TestServLost(t *testing.T) {
 		t.Error("BouncerServ's next message was swallowed as an old command's reply")
 	}
 }
+
+// TestSwitchForgets: switching bouncers starts the new one afresh: the
+// certificate the last one refused is tried again, and having no networks
+// gets said again.
+func TestSwitchForgets(t *testing.T) {
+	a := New(Options{Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max", Login: "certificate"}})
+	a.certFailed, a.toldNoNetworks = true, true
+	a.switchBouncer(config.Bouncer{Address: "irc+insecure://127.0.0.1:2", User: "max", Login: "certificate"}, "")
+	if a.certFailed || a.toldNoNetworks {
+		t.Fatalf("after switching: certFailed %v, toldNoNetworks %v", a.certFailed, a.toldNoNetworks)
+	}
+}
