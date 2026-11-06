@@ -168,8 +168,10 @@ func TestNickQueries(t *testing.T) {
 			queries++
 		}
 	}
-	if queries != 1 || lastLine(carol) != "* bobby is now known as carol" || lastLine(bob) != "* bobby is now known as carol" {
-		t.Fatalf("%d carol queries; carol's says %q, bobby's %q", queries, lastLine(carol), lastLine(bob))
+	// Like mIRC (checked): bobby's query keeps its name, and neither says
+	// anything about it.
+	if queries != 1 || bob.Name != "bobby" || len(carol.Lines)+len(bob.Lines) != 0 {
+		t.Fatalf("%d carol queries, bob's is %q; carol's says %q, bobby's %q", queries, bob.Name, lineTexts(carol), lineTexts(bob))
 	}
 	feed(":CAROL!c@h QUIT :bye")
 	if lastLine(carol) != "* Quits: CAROL (c@h) (bye)" {

@@ -438,15 +438,12 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 					event(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 				}
 			case w.Kind == state.KQuery && n.Same(w.Name, nick):
-				// A query with the new nick already open keeps it, and
-				// this one its old name: two windows with one name would
-				// leave this one unreachable (Find returns the first).
+				// The query follows the nick, saying nothing, like mIRC's.
+				// One with the new nick already open keeps it, and this one
+				// its old name, as mIRC does (both checked).
 				if other := n.Find(state.KQuery, to); other == nil || other == w {
 					w.Name = to
-				} else {
-					line(other, state.RoleEvent, "* "+nick+" is now known as "+to)
 				}
-				line(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 			}
 		}
 		if toStatus {
