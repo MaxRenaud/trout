@@ -5,6 +5,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -65,30 +66,29 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	var path, name, addr, user, password string
-	flag.BoolVar(&opts.Demo, "demo", false, "show the fake demo world instead of connecting")
-	showVersion := flag.Bool("version", false, "print trout's version and exit")
-	flag.StringVar(&path, "config", cmp.Or(os.Getenv("TROUT_CONFIG"), defaultPath), "config file, or $TROUT_CONFIG")
-	flag.StringVar(&name, "bouncer", "", "connect through this bouncer from the config instead of the active one")
-	flag.StringVar(&addr, "addr", os.Getenv("TROUT_ADDR"), "bouncer address, ircs://host[:port] or irc+insecure://host:port, or $TROUT_ADDR")
-	flag.StringVar(&user, "user", os.Getenv("TROUT_USER"), "bouncer username, or $TROUT_USER")
-	flag.StringVar(&password, "password", os.Getenv("TROUT_PASSWORD"), "bouncer password, or $TROUT_PASSWORD")
-	flag.Parse()
-	if *showVersion {
+	f, err := parseFlags(os.Args[1:], os.Getenv, defaultPath)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		return // the usage is printed
+	case err != nil:
+		os.Exit(2) // the flag package said what's wrong
+	}
+	opts.Demo = f.demo
+	if f.version {
 		fmt.Println("trout", opts.Version)
 		return
 	}
 
 	// The demo neither reads nor writes the config.
 	if !opts.Demo {
-		cfg, err := config.Load(path)
+		cfg, err := config.Load(f.path)
 		if err != nil {
 			fail(err)
 		}
 		opts.Config = cfg
 		// Done before the UI starts, so a password-command can use the
 		// terminal.
-		if opts.Bouncer, opts.Password, err = pickBouncer(cfg, name, addr, user, password); err != nil {
+		if opts.Bouncer, opts.Password, err = pickBouncer(cfg, f.name, f.addr, f.user, f.password); err != nil {
 			fail(err)
 		}
 	}
@@ -109,6 +109,27 @@ func main() {
 	}
 }
 
+// flags are the command line's, each defaulting to its environment
+// variable: a flag beats the environment, which beats the config.
+type flags struct {
+	demo, version                    bool
+	path, name, addr, user, password string
+}
+
+func parseFlags(args []string, getenv func(string) string, defaultPath string) (flags, error) {
+	var f flags
+	fs := flag.NewFlagSet("trout", flag.ContinueOnError)
+	fs.BoolVar(&f.demo, "demo", false, "show the fake demo world instead of connecting")
+	fs.BoolVar(&f.version, "version", false, "print trout's version and exit")
+	fs.StringVar(&f.path, "config", cmp.Or(getenv("TROUT_CONFIG"), defaultPath), "config file, or $TROUT_CONFIG")
+	fs.StringVar(&f.name, "bouncer", "", "connect through this bouncer from the config instead of the active one")
+	fs.StringVar(&f.addr, "addr", getenv("TROUT_ADDR"), "bouncer address, ircs://host[:port] or irc+insecure://host:port, or $TROUT_ADDR")
+	fs.StringVar(&f.user, "user", getenv("TROUT_USER"), "bouncer username, or $TROUT_USER")
+	fs.StringVar(&f.password, "password", getenv("TROUT_PASSWORD"), "bouncer password, or $TROUT_PASSWORD")
+	err := fs.Parse(args)
+	return f, err
+}
+
 // pickBouncer is the bouncer to connect to and its password: the one named
 // by --bouncer, else the config's active one, with flags overriding its
 // address, user and password. An --addr that no saved bouncer has is used
@@ -122,6 +143,7 @@ func pickBouncer(cfg *config.Config, name, addr, user, password string) (config.
 			return b, "", fmt.Errorf("%s has no bouncer called %q", cfg.Path, name)
 		}
 		b = *saved
+		b.Address = cmp.Or(addr, b.Address) // a new address for it, this run
 	case addr != "":
 		// A saved bouncer at that address keeps its pin and password.
 		hp, _, err := irc.ParseAddress(addr)
