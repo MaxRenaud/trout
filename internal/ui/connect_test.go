@@ -189,9 +189,17 @@ func TestSojuNetworks(t *testing.T) {
 	if got := <-sent; got != "PRIVMSG BouncerServ :network status" {
 		t.Fatalf("after a network went down, sent %q", got)
 	}
-	feed(a.home, ":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :Libera (ircs://irc.libera.chat:6697) [disabled]")
+	<-sent // help help, the end marker
+	// Another client adds a network meanwhile: its line in the reply
+	// mustn't end it early or spill into a query.
+	feed(a.home, ":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :Libera (ircs://irc.libera.chat:6697) [disabled]",
+		":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :Rizon (ircs://irc.rizon.net:6697) [connected]",
+		":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :"+servListEnd)
 	if !lib.Disabled || !strings.Contains(a.winTitle(lib.Status()), "[disabled]") {
 		t.Fatalf("Libera disabled %v, title %q", lib.Disabled, a.winTitle(lib.Status()))
+	}
+	if a.home.Find(state.KQuery, "BouncerServ") != nil || len(a.serving) != 0 {
+		t.Fatalf("network status's reply: BouncerServ query opened, or %d commands still waiting", len(a.serving))
 	}
 
 	// Add a network with a SASL login: created disabled, login set, then
@@ -255,6 +263,7 @@ func TestSojuNetworks(t *testing.T) {
 	}
 	feed(a.home, "BOUNCER NETWORK 7 state=disconnected")
 	toServ() // the network status check
+	toServ() // and its end marker
 
 	// /server to a host soju has focuses it; a new one gets added.
 	a.ircCommand(a.home.Status(), "server irc.libera.chat")
@@ -318,14 +327,17 @@ func fakeSoju(t *testing.T) (*App, chan string) {
 		t.Fatalf("connecting to the fake soju: %v", up)
 	}
 	a.Update(up)
-	for _, want := range []string{"BOUNCER LISTNETWORKS", "PRIVMSG BouncerServ :network status"} {
+	for _, want := range []string{"BOUNCER LISTNETWORKS", "PRIVMSG BouncerServ :network status", "PRIVMSG BouncerServ :help help"} {
 		if got := <-sent; got != want {
 			t.Fatalf("on connecting, sent %q, want %q", got, want)
 		}
 	}
 	a.home.Nick = "max"
-	m, _ := ircmsg.ParseLine(":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :no networks yet")
-	a.Update(ircLineMsg{a.home, m})
+	for _, l := range []string{":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :no networks yet",
+		":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :" + servListEnd} {
+		m, _ := ircmsg.ParseLine(l)
+		a.Update(ircLineMsg{a.home, m})
+	}
 	return a, sent
 }
 
@@ -466,7 +478,7 @@ func TestNetworkCertificate(t *testing.T) {
 		for {
 			select {
 			case got := <-sent:
-				if got != "PRIVMSG BouncerServ :network status" {
+				if got != "PRIVMSG BouncerServ :network status" && got != "PRIVMSG BouncerServ :help help" {
 					return got
 				}
 			case <-time.After(200 * time.Millisecond):

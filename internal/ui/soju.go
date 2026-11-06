@@ -190,28 +190,26 @@ var statusLine = regexp.MustCompile(`^(.+) \(\S+\) \[([^\]]+)\]`)
 // soju's network attributes don't say: a disabled network and one soju is
 // retrying both look disconnected there.
 func (a *App) refreshDisabled() {
-	if !a.serv(a.home, a.home.Status(), true, "network", "status") {
-		return
-	}
-	seen := 0
-	a.serving[len(a.serving)-1].onLine = func(text string) bool {
-		m := statusLine.FindStringSubmatch(text)
-		if m == nil {
-			return true // "no networks", or something unexpected
-		}
-		for _, n := range a.nets[1:] {
-			if n.Name != m[1] {
-				continue
+	// servList's end marker, not a count of a.nets: another client may add
+	// or remove a network while this is on its way.
+	a.servList([]string{"network", "status"}, func(lines []string, _ string) {
+		for _, text := range lines {
+			m := statusLine.FindStringSubmatch(text)
+			if m == nil {
+				continue // "no networks", or something unexpected
 			}
-			was := n.Disabled
-			n.Disabled = m[2] == "disabled"
-			if n.Disabled && !was {
-				a.addLine(n.Status(), state.RoleInfo, "* Bouncer: "+n.Name+" is switched off; File > Connect turns it back on")
+			for _, n := range a.nets[1:] {
+				if n.Name != m[1] {
+					continue
+				}
+				was := n.Disabled
+				n.Disabled = m[2] == "disabled"
+				if n.Disabled && !was {
+					a.addLine(n.Status(), state.RoleInfo, "* Bouncer: "+n.Name+" is switched off; File > Connect turns it back on")
+				}
 			}
 		}
-		seen++
-		return seen >= len(a.nets)-1
-	}
+	})
 }
 
 // connected reports whether n is up: for the bouncer's own window, the
