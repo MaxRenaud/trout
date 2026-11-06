@@ -395,6 +395,19 @@ func TestDCCOfferSafety(t *testing.T) {
 	}
 }
 
+// TestDCCReplay: offers in history the bouncer replays are dropped, chats
+// like files: their senders stopped listening long ago.
+func TestDCCReplay(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn, a.dccChat = false, 1 // auto: a chat would connect at once
+	a.downloadDir = t.TempDir()
+	feed("@time=2020-01-01T00:00:00.000Z :bob!b@h PRIVMSG max :\x01DCC CHAT chat 134744072 5000\x01",
+		"@time=2020-01-01T00:00:00.000Z :bob!b@h PRIVMSG max :\x01DCC SEND f.bin 134744072 5000 10\x01")
+	if a.dlg != nil || len(a.chats) != 0 || len(a.transfers) != 0 || len(a.waiting) != 0 || n.Find(state.KChat, "=bob") != nil {
+		t.Fatalf("replayed offers: dialog %T, %d chats, %d transfers", a.dlg, len(a.chats), len(a.transfers))
+	}
+}
+
 // TestChatReoffer: a second chat from the same nick takes over the =nick
 // window, so typing reaches it and the first one is closed.
 func TestChatReoffer(t *testing.T) {

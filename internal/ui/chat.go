@@ -58,6 +58,8 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 	case err != nil:
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" sent a DCC chat offer trout can't read: "+err.Error(), t)
 		return
+	case time.Since(t) > dccOfferAge: // replayed, like an old file offer
+		return
 	case port == "0":
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" offers a passive DCC chat, which needs an open port here; trout doesn't do that", t)
 		return

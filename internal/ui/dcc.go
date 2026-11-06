@@ -35,6 +35,11 @@ var dccModes = []string{"ask", "auto", "ignore"}
 // to count as one you asked for (/msg Bot xdcc send #5).
 const askedWithin = 5 * time.Minute
 
+// dccOfferAge is how old an offer can be, by its server time: older ones
+// are history the bouncer replays, and their senders stopped listening
+// long ago.
+const dccOfferAge = 2 * time.Minute
+
 // errCancelled ends a download you stopped.
 var errCancelled = errors.New("cancelled")
 
@@ -97,7 +102,7 @@ func (a *App) dccOffer(n *state.Network, m ircmsg.Message, args string, t time.T
 	case err != nil:
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" sent a DCC offer trout can't read: "+err.Error(), t)
 		return
-	case time.Since(t) > 2*time.Minute: // replayed: the sender gave up long ago
+	case time.Since(t) > dccOfferAge: // replayed: the sender gave up long ago
 		return
 	case port == "0":
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" offers "+file+" with passive DCC, which trout doesn't do yet", t)
