@@ -148,7 +148,11 @@ func (g *GCloud) Create(ctx context.Context, r Region, name, key string) (Server
 			"--tags", gcloudFirewall, "--labels", Tag+"=bouncer", "--metadata", "ssh-keys=trout:"+key)
 	}
 	if err != nil {
-		g.Delete(context.WithoutCancel(ctx), s.ID) // not a server and an address left billing
+		// Not a server and an address left billing; like Hetzner's undo, if
+		// that fails too the ID goes back with the error, to be recorded.
+		if derr := g.Delete(context.WithoutCancel(ctx), s.ID); derr != nil {
+			return Server{ID: s.ID, IPv4: s.IPv4}, fmt.Errorf("%w (deleting the half-made server failed too: %v)", err, derr)
+		}
 		return Server{}, err
 	}
 	return s, nil

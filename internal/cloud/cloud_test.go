@@ -189,3 +189,27 @@ func TestHetznerUndo(t *testing.T) {
 		t.Fatalf("got %+v, %v, deleted %v", s, err, deleted)
 	}
 }
+
+// TestGCloudCleanupFails: when releasing the address fails too, the
+// server's ID and address go back with the error, like Hetzner's undo, so
+// the wizard can say what's left billing.
+func TestGCloudCleanupFails(t *testing.T) {
+	g := &GCloud{Project: "p", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		switch strings.Join(args[:3], " ") {
+		case "compute addresses create":
+			return []byte("192.0.2.9\n"), nil
+		case "compute instances create":
+			return nil, errors.New("gcloud compute instances: quota exceeded")
+		case "compute addresses delete":
+			return nil, errors.New("gcloud compute addresses: in use")
+		}
+		return nil, nil
+	}}
+	s, err := g.Create(context.Background(), Region{ID: "us-west1-b", Plan: "e2-micro", Image: "debian-13"}, "trout-x", "ssh-ed25519 AAAA")
+	if err == nil || !strings.Contains(err.Error(), "quota") || !strings.Contains(err.Error(), "in use") {
+		t.Fatalf("got %v", err)
+	}
+	if s.ID != "p/us-west1-b/trout-x" || s.IPv4 != "192.0.2.9" {
+		t.Fatalf("got %+v", s)
+	}
+}
