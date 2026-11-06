@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/clipperhouse/uax29/v2/graphemes"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/MaxRenaud/trout/internal/termkeys"
@@ -26,10 +28,21 @@ type Style struct {
 	Strike                  bool
 }
 
-// A cell with R == 0 is the right half of the double-width rune before it.
+// A cell with R == 0 is the right half of the wide cluster before it. X
+// is the rest of the cell's grapheme cluster after R, if it has more than
+// one rune: combining marks, a skin tone, the emoji after a ZWJ.
 type cell struct {
 	R  rune
+	X  string
 	St Style
+}
+
+// width is how many cells c's cluster takes.
+func (c cell) width() int {
+	if c.X == "" {
+		return runewidth.RuneWidth(c.R)
+	}
+	return runewidth.StringWidth(string(c.R) + c.X)
 }
 
 // Canvas is a screen-sized cell buffer. Each frame is drawn into it and
@@ -46,14 +59,14 @@ type Canvas struct {
 func NewCanvas(w, h int, st Style) *Canvas {
 	c := &Canvas{W: w, H: h, cells: make([]cell, w*h)}
 	for i := range c.cells {
-		c.cells[i] = cell{' ', st}
+		c.cells[i] = cell{R: ' ', St: st}
 	}
 	return c
 }
 
 func (c *Canvas) Set(x, y int, r rune, st Style) {
 	if x >= 0 && y >= 0 && x < c.W && y < c.H {
-		c.cells[y*c.W+x] = cell{r, st}
+		c.cells[y*c.W+x] = cell{R: r, St: st}
 	}
 }
 
@@ -65,8 +78,93 @@ func (c *Canvas) Fill(x, y, w, h int, st Style) {
 	}
 }
 
+// joinCluster reports whether r continues the grapheme cluster cl, and if
+// so how many more cells cl+r takes than cl. Terminals draw a cluster as
+// one glyph (a thumbs-up with a skin tone, a letter with its accents), so
+// it's measured whole, the way go-runewidth's StringWidth measures it.
+func joinCluster(cl string, r rune) (int, bool) {
+	if cl == "" {
+		return 0, false
+	}
+	last, _ := utf8.DecodeLastRuneInString(cl)
+	if r < 0x300 && last < 0x300 && last != '\r' {
+		return 0, false // below U+0300 only CR LF is a cluster
+	}
+	s := cl + string(r)
+	g := graphemes.FromString(s)
+	if !g.Next() || len(g.Value()) != len(s) {
+		return 0, false
+	}
+	return max(runewidth.StringWidth(s)-runewidth.StringWidth(cl), 0), true
+}
+
+// clusterCells counts cells the way Canvas.Rune draws them, for code that
+// lays text out before drawing it: wrapping, selection, hotlinks.
+type clusterCells struct{ cl string }
+
+// add is how many cells r takes after the runes before it: 0 for a rune
+// that joins the cluster before it without widening it, or isn't drawn.
+func (cc *clusterCells) add(r rune) int {
+	if r == '\t' {
+		r = ' '
+	}
+	if d, ok := joinCluster(cc.cl, r); ok {
+		cc.cl += string(r)
+		return d
+	}
+	w := runewidth.RuneWidth(r)
+	if w == 0 {
+		cc.cl = ""
+		return 0
+	}
+	cc.cl = string(r)
+	return w
+}
+
+// joins reports whether r is part of the cluster before it, so it's never
+// split from it, by wrapping or by a selection.
+func (cc *clusterCells) joins(r rune) bool {
+	_, ok := joinCluster(cc.cl, r)
+	return ok
+}
+
+// owner is the index of the cell whose cluster ends just before (x,y), or
+// -1 at the start of a row.
+func (c *Canvas) owner(x, y int) int {
+	for i := x - 1; i >= 0 && i >= x-4; i-- {
+		if c.cells[y*c.W+i].R != 0 {
+			return y*c.W + i
+		}
+	}
+	return -1
+}
+
 // Rune draws r at (x,y) if it fits in maxW cells and returns the cells used.
+// A rune that continues the grapheme cluster before it (a combining mark, a
+// skin tone, a ZWJ and the emoji after it) joins that cell, where terminals
+// draw it, and takes only the cells it widens the cluster by. A tab is one
+// space: the canvas doesn't know where its text began, so it can't find tab
+// stops, and wrapping, selection and hit tests all count one rune at a time.
 func (c *Canvas) Rune(x, y, maxW int, r rune, st Style) int {
+	if x < 0 || y < 0 || x > c.W || y >= c.H {
+		return 0
+	}
+	if r == '\t' {
+		r = ' '
+	}
+	if i := c.owner(x, y); i >= 0 && (r >= 0x300 || c.cells[i].X != "" || c.cells[i].R >= 0x300) {
+		own := &c.cells[i]
+		if d, ok := joinCluster(string(own.R)+own.X, r); ok {
+			if d > maxW || x+d > c.W {
+				return 0
+			}
+			own.X += string(r)
+			for j := range d {
+				c.cells[y*c.W+x+j] = cell{St: own.St}
+			}
+			return d
+		}
+	}
 	w := runewidth.RuneWidth(r)
 	if w == 0 || w > maxW || x+w > c.W {
 		return 0
@@ -82,8 +180,8 @@ func (c *Canvas) Rune(x, y, maxW int, r rune, st Style) int {
 func (c *Canvas) Text(x, y, maxW int, s string, st Style) int {
 	n := 0
 	for _, r := range s {
-		if n >= maxW {
-			break
+		if n >= maxW && r < 0x300 {
+			break // it's full, and nothing left can join its last cluster
 		}
 		n += c.Rune(x+n, y, maxW-n, r, st)
 	}
@@ -92,15 +190,15 @@ func (c *Canvas) Text(x, y, maxW int, s string, st Style) int {
 
 // TextOver draws s in fg on top of whatever background is already there.
 func (c *Canvas) TextOver(x, y, maxW int, s string, fg RGB, bold bool) {
-	if y < 0 || y >= c.H {
+	if y < 0 || y >= c.H || x < 0 {
 		return
 	}
 	n := 0
 	for _, r := range s {
-		if n >= maxW || x+n >= c.W {
+		if (n >= maxW || x+n >= c.W) && r < 0x300 {
 			break
 		}
-		bg := c.cells[y*c.W+x+n].St.BG
+		bg := c.cells[y*c.W+min(x+n, c.W-1)].St.BG
 		n += c.Rune(x+n, y, maxW-n, r, Style{FG: fg, BG: bg, Bold: bold})
 	}
 }
@@ -127,22 +225,25 @@ func (c *Canvas) String() string {
 	for y := range c.H {
 		row := c.cells[y*c.W : (y+1)*c.W]
 		var cur Style
-		for x, cl := range row {
-			r := cl.R
-			switch {
-			case r == 0:
-				if x > 0 && row[x-1].R != 0 && runewidth.RuneWidth(row[x-1].R) == 2 {
-					continue // already covered by the wide rune
-				}
-				r = ' '
-			case runewidth.RuneWidth(r) == 2 && (x+1 >= len(row) || row[x+1].R != 0):
-				r = ' ' // its right half was drawn over
-			}
+		for x := 0; x < len(row); {
+			cl := row[x]
 			if x == 0 || cl.St != cur {
 				sgr(&b, cl.St, c.Colors)
 				cur = cl.St
 			}
-			b.WriteRune(r)
+			w := cl.width()
+			whole := cl.R != 0 && w >= 1 && x+w <= len(row)
+			for j := x + 1; whole && j < x+w; j++ {
+				whole = row[j].R == 0
+			}
+			if !whole {
+				b.WriteByte(' ') // a lone right half, or a wide cluster drawn over
+				x++
+				continue
+			}
+			b.WriteRune(cl.R)
+			b.WriteString(cl.X)
+			x += w
 		}
 		b.WriteString("\x1b[0m")
 		if y < c.H-1 {

@@ -871,6 +871,7 @@ func (a *App) actFG(w *state.Window, def RGB) RGB {
 // nick characters, outside links, that are someone in the channel.
 func (a *App) nickLinks(win *state.Window, r textRow, nicks map[string]string, x, y int) {
 	cx, start, sx := x, -1, 0
+	var cc clusterCells
 	flush := func(end int) {
 		if start < 0 {
 			return
@@ -892,7 +893,7 @@ func (a *App) nickLinks(win *state.Window, r textRow, nicks map[string]string, x
 		} else {
 			flush(i)
 		}
-		cx += runewidth.RuneWidth(sr.R)
+		cx += cc.add(sr.R)
 	}
 	flush(len(r.runes))
 }
