@@ -177,6 +177,22 @@ func TestNickQueries(t *testing.T) {
 	}
 }
 
+// TestJoinList: /join a,#b[1] joins #a and #b[1], and each comes to the
+// front when its JOIN does, matched by CASEMAPPING.
+func TestJoinList(t *testing.T) {
+	a, n, sent, feed := optionsApp(t)
+	a.ircCommand(n.Status(), "join a,#b[1]")
+	expectSent(t, sent, "JOIN #a,#b[1]")
+	feed(":max!m@h JOIN #A")
+	if a.active.Name != "#A" {
+		t.Fatalf("active is %q after joining #A", a.active.Name)
+	}
+	feed(":max!m@h JOIN #B{1}")
+	if a.active.Name != "#B{1}" || len(a.joining) != 0 {
+		t.Fatalf("active is %q after joining #B{1}; still joining %v", a.active.Name, a.joining)
+	}
+}
+
 // TestNoNetworksYet: a bouncer with no networks (a new one, This Computer
 // the first time) says how to add one and opens Select Server, once.
 func TestNoNetworksYet(t *testing.T) {

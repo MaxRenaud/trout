@@ -325,8 +325,8 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 				a.quietWho[whoKey(n, ch)] = true
 			}
 			a.fetchHistory(w)
-			if a.joining[strings.ToLower(ch)] {
-				delete(a.joining, strings.ToLower(ch))
+			if a.joining[n.Fold(ch)] {
+				delete(a.joining, n.Fold(ch))
 				a.activate(w)
 			}
 		} else if w != nil {
@@ -1069,10 +1069,16 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			need()
 			break
 		}
-		if !n.IsChannel(arg) {
-			arg = "#" + arg
+		// A list (#a,b) is several channels, each with its # added and
+		// each brought to the front once joined.
+		chans := strings.Split(arg, ",")
+		for i, ch := range chans {
+			if ch != "" && !n.IsChannel(ch) {
+				chans[i] = "#" + ch
+			}
+			a.joining[n.Fold(chans[i])] = true
 		}
-		a.joining[strings.ToLower(arg)] = true
+		arg = strings.Join(chans, ",")
 		if tail != "" {
 			a.sendNet(n, "JOIN", arg, tail)
 		} else {
