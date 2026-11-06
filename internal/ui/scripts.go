@@ -3,7 +3,6 @@ package ui
 import (
 	"cmp"
 	"errors"
-	"io/fs"
 	"maps"
 	"net"
 	"os"
@@ -140,11 +139,8 @@ func (a *App) scriptWriteFile(f *script.File) error {
 	switch {
 	case f.Delete:
 		return os.Remove(path)
-	case f.Mkdir:
-		if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
-			return err
-		}
-		return nil
+	case f.Mkdir: // every missing level, like mIRC's (checked: mkdir mk1\mk2)
+		return os.MkdirAll(path, 0o700)
 	}
 	// The scripts folder is made for the first file in it; other folders
 	// a script writes in it has to /mkdir, like mIRC's.

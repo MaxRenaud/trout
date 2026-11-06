@@ -289,6 +289,7 @@ func TestScriptsFolder(t *testing.T) {
   write $mircdir $+ logs\#x\..\..\climbed.txt nope
   write nofolder\a.txt nope
   mkdir "made"
+  mkdir deep\er
   write made\a.txt yes
 }
 alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
@@ -323,6 +324,9 @@ alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	}
 	if got, _ := os.ReadFile(filepath.Join(folder, "made", "a.txt")); string(got) != "yes\r\n" {
 		t.Errorf("after /mkdir, made\\a.txt = %q", got)
+	}
+	if fi, err := os.Stat(filepath.Join(folder, "deep", "er")); err != nil || !fi.IsDir() {
+		t.Error("mkdir deep\\er didn't make both levels")
 	}
 	actions, ok := a.scripts.Command(a.home.Name, "", "who", false, a.scriptHost())
 	if !ok {
