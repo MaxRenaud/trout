@@ -89,13 +89,16 @@ func (a *App) ignored(n *state.Network, m ircmsg.Message) bool {
 	return strings.IndexByte(e.flags, kind) >= 0
 }
 
-// ignoreCommand is /ignore [-pcntikd] [-uSECONDS] [nick|mask] and
+// ignoreCommand is /ignore [-pcntikd] [-uSECONDS] [nick|mask] [type] and
 // /unignore nick|mask, like mIRC; /ignore alone lists the network's
-// ignores.
+// ignores. With a type, like mIRC, a nick is ignored by its address made
+// into that mask type ($mask's): from the address list, or else asked
+// for with USERHOST.
 func (a *App) ignoreCommand(w *state.Window, on bool, rest string) {
 	n := w.Net
 	e := ignoreEntry{flags: "pcntid"}
 	var arg string
+	kind := -1
 	for f := range strings.FieldsSeq(rest) {
 		switch {
 		case strings.HasPrefix(f, "-u"):
@@ -107,8 +110,7 @@ func (a *App) ignoreCommand(w *state.Window, on bool, rest string) {
 		case strings.HasPrefix(f, "-"):
 			e.flags = strings.Trim(f[1:], "u0123456789")
 		case arg != "" && isDigits(f):
-			// mIRC's mask type after the nick (/ignore nick 1): trout
-			// ignores by nick!*@*, so it's left out.
+			kind, _ = strconv.Atoi(f) // the mask type after the nick (/ignore nick 1)
 		default:
 			arg = f
 		}
@@ -122,8 +124,62 @@ func (a *App) ignoreCommand(w *state.Window, on bool, rest string) {
 		a.addLine(w, state.RoleInfo, "* Ignored on "+n.Name+": "+strings.Join(list, ", "))
 		return
 	}
-	e.mask = ignoreMask(arg)
+	switch addr, known := a.ial[n][n.Fold(arg)]; {
+	case kind < 0 || kind > 9:
+		e.mask = ignoreMask(arg)
+	case strings.Contains(arg, "!") && strings.Contains(arg, "@"):
+		e.mask, _ = script.Mask(arg, kind)
+	case strings.ContainsAny(arg, "!@*?"):
+		e.mask = arg // a mask already
+	case known:
+		e.mask, _ = script.Mask(addr, kind)
+	default:
+		if a.sendNet(n, "USERHOST", arg) {
+			a.ignoreLookups = append(a.ignoreLookups, ignoreLookup{w, arg, e, on, kind})
+			return
+		}
+		e.mask = ignoreMask(arg)
+	}
 	a.setIgnoreEntry(w, e, on)
+}
+
+// ignoreLookup is an /ignore nick type waiting for USERHOST's answer.
+type ignoreLookup struct {
+	w    *state.Window
+	nick string
+	e    ignoreEntry
+	on   bool
+	kind int
+}
+
+// ignoreUserhost handles RPL_USERHOST (302) for an /ignore waiting on
+// it: "nick*=+user@host ...", empty if they're not on. Replies come in
+// the order asked; one about someone else is from your own /userhost.
+// It reports whether m was the answer.
+func (a *App) ignoreUserhost(n *state.Network, m ircmsg.Message) bool {
+	i := slices.IndexFunc(a.ignoreLookups, func(l ignoreLookup) bool { return l.w.Net == n })
+	if m.Command != "302" || i < 0 {
+		return false
+	}
+	l := a.ignoreLookups[i]
+	l.e.mask = ""
+	replies := strings.Fields(lastParam(m.Params))
+	for _, r := range replies {
+		nick, addr, _ := strings.Cut(r, "=")
+		if n.Same(strings.TrimSuffix(nick, "*"), l.nick) && len(addr) > 1 {
+			l.e.mask, _ = script.Mask(l.nick+"!"+addr[1:], l.kind) // addr starts with + or - (away)
+		}
+	}
+	if l.e.mask == "" && len(replies) > 0 {
+		return false
+	}
+	a.ignoreLookups = slices.Delete(a.ignoreLookups, i, i+1)
+	if l.e.mask == "" {
+		a.addLine(l.w, state.RoleInfo, "* "+l.nick+" isn't on "+n.Name+", so trout can't look up their address; using "+ignoreMask(l.nick))
+		l.e.mask = ignoreMask(l.nick)
+	}
+	a.setIgnoreEntry(l.w, l.e, l.on)
+	return true
 }
 
 func (a *App) setIgnore(w *state.Window, who string, on bool) {

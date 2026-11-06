@@ -554,7 +554,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		}
 		line(status, state.RoleInfo, "* "+m.Command+" "+strings.Join(p, " "))
 	default:
-		if a.who(n, m) {
+		if a.who(n, m) || a.ignoreUserhost(n, m) {
 			return nil
 		}
 		if who, text, ok := whoisLine(m); ok {
