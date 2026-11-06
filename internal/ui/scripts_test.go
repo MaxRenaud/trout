@@ -599,6 +599,35 @@ func TestScriptsEditorFiles(t *testing.T) {
 	}
 }
 
+// TestScriptsEditorTabs: a script's tabs stay tabs when it's saved from
+// the editor, shown as two cells, the caret and the mouse counting them
+// so.
+func TestScriptsEditorTabs(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a.scriptMem = map[string]string{"t.mrc": "alias t {\n\techo -a\ttab\n}\n"}
+	a.openScriptsTab(edRemote)
+	ed := a.dlg.(*scriptEditor)
+	ed.loadPrompt(a)
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("t.mrc")}
+	a.dlg.key(a, "enter")
+	d := ed.doc()
+	a.View()
+	if row, col := ed.posAt(d, ed.tx+2, ed.ty+1); row != 1 || col != 1 {
+		t.Errorf("the cell after the tab is %d:%d, want 1:1", row, col)
+	}
+	if !strings.Contains(a.View(), "  echo -a  tab") {
+		t.Errorf("tabs aren't drawn as two cells:\n%s", a.View())
+	}
+	d.moveTo(1, 0, false)
+	ed.key(a, "end")
+	ed.typed(a, []rune("!"))
+	ed.press(a, "OK")
+	if got := a.scriptMem["t.mrc"]; got != "alias t {\n\techo -a\ttab!\n}\n" {
+		t.Errorf("saved %q", got)
+	}
+}
+
 // TestScriptsEditorKeys: the editor's menus open over it, the mouse puts
 // the caret, and text is selected, copied and found.
 func TestScriptsEditorKeys(t *testing.T) {
