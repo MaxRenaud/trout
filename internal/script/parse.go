@@ -131,12 +131,13 @@ func sourceLines(src string) ([]srcLine, []Problem) {
 	var problems []Problem
 	inComment, ini := false, false
 	inSection := 0 // lines into an ini section: n0= is line 1, as the Scripts Editor shows it
-	var cont *srcLine
+	cont := -1 // the line a $& continues, by index: appending moves lines
 	for n, t := range strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n") {
 		n++
 		t = strings.TrimSpace(t)
 		if iniHeader.MatchString(t) {
-			ini, inSection = true, 0
+			// A section ends a $& line.
+			ini, inSection, cont = true, 0, -1
 			lines = append(lines, srcLine{n, strings.ToLower(t)})
 			continue
 		}
@@ -157,16 +158,16 @@ func sourceLines(src string) ([]srcLine, []Problem) {
 		case t == "" || strings.HasPrefix(t, ";"):
 			continue
 		}
-		if cont != nil {
-			cont.text += " " + t
+		if cont >= 0 {
+			lines[cont].text += " " + t
 		} else {
 			lines = append(lines, srcLine{n, t})
-			cont = &lines[len(lines)-1]
+			cont = len(lines) - 1
 		}
-		if more, ok := strings.CutSuffix(cont.text, "$&"); ok && (more == "" || strings.HasSuffix(more, " ")) {
-			cont.text = strings.TrimSpace(more)
+		if more, ok := strings.CutSuffix(lines[cont].text, "$&"); ok && (more == "" || strings.HasSuffix(more, " ")) {
+			lines[cont].text = strings.TrimSpace(more)
 		} else {
-			cont = nil
+			cont = -1
 		}
 	}
 	if inComment {

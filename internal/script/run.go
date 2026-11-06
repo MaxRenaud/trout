@@ -602,7 +602,9 @@ func switches(rest string) (sw, after string) {
 }
 
 // varName reads a %variable name at the start of rest. The name can be
-// built with evaluation brackets, like mIRC's "set %a [ $+ $nick ] 1".
+// built with evaluation brackets that start with $+, like mIRC's
+// "set %a [ $+ $nick ] 1"; any other bracket is the value, so
+// "set %x [ $1 ]" sets %x (checked).
 func (r *run) varName(fr *frame, rest string) (name, after string, err error) {
 	words := strings.Fields(rest)
 	if len(words) == 0 || !strings.HasPrefix(words[0], "%") {
@@ -610,7 +612,7 @@ func (r *run) varName(fr *frame, rest string) (name, after string, err error) {
 	}
 	name = words[0][1:]
 	i := 1
-	for i < len(words) && words[i] == "[" && r.literal == 0 {
+	for i+1 < len(words) && words[i] == "[" && words[i+1] == "$+" && r.literal == 0 {
 		j := closeBracket(words, i)
 		v, _, _, err := r.bracket(fr, words[i+1:j])
 		if err != nil {
@@ -869,7 +871,8 @@ func itoa(n int) string { return strconv.Itoa(n) }
 func itoa64(n int64) string { return strconv.FormatInt(n, 10) }
 func utoa(n uint32) string  { return strconv.FormatUint(uint64(n), 10) }
 
-// atoi is n, or 0 if s isn't a number.
+// atoi is n, or 0 if s isn't a number. A number too big for an int is
+// the biggest one (strconv's), so $99999999999999999999 isn't $0.
 func atoi(s string) int {
 	n, _ := strconv.Atoi(s)
 	return n

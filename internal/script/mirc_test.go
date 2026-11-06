@@ -129,7 +129,7 @@ var mircProbes = []string{
 	"$wildtok(one two three,&e,0,32)", "$matchtok(one two three,O,1,32)", "$findtok(a.A.a,a,0,46)",
 	"$istok(a.b,,46)", "$gettok(a.b.c,2,0)",
 	// Parameters.
-	"$1-2", "$3-", "$5-", "$0", "$4-9", "$2-1",
+	"$1-2", "$3-", "$5-", "$0", "$4-9", "$2-1", "$2-99999999999999999999", "$99999999999999999999-",
 	// $eval and $iif.
 	"$eval(%x %x,2)", "$eval($!len(ab),2)", "$iif(0,a,b)", "$iif($false,a)", "$iif(%nope,a,b)",
 	"$iif(1 == 1,a b,c)", "$iif(,a,b)", "$(%n)",

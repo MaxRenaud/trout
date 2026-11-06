@@ -61,15 +61,25 @@ func calcOp(op byte, a, b float64) float64 {
 
 // calc evaluates $calc's expression: + - * / // % ^ and brackets, with ^
 // first, then * / // %, then + -, each left to right. Anything it can't
-// read counts as 0.
-func calc(s string) float64 {
+// read counts as 0. ok is false when its signs and brackets nest deeper
+// than maxCalcDepth.
+func calc(s string) (v float64, ok bool) {
 	c := &calcParser{s: s}
-	return c.sum()
+	v = c.sum()
+	return v, c.depth <= maxCalcDepth
 }
 
+// maxCalcDepth is how deep $calc's brackets and signs can nest. Each level
+// is a call, and Go can't recover from running out of stack, so a
+// script-built $calc(((((...1 is an error instead. (mIRC hangs on 500
+// brackets, checked.)
+const maxCalcDepth = 1000
+
 type calcParser struct {
-	s string
-	i int
+	s     string
+	i     int
+	level int // how deep unary is now
+	depth int // the deepest it went
 }
 
 func (c *calcParser) skip() {
@@ -127,6 +137,13 @@ func (c *calcParser) power() float64 {
 }
 
 func (c *calcParser) unary() float64 {
+	c.level++
+	defer func() { c.level-- }()
+	c.depth = max(c.depth, c.level)
+	if c.level > maxCalcDepth {
+		c.i = len(c.s) // too deep: stop reading
+		return 0
+	}
 	switch c.peek() {
 	case '-':
 		c.i++

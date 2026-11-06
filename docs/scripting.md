@@ -233,6 +233,14 @@ trout's own commands, and anything trout doesn't know goes to the server.
 
 - A handler that runs too long (100,000 steps) is stopped with an error, where mIRC
   freezes.
+- A line, a variable's value or what an identifier returns can be up to 64 KB, where
+  mIRC's limit is about 10,000 characters; past it, the script stops with mIRC's "Line
+  too long" error, so a loop doubling a variable can't take all the memory.
+- A variable's value or a Users list entry is saved up to its first line break. mIRC
+  saves the rest as lines of their own, so text from someone else with a line break in
+  it could add a variable or a user at the next start.
+- `$calc` with brackets or signs nested more than 1,000 deep is an error, where mIRC
+  freezes.
 - A binary variable holds up to 64 MB (`/bset` and `/bcopy` past that are errors), so a
   position from someone's text can't make trout allocate gigabytes.
 - Hash table items come out in the order they were added; mIRC's order is its hash's.

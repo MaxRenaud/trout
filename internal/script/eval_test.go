@@ -45,6 +45,8 @@ var evalCases = []struct{ in, want string }{
 	{"$2-3", "two three"},
 	{"$0", "4"},
 	{"$9", ""},
+	{"$99999999999999999999", ""},
+	{"$4294967297", ""},
 	{"$1's joke", "one's joke"},
 	{"Hel $+ lo th $+ ere $+ !", "Hello there!"},
 	{"a $null b", "a b"},
@@ -173,6 +175,10 @@ var condCases = []struct {
 	{"(!%n)", false},
 	{"(%nope == $null)", true},
 	{"(now isin %text)", true},
+	{"($null isin %text)", false},
+	{"($null isincs %text)", false},
+	{"($null isin $null)", false},
+	{"($null !isin %text)", true},
 	{"(NOW isin %text)", true},
 	{"(NOW isincs %text)", false},
 	{"(now !isin %text)", false},
@@ -297,6 +303,15 @@ func TestStatements(t *testing.T) {
     inc %i
   }
 }`, "", []string{"#trout: 1", "#trout: 2", "#trout: 3"}},
+		// A bracket after the name is the value unless it starts with $+
+		// (checked in mIRC).
+		{"set with brackets", `alias t {
+  set %x [ $1 ]
+  set %y [ [ $1 ] ]
+  set %a. [ $+ $1 ] 5
+  inc %a. [ $+ $1 ] [ $2 ]
+  echo -a %x %y %a.hello / %xhello %yhello
+}`, "hello 2", []string{"#trout: hello hello 7 /"}},
 		{"break and continue", `alias t {
   var %i = 0
   while (1) {
@@ -598,5 +613,21 @@ func TestBigNumbers(t *testing.T) {
 	}
 	if got, _ := r.eval(fr, "$bvar(&x,1).long"); got != "4294967295" {
 		t.Errorf("$bvar().long = %q", got)
+	}
+}
+
+// TestLabelBrace: a word ending in :{ in a body is text, but its } is
+// matched to it, as mIRC's loader does (checked): no "} has no matching
+// {", and the next alias is still an alias.
+func TestLabelBrace(t *testing.T) {
+	for _, body := range []string{"return sad :{ }", "return sad :{ | return y }"} {
+		e := New(Options{})
+		if probs := e.Load("t.mrc", "alias u { "+body+" }\nalias v return ok\nalias t echo -a $u $v"); len(probs) > 0 {
+			t.Errorf("%s: %v", body, probs)
+		}
+		actions, _ := e.Alias("TestNet", "#trout", "t", "", evalHost())
+		if got := echoes(actions); !slices.Equal(got, []string{"sad :{ ok"}) {
+			t.Errorf("%s: got %q", body, got)
+		}
 	}
 }

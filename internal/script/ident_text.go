@@ -63,7 +63,12 @@ var textIdents = map[string]builtin{
 	"remove":    removeIdent(false),
 	"removecs":  removeIdent(true),
 	"str": func(r *run, fr *frame, c *call) (string, error) {
-		return strings.Repeat(c.arg(0), clamp(int(c.num(1)), 0, 10000)), nil
+		n := clamp(int(min(c.num(1), 10000)), 0, 10000)
+		if len(c.arg(0))*n > maxLine {
+			// Before making it: $str($str(x,10000),10000) is a gigabyte.
+			return "", errLong("$str")
+		}
+		return strings.Repeat(c.arg(0), n), nil
 	},
 	// $strip(text,buriec) strips only those: bold, underline, reverse,
 	// italic, strikethrough (e) and color.
@@ -106,22 +111,25 @@ func indexFold(s, sub string, cs bool) int {
 	return -1
 }
 
-// replaceAll replaces every sub in s, ignoring case unless cs.
+// replaceAll replaces every sub in s, ignoring case unless cs. It stops
+// once the result is longer than maxLine, which the caller reports: a
+// replacement that long for each character would be gigabytes.
 func replaceAll(s, sub, with string, cs bool) string {
 	if sub == "" {
 		return s
 	}
 	var b strings.Builder
-	for {
+	for b.Len() <= maxLine {
 		i := indexFold(s, sub, cs)
 		if i < 0 {
 			b.WriteString(s)
-			return b.String()
+			break
 		}
 		b.WriteString(s[:i])
 		b.WriteString(with)
 		s = s[i+len(sub):]
 	}
+	return b.String()
 }
 
 // $replace(text,a,A,b,B...) makes each replacement in turn.
@@ -129,7 +137,9 @@ func replaceIdent(cs bool) builtin {
 	return func(r *run, fr *frame, c *call) (string, error) {
 		s := c.arg(0)
 		for i := 1; i+1 < len(c.vals); i += 2 {
-			s = replaceAll(s, c.vals[i], c.vals[i+1], cs)
+			if s = replaceAll(s, c.vals[i], c.vals[i+1], cs); len(s) > maxLine {
+				return "", errLong("$replace")
+			}
 		}
 		return s, nil
 	}

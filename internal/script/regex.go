@@ -216,6 +216,9 @@ var regexIdents = map[string]builtin{
 		}
 		compiled, _ := r.e.compile(a[1])
 		out := replaceMatches(compiled.re, a[0], compiled.global, func(m []string, _ int) string { return expandRefs(a[2], m, true) })
+		if len(out) > maxLine {
+			return "", errLong("$regsub")
+		}
 		r.setVar(fr, varName, out, false)
 		return itoa(n), nil
 	},
@@ -278,6 +281,10 @@ func replaceMatches(re *regexp.Regexp, text string, global bool, with func(m []s
 	var b strings.Builder
 	last := 0
 	for i, loc := range re.FindAllStringSubmatchIndex(text, n) {
+		if b.Len() > maxLine {
+			// Too long already, which the identifier reports: stop making it.
+			return b.String()
+		}
 		m := make([]string, len(loc)/2)
 		for k := range m {
 			if loc[2*k] >= 0 {

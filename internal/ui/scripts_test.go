@@ -1223,3 +1223,20 @@ func TestScriptLoadedOnce(t *testing.T) {
 		t.Errorf(`/load .\asn.mrc: %q; mIRC loads it as a second script`, got)
 	}
 }
+
+// TestIniListNewlines: a newline in a variable's value or a Users entry
+// doesn't add entries to vars.ini or users.ini. mIRC writes it as it is,
+// so the next start has the injected variable (checked); trout keeps what
+// came before the newline, which is what mIRC reads back as that entry.
+func TestIniListNewlines(t *testing.T) {
+	data := writeIniList("variables", []string{"%x a\nn9=%injected yes", "%y b\rn8=%cr no", "%z c\r\nd", "%ok fine"})
+	got := readIniList(data, "variables")
+	if want := []string{"%x a", "%y b", "%z c", "%ok fine"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A file mIRC wrote, with a lone CR in it.
+	got = readIniList("[users]\r\nn0=5:*!*@b\rn8=10:*!*@evil\r\nn1=6:*!*@c\r\n", "users")
+	if want := []string{"5:*!*@b", "6:*!*@c"}; !slices.Equal(got, want) {
+		t.Errorf("lone CR: got %q, want %q", got, want)
+	}
+}

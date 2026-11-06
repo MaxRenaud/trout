@@ -604,3 +604,108 @@ func TestInputBoxes(t *testing.T) {
 		t.Errorf("asked %q, did %+v", asked, acts)
 	}
 }
+
+// TestLineTooLong: text can't grow past maxLine, so a script can't take
+// all the memory or freeze trout making it; it stops with mIRC's error.
+func TestLineTooLong(t *testing.T) {
+	start := time.Now()
+	for src, want := range map[string]string{
+		`alias t var %x = a | while (1) { %x = %x $+ %x } | echo -a done`:                  "Line too long: $+",
+		`alias t var %x = a | while (1) { %x = %x %x } | echo -a done`:                     "Line too long",
+		`alias t echo -a $len($str($str(abcdefghij,10000),10000))`:                         "Line too long: $str",
+		`alias t echo -a $len($replace($str(a,60000),a,$str(b,60000)))`:                    "Line too long: $replace",
+		`alias t echo -a $len($replacex($str(a,60000),a,$str(b,60000)))`:                   "Line too long: $replacex",
+		`alias t echo -a $len($regsubex($str(a,60000),/a/g,$str(b,60000)))`:                "Line too long: $regsubex",
+		`alias t noop $regsub($str(a,60000),/a/g,$str(b,60000),%r) | echo -a $len(%r)`:     "Line too long: $regsub",
+		`alias t echo -a $len($+($str(abcdefghij,6000),$str(abcdefghij,6000)))`:            "Line too long: $+",
+		`alias t echo -a $len($base(1,10,10,99999999999999999999))`:                        "Line too long: $base",
+		`alias t var %x = $str(abcdefghij,6000) | echo -a $len(%x) $len($replace(%x,a,b))`: "#trout: 60000 60000",
+	} {
+		got := runAlias(t, src, "")
+		if len(got) != 1 || !strings.Contains(got[0], want) {
+			t.Errorf("%s: got %q, want %q", src, got, want)
+		}
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
+// TestTimerHuge: a timer's runs and interval, however big, don't overflow:
+// like mIRC, more runs than 2147483647 are 2147483647, and a longer
+// interval is an error.
+func TestTimerHuge(t *testing.T) {
+	got := runAlias(t, `alias t {
+  .timera 99999999999999999999 1 noop
+  .timerb 4294967297 2147483647 noop
+  echo -a $timer(a).reps $timer(b).reps $timer(b).delay
+  .timerc 1 2147483648 noop
+}`, "")
+	if len(got) != 2 || got[0] != "#trout: 2147483647 2147483647 2147483647" || !strings.Contains(got[1], "/timer: invalid parameters") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestContinuedBeforeSection:a $& line just before an ini section's
+// header doesn't take the lines after the header with it.
+func TestContinuedBeforeSection(t *testing.T) {
+	lines, _ := sourceLines("alias a echo -a one $&\n[script]\nn0=alias b echo -a bee\nn1=alias c echo -a sea")
+	var got []string
+	for _, l := range lines {
+		got = append(got, l.text)
+	}
+	if want := []string{"alias a echo -a one", "[script]", "alias b echo -a bee", "alias c echo -a sea"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestCalcDeep: $calc nested too deep for the stack is an error, not a
+// crash Go can't recover from.
+func TestCalcDeep(t *testing.T) {
+	if _, ok := calc(strings.Repeat("(", 10_000_000) + "1"); ok {
+		t.Error("10,000,000 brackets were fine")
+	}
+	if _, ok := calc(strings.Repeat("-", 10_000_000) + "1"); ok {
+		t.Error("10,000,000 signs were fine")
+	}
+	got := runAlias(t, `alias t echo -a $calc($str($chr(40),999) $+ 7) | echo -a $calc($str($chr(40),1001) $+ 7)`, "")
+	if len(got) != 2 || got[0] != "#trout: 7" || !strings.Contains(got[1], "$calc: too deeply nested") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestHashBulkDelete: /hdel -w and -u expiry on a big table delete in one
+// pass, not one pass per item.
+func TestHashBulkDelete(t *testing.T) {
+	h := evalHost()
+	big := func(e *Engine) {
+		tb := newTable("big", 100)
+		tb.expires = map[string]time.Time{}
+		for i := range 50000 {
+			tb.set("item"+itoa(i), "x")
+			if i%2 == 0 {
+				tb.expires["item"+itoa(i)] = h.now.Add(-time.Second)
+			}
+		}
+		e.tables["big"] = tb
+	}
+	start := time.Now()
+	e := New(Options{})
+	load(t, e, "h.mrc", `alias t hdel -w big item*1 | echo -a $hget(big,0).item $hget(big,item1) $hget(big,item2) $hget(big,1).item`)
+	big(e)
+	actions, _ := e.Alias("TestNet", "#trout", "t", "", h)
+	if got := echoes(actions); !slices.Equal(got, []string{"45000 x item0"}) {
+		t.Errorf("hdel -w: got %q", got)
+	}
+	e = New(Options{})
+	load(t, e, "h.mrc", `alias t echo -a $hget(big,0).item $hget(big,1).item $hget(big,2).item`)
+	big(e)
+	e.Tick(h)
+	actions, _ = e.Alias("TestNet", "#trout", "t", "", h)
+	if got := echoes(actions); !slices.Equal(got, []string{"25000 item1 item3"}) {
+		t.Errorf("expiry: got %q", got)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v", d)
+	}
+}

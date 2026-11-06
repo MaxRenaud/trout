@@ -47,7 +47,25 @@ func (t *table) del(item string) {
 	delete(t.data, key)
 	delete(t.names, key)
 	delete(t.expires, key)
-	t.items = slices.DeleteFunc(t.items, func(s string) bool { return strings.EqualFold(s, item) })
+	if i := slices.IndexFunc(t.items, func(s string) bool { return strings.EqualFold(s, item) }); i >= 0 {
+		t.items = slices.Delete(t.items, i, i+1)
+	}
+}
+
+// delWhere deletes every item whose name matches, in one pass over the
+// items: deleting them one by one would take time for each of them times
+// the table's size, which on a big table froze the client.
+func (t *table) delWhere(match func(item string) bool) {
+	t.items = slices.DeleteFunc(t.items, func(item string) bool {
+		if !match(item) {
+			return false
+		}
+		key := strings.ToLower(item)
+		delete(t.data, key)
+		delete(t.names, key)
+		delete(t.expires, key)
+		return true
+	})
 }
 
 // table finds a table by name, or by number with N, like $hget(N). A
@@ -152,11 +170,7 @@ func (r *run) cmdHash(fr *frame, name, rest string) error {
 			return errorf("/hdel: no such table '", tname, "'")
 		}
 		if strings.Contains(sw, "w") {
-			for _, item := range slices.Clone(t.items) {
-				if wildMatch(arg(1), item, false) {
-					t.del(item)
-				}
-			}
+			t.delWhere(func(item string) bool { return wildMatch(arg(1), item, false) })
 			return nil
 		}
 		t.del(arg(1))

@@ -49,8 +49,14 @@ type token struct {
 // separates commands and { } only open and close blocks when they're
 // words of their own, surrounded by spaces, and not inside an
 // identifier's brackets; and runs of spaces count as one.
+//
+// A word ending in :{ is text, but mIRC's loader counts it as a { when it
+// matches braces (braceDelta), so the } that matches it is dropped rather
+// than closing a block: alias u { return sad :{ } } returns "sad :{" and
+// is the whole alias (checked).
 func tokens(lines []srcLine) []token {
 	var out []token
+	labels := 0 // words ending in :{ still to be matched
 	for _, l := range lines {
 		var cmd []string
 		flush := func() {
@@ -63,10 +69,20 @@ func tokens(lines []srcLine) []token {
 			switch w {
 			case "|":
 				flush()
-			case "{", "}":
+			case "}":
+				flush()
+				if labels > 0 {
+					labels--
+					continue
+				}
+				out = append(out, token{l.n, w})
+			case "{":
 				flush()
 				out = append(out, token{l.n, w})
 			default:
+				if braceDelta(w) > 0 {
+					labels++
+				}
 				cmd = append(cmd, w)
 			}
 		}

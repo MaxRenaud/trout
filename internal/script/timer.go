@@ -1,6 +1,7 @@
 package script
 
 import (
+	"math"
 	"regexp"
 	"slices"
 	"strings"
@@ -57,11 +58,21 @@ func (e *Engine) expire(now time.Time) {
 		}
 	}
 	for _, t := range e.tables {
-		for key, at := range t.expires {
+		due := false
+		for _, at := range t.expires {
 			if !at.After(now) {
-				t.del(t.names[key])
+				due = true
+				break
 			}
 		}
+		if !due {
+			continue
+		}
+		// In one pass: many items added with the same -uN expire together.
+		t.delWhere(func(item string) bool {
+			at, ok := t.expires[strings.ToLower(item)]
+			return ok && !at.After(now)
+		})
 	}
 }
 
@@ -158,15 +169,17 @@ func (r *run) cmdTimer(fr *frame, name, rest string) error {
 	if len(words) < 3 || !isDigits(words[0]) {
 		return errorf("/timer: insufficient parameters")
 	}
+	// Like mIRC, an interval over 2147483647 is an error and more runs
+	// than that are 2147483647 (checked), so neither overflows.
 	n, ok := parseNum(words[1])
-	if !ok || n < 0 {
+	if !ok || n < 0 || n > math.MaxInt32 {
 		return errorf("/timer: invalid parameters")
 	}
 	unit := time.Second
 	if strings.ContainsAny(sw, "mh") {
 		unit = time.Millisecond
 	}
-	t := &timer{name: strings.ToLower(name), reps: atoi(words[0]), delay: words[1],
+	t := &timer{name: strings.ToLower(name), reps: min(atoi(words[0]), math.MaxInt32), delay: words[1],
 		interval: time.Duration(n * float64(unit)), command: words[2], network: fr.network, window: fr.window}
 	if t.name == "" {
 		// The first free number, like mIRC.

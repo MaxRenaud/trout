@@ -243,6 +243,9 @@ func replacexIdent(cs bool) builtin {
 		var b strings.Builder
 	next:
 		for i := 0; i < len(s); {
+			if b.Len() > maxLine {
+				return "", errLong("$replacex")
+			}
 			for k := 1; k+1 < len(c.vals); k += 2 {
 				sub := c.vals[k]
 				if sub == "" || i+len(sub) > len(s) {
@@ -347,7 +350,7 @@ func baseIdent(r *run, fr *frame, c *call) (string, error) {
 		f += float64(v) / math.Pow(float64(in), float64(i+1))
 	}
 	res := strings.ToUpper(w.Text(out))
-	if pad := int(c.num(3)); len(res) < pad {
+	if pad := int(min(c.num(3), maxLine+1)); len(res) < pad {
 		res = strings.Repeat("0", pad-len(res)) + res
 	}
 	if f > 0 {
