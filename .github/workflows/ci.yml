@@ -3,8 +3,21 @@
 name: ci
 on:
   push:
-    paths-ignore: ["**.md", "docs/**", "dev/**"]
+    # Not for docs or the dev environment, except dev/'s Go packages
+    # (in ./...) and build-soju, which the release builds soju with. Later
+    # patterns win.
+    paths:
+      - "**"
+      - "!**.md"
+      - "!docs/**"
+      - "!dev/**"
+      - "dev/bot/**"
+      - "dev/cachedir/**"
+      - "dev/build-soju"
   pull_request:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -24,8 +37,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - run: go vet ./...
