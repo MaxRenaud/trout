@@ -14,7 +14,11 @@ var numIdents = map[string]builtin{
 		if len(c.vals) > 1 {
 			return "", errorf("$calc: invalid format")
 		}
-		return formatNum(calc(c.arg(0))), nil
+		v, ok := calc(c.arg(0))
+		if !ok {
+			return "", errorf("$calc: too deeply nested")
+		}
+		return formatNum(v), nil
 	},
 	"int": func(r *run, fr *frame, c *call) (string, error) {
 		return formatNum(math.Trunc(c.num(0))), nil

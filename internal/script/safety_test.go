@@ -605,7 +605,22 @@ func TestInputBoxes(t *testing.T) {
 	}
 }
 
-// TestHashBulkDelete: /hdel -w and -u expiry on a big table delete in one
+// TestCalcDeep: $calc nested too deep for the stack is an error, not a
+// crash Go can't recover from.
+func TestCalcDeep(t *testing.T) {
+	if _, ok := calc(strings.Repeat("(", 10_000_000) + "1"); ok {
+		t.Error("10,000,000 brackets were fine")
+	}
+	if _, ok := calc(strings.Repeat("-", 10_000_000) + "1"); ok {
+		t.Error("10,000,000 signs were fine")
+	}
+	got := runAlias(t, `alias t echo -a $calc($str($chr(40),999) $+ 7) | echo -a $calc($str($chr(40),1001) $+ 7)`, "")
+	if len(got) != 2 || got[0] != "#trout: 7" || !strings.Contains(got[1], "$calc: too deeply nested") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestHashBulkDelete:/hdel -w and -u expiry on a big table delete in one
 // pass, not one pass per item.
 func TestHashBulkDelete(t *testing.T) {
 	h := evalHost()
