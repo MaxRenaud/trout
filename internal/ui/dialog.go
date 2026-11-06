@@ -315,6 +315,18 @@ type listBox struct {
 	OnPress func(a *App, l *listBox, button, key string) tea.Cmd
 	// OnClose, if set, runs when the list closes (to go back to Options).
 	OnClose func(a *App)
+
+	// rowsW is the widest row's width, measured when Rows was rowsOf:
+	// the Channels List can have 50,000 rows, and size runs every frame.
+	rowsW  int
+	rowsOf []string
+}
+
+// sameSlice reports whether a and b are the same slice: the same array
+// and length. Rows are only ever replaced, appended to or cut, never
+// changed in place, so that's the same rows.
+func sameSlice(a, b []string) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
 }
 
 func (l *listBox) close(a *App) {
@@ -371,10 +383,13 @@ func (l *listBox) title() string { return l.Title }
 func (l *listBox) visible(a *App) int { return clamp(a.h-9, 3, 12) }
 
 func (l *listBox) size(a *App) (int, int) {
-	w := runewidth.StringWidth(l.Header)
-	for _, r := range l.Rows {
-		w = max(w, runewidth.StringWidth(r))
+	if !sameSlice(l.Rows, l.rowsOf) {
+		l.rowsW, l.rowsOf = 0, l.Rows
+		for _, r := range l.Rows {
+			l.rowsW = max(l.rowsW, runewidth.StringWidth(r))
+		}
 	}
+	w := max(runewidth.StringWidth(l.Header), l.rowsW)
 	// Wide enough for its buttons too.
 	return min(max(w+8, 40, buttonsWidth(l.buttons())+4), a.w-2), l.visible(a) + 7
 }
