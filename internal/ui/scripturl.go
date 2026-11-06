@@ -14,6 +14,7 @@ import (
 	"net/textproto"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +32,20 @@ type urlDoneMsg struct {
 
 // urlMax is the most a $urlget takes in: it's all kept in memory.
 const urlMax = 64 << 20
+
+// urlTransport and urlInsecureTransport (for the i option: any
+// certificate) are all $urlget's requests', so a script that asks every
+// second reuses a connection rather than leaving a new one open each
+// time.
+var (
+	urlTransport = sync.OnceValue(func() *http.Transport { return http.DefaultTransport.(*http.Transport).Clone() })
+
+	urlInsecureTransport = sync.OnceValue(func() *http.Transport {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		return tr
+	})
+)
 
 // scriptURL does what the engine asked: a request, or cancelling one.
 func (a *App) scriptURL(u *script.URLGet) {
@@ -71,6 +86,8 @@ func (a *App) cancelURLs() {
 		delete(a.webGets, id)
 		cancel()
 	}
+	urlTransport().CloseIdleConnections()
+	urlInsecureTransport().CloseIdleConnections()
 }
 
 func fetchURL(ctx context.Context, u *script.URLGet, agent string) script.URLResult {
@@ -93,9 +110,9 @@ func fetchURL(ctx context.Context, u *script.URLGet, agent string) script.URLRes
 	if u.From > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", u.From))
 	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr := urlTransport()
 	if u.Insecure {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		tr = urlInsecureTransport()
 	}
 	client := &http.Client{Transport: tr}
 	if u.NoRedirect {
