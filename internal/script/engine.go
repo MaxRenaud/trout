@@ -94,6 +94,7 @@ type File struct {
 	Data   string
 	Append bool // add Data to the end, instead of replacing the file
 	Delete bool // delete the file instead
+	Mkdir  bool // make Name a folder instead (/mkdir)
 }
 
 // Echo is a line a script prints with /echo, or an error message.

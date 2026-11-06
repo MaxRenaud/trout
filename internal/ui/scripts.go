@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"errors"
+	"io/fs"
 	"maps"
 	"net"
 	"os"
@@ -117,6 +118,7 @@ func (a *App) scriptWriteFile(f *script.File) error {
 		}
 		key := strings.ToLower(f.Name)
 		switch {
+		case f.Mkdir: // no folders here
 		case f.Delete:
 			delete(a.scriptMem, key)
 		case f.Append:
@@ -130,14 +132,26 @@ func (a *App) scriptWriteFile(f *script.File) error {
 	if !ok {
 		return errors.New(f.Name + ": a .. after a folder's name isn't allowed")
 	}
-	if f.Delete {
+	switch {
+	case f.Delete:
 		return os.Remove(path)
+	case f.Mkdir:
+		if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		return nil
+	}
+	// The scripts folder is made for the first file in it; other folders
+	// a script writes in it has to /mkdir, like mIRC's.
+	if dir := filepath.Dir(path); dir == a.scriptsDir() {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	} else if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return errors.New("no folder " + dir)
 	}
 	if !f.Append { // whole files (vars.ini, a saved script) are replaced at once
 		return config.WriteFile(path, []byte(f.Data))
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {

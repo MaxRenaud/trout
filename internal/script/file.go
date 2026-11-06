@@ -277,6 +277,22 @@ func (r *run) cmdRemove(fr *frame, rest string) error {
 	return nil
 }
 
+// cmdMkdir is /mkdir <dirname>: a folder, which /write and the rest
+// don't make, like mIRC's. The client makes it after the run, as it
+// writes files, so $isdir doesn't see it until then.
+func (r *run) cmdMkdir(fr *frame, rest string) error {
+	line, err := r.eval(fr, rest)
+	if err != nil {
+		return err
+	}
+	name := strings.Trim(strings.TrimSpace(line), `"`)
+	if name == "" {
+		return errorf("/mkdir: insufficient parameters")
+	}
+	r.actions = append(r.actions, Action{File: &File{Name: name, Mkdir: true}})
+	return nil
+}
+
 // cmdCopy is /copy [-ao] <file> <file>, and /rename [-o] <file> <file>,
 // which deletes the first: -a adds to the end of the second, -o
 // overwrites it (without either, an existing one is an error).

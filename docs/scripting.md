@@ -179,7 +179,7 @@ error.
   hashes and encodings. Help > Identifiers in the editor lists them all.
 - **Timers** (`/timer`, `-m`, `-e`, `-p`, `-r`, time of day), **hash tables** (kept in
   memory until `/hsave`, like mIRC's), **files** (`/write`, INI files, file handles,
-  `/copy`, `/rename`, `/remove`).
+  `/copy`, `/rename`, `/remove`, `/mkdir`; `/write` makes no folders, like mIRC's).
 - **Several networks**: each network is a connection (`$cid`, `/scid`, `/scon`).
 - **Sockets**: connections out, plain or SSL (`/sockopen`, `-e`, and `-a` to accept a
   certificate that doesn't check out), `/sockwrite`, `/sockread` into a `%variable` or a

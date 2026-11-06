@@ -427,6 +427,8 @@ func (r *run) command(fr *frame, text string) (err error) {
 		return err
 	case "remove":
 		return r.cmdRemove(fr, rest)
+	case "mkdir":
+		return r.cmdMkdir(fr, rest)
 	case "copy", "rename":
 		return r.cmdCopy(fr, rest, strings.EqualFold(name, "rename"))
 	case "fopen", "fclose", "fwrite", "fseek":
@@ -894,7 +896,7 @@ func engineCommand(name string) bool {
 var engineCommands = []string{"set", "var", "unset", "unsetall", "inc", "dec", "halt", "haltdef", "return", "break",
 	"continue", "goto", "noop", "echo", "enable", "disable", "tokenize", "hmake", "hfree",
 	"hadd", "hdel", "hinc", "hdec", "hsave", "hload", "write", "reseterror", "signal",
-	"writeini", "remini", "flushini", "remove", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
+	"writeini", "remini", "flushini", "remove", "mkdir", "copy", "rename", "fopen", "fclose", "fwrite", "fseek",
 	"scid", "scon", "ial", "ialclear", "ialfill", "ialmark",
 	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel",
 	"sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename",

@@ -260,7 +260,8 @@ func TestClimbs(t *testing.T) {
 
 // TestScriptsFolder runs scripts from a real config: loaded at startup
 // from the scripts folder, with on START, vars.ini and users.ini written
-// there, and a file a script writes outside it (mIRC lets it).
+// there, a file a script writes outside it (mIRC lets it), and folders,
+// which only /mkdir makes.
 func TestScriptsFolder(t *testing.T) {
 	dir := t.TempDir()
 	folder := filepath.Join(dir, "scripts")
@@ -273,6 +274,9 @@ func TestScriptsFolder(t *testing.T) {
   write ..\escape.txt nope
   write logs\#x\..\..\..\climbed.txt nope
   write $mircdir $+ logs\#x\..\..\climbed.txt nope
+  write nofolder\a.txt nope
+  mkdir "made"
+  write made\a.txt yes
 }
 alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	os.WriteFile(filepath.Join(folder, "settings.ini"), []byte("[main]\r\ngreeting=hello\r\n"), 0o600)
@@ -299,6 +303,13 @@ alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 		if _, err := os.Stat(p); err == nil {
 			t.Errorf("%s written", p)
 		}
+	}
+	// /write makes no folders, like mIRC's; /mkdir does.
+	if _, err := os.Stat(filepath.Join(folder, "nofolder")); err == nil {
+		t.Error("/write made a folder")
+	}
+	if got, _ := os.ReadFile(filepath.Join(folder, "made", "a.txt")); string(got) != "yes\r\n" {
+		t.Errorf("after /mkdir, made\\a.txt = %q", got)
 	}
 	actions, ok := a.scripts.Command(a.home.Name, "", "who", false, a.scriptHost())
 	if !ok {
