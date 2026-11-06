@@ -86,7 +86,10 @@ type TopicChange struct {
 
 type Nick struct {
 	Prefix, Name string
-	Away         bool // from WHO and away-notify
+	// All is every prefix the nick has, highest first ("@+"), from
+	// multi-prefix NAMES and mode changes; "" means just Prefix.
+	All  string
+	Away bool // from WHO and away-notify
 }
 
 type Window struct {
@@ -292,8 +295,8 @@ func (n *Network) IsChannel(target string) bool {
 	return target != "" && strings.ContainsRune("#&+!", rune(target[0]))
 }
 
-// SplitPrefix splits a NAMES entry like "@+alice" into its highest prefix
-// and the nick.
+// SplitPrefix splits a NAMES entry like "@+alice" into its prefixes (all of
+// them, with multi-prefix) and the nick.
 func (n *Network) SplitPrefix(s string) Nick {
 	i := 0
 	for i < len(s) && strings.IndexByte(n.Prefixes, s[i]) >= 0 {
@@ -302,7 +305,20 @@ func (n *Network) SplitPrefix(s string) Nick {
 	if i == 0 {
 		return Nick{Name: s}
 	}
-	return Nick{Prefix: s[:1], Name: s[i:]}
+	all := n.sortPrefixes(s[:i])
+	return Nick{Prefix: all[:1], All: all, Name: s[i:]}
+}
+
+// sortPrefixes orders prefix characters by rank, highest first, without
+// repeats.
+func (n *Network) sortPrefixes(p string) string {
+	var b strings.Builder
+	for i := range len(n.Prefixes) {
+		if strings.IndexByte(p, n.Prefixes[i]) >= 0 {
+			b.WriteByte(n.Prefixes[i])
+		}
+	}
+	return b.String()
 }
 
 // MaxLines is how many lines a window keeps (Options > Other's window
@@ -429,12 +445,17 @@ func (w *Window) SetPrefix(nick string, mode byte, on bool) {
 		return
 	}
 	p := w.Net.Prefixes[m : m+1]
-	switch {
-	case on && (w.Nicks[i].Prefix == "" || strings.Index(w.Net.Prefixes, w.Nicks[i].Prefix) > m):
-		w.Nicks[i].Prefix = p
-	case !on && w.Nicks[i].Prefix == p:
-		w.Nicks[i].Prefix = "" // without multi-prefix we can't know a lower one
+	nk := &w.Nicks[i]
+	all := cmp.Or(nk.All, nk.Prefix)
+	if on {
+		all += p
+	} else {
+		all = strings.ReplaceAll(all, p, "")
 	}
+	// Taking +o off keeps a +v the nick still has, like mIRC: trout asks
+	// for multi-prefix, so NAMES told us all of them.
+	nk.All = w.Net.sortPrefixes(all)
+	nk.Prefix = nk.All[:min(1, len(nk.All))]
 	w.SortNicks()
 }
 
