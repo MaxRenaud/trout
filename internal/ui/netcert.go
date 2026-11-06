@@ -68,9 +68,10 @@ func (a *App) networkError(n *state.Network, e string) {
 	}
 }
 
-// fingerprintLines splits a SHA-512 fingerprint in two, to fit a dialog.
+// fingerprintLines is a SHA-512 fingerprint's line in a dialog, which the
+// message box cuts into even pieces that fit: two at most sizes.
 func fingerprintLines(fp string) []string {
-	return []string{"    " + fp[:len(fp)/2], "    " + fp[len(fp)/2:]}
+	return []string{"    " + fp}
 }
 
 func (a *App) netCertBox(n *state.Network, why, fp string) *msgBox {

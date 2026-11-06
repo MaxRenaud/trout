@@ -70,6 +70,73 @@ func (a *App) drawModal(c *Canvas) {
 	a.dlg.draw(a, c, x, y, w, h)
 }
 
+// wrapText breaks lines into rows of at most w cells, at spaces where it
+// can, so a dialog at the smallest screen still shows all its text. A
+// wrapped line's rows keep its indent, and a word too long for a row (a
+// fingerprint) is cut into even pieces. Wrapping the result again at any
+// width from its widest row up to w gives the same rows, so a dialog's
+// size and draw agree.
+func wrapText(lines []string, w int) []string {
+	var rows []string
+	for _, line := range lines {
+		if w < 1 || runewidth.StringWidth(line) <= w {
+			rows = append(rows, line)
+			continue
+		}
+		rest := strings.TrimLeft(line, " ")
+		indent := line[:len(line)-len(rest)]
+		if len(indent) > w/2 {
+			indent = ""
+		}
+		avail := w - len(indent)
+		cur := ""
+		flush := func() {
+			rows = append(rows, indent+cur)
+			cur = ""
+		}
+		for word := range strings.FieldsSeq(rest) {
+			ww := runewidth.StringWidth(word)
+			switch {
+			case cur != "" && runewidth.StringWidth(cur)+1+ww <= avail:
+				cur += " " + word
+				continue
+			case cur != "":
+				flush()
+			}
+			if ww <= avail {
+				cur = word
+				continue
+			}
+			pieces := cutEven(word, (ww+avail-1)/avail)
+			for _, p := range pieces[:len(pieces)-1] {
+				rows = append(rows, indent+p)
+			}
+			cur = pieces[len(pieces)-1]
+		}
+		flush()
+	}
+	return rows
+}
+
+// cutEven cuts s into n pieces about as wide as each other, never inside
+// a grapheme cluster.
+func cutEven(s string, n int) []string {
+	target := (runewidth.StringWidth(s) + n - 1) / n
+	var pieces []string
+	var cc clusterCells
+	start, width := 0, 0
+	for i, r := range s {
+		joins := cc.joins(r)
+		cw := cc.add(r)
+		if width+cw > target && width > 0 && !joins {
+			pieces = append(pieces, s[start:i])
+			start, width = i, 0
+		}
+		width += cw
+	}
+	return append(pieces, s[start:])
+}
+
 func buttonsWidth(labels []string) int {
 	w := 0
 	for i, b := range labels {
@@ -212,12 +279,31 @@ func message(lines ...string) *msgBox {
 
 func (d *msgBox) title() string { return d.Title }
 
+// text is the box's lines wrapped to a box w wide. If they're still taller
+// than the screen, the blank lines between paragraphs go first.
+func (d *msgBox) text(a *App, w int) []string {
+	lines := wrapText(d.Lines, w-6)
+	room := a.h - 6
+	if d.Check != "" {
+		room -= 2
+	}
+	if len(lines) > room {
+		lines = slices.DeleteFunc(slices.Clone(lines), func(l string) bool { return l == "" })
+	}
+	return lines
+}
+
+// msgBoxMaxW is the widest a message box grows for its text; like
+// Windows's, longer lines wrap.
+const msgBoxMaxW = 110
+
 func (d *msgBox) size(a *App) (int, int) {
+	lines := d.text(a, min(a.w, msgBoxMaxW))
 	tw := 0
-	for _, l := range d.Lines {
+	for _, l := range lines {
 		tw = max(tw, runewidth.StringWidth(l))
 	}
-	h := len(d.Lines) + 6
+	h := len(lines) + 6
 	if d.Check != "" {
 		h += 2
 		tw = max(tw, runewidth.StringWidth(d.Check)+4)
@@ -227,7 +313,11 @@ func (d *msgBox) size(a *App) (int, int) {
 
 func (d *msgBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	t := a.theme()
-	for i, l := range d.Lines {
+	lines := d.text(a, min(w, msgBoxMaxW))
+	for i, l := range lines {
+		if 2+i >= h-4 {
+			break // what still doesn't fit stays off the buttons
+		}
 		c.Text(x+3, y+2+i, w-6, l, Style{FG: t.FaceText, BG: t.Face})
 	}
 	sel := d.Sel
@@ -240,7 +330,7 @@ func (d *msgBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		if d.checkFocus {
 			st, sel = Style{FG: t.MenuSelText, BG: t.MenuSel}, -1
 		}
-		cy := y + 3 + len(d.Lines)
+		cy := y + 3 + len(lines)
 		c.Text(x+3, cy, w-6, box+d.Check, st)
 		a.addRegion(Region{X: x + 3, Y: cy, W: runewidth.StringWidth(box + d.Check), H: 1, Kind: HitDlg, S: "check"})
 	}
