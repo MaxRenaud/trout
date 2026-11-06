@@ -17,11 +17,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -60,6 +62,11 @@ func Detect(release bool, moduleVersion string) Install {
 	if err != nil {
 		return Install{}
 	}
+	return detectAt(exe, release, moduleVersion)
+}
+
+// detectAt is Detect for the program at exe, which tests choose.
+func detectAt(exe string, release bool, moduleVersion string) Install {
 	if real, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = real // Homebrew links bin/trout into the Caskroom
 	}
@@ -466,6 +473,22 @@ func swap(stage, dir string, files []string) error {
 		}
 		done = append(done, m)
 	}
+	// What Cleanup removes later: these, and any an earlier update in
+	// this session left.
+	list := readOlds(dir)
+	for _, m := range done {
+		if m.old == "" {
+			continue
+		}
+		rel, err := filepath.Rel(dir, m.old)
+		if old := filepath.ToSlash(rel); err == nil && !slices.Contains(list, old) {
+			list = append(list, old)
+		}
+	}
+	if err := writeOlds(dir, list); err != nil {
+		undo()
+		return fmt.Errorf("noting the old files: %w", err)
+	}
 	return nil
 }
 
@@ -492,13 +515,47 @@ func busy(err error) bool {
 	return runtime.GOOS == "windows" && errors.As(err, &errno) && (errno == 5 || errno == 32 || errno == 33)
 }
 
-// Cleanup removes the .old files an update left in dir, once the trout
-// that was running then has quit. Ones still in use stay for next time.
-func Cleanup(dir string) {
-	for _, pattern := range []string{"*.old", "soju-*/*.old"} {
-		olds, _ := filepath.Glob(filepath.Join(dir, pattern))
-		for _, old := range olds {
-			os.Remove(old)
+// olds is the file in trout's folder listing the .old files updates made
+// (slash-separated, relative to it), so Cleanup removes only those and not
+// a user's own notes.old next to trout.
+const olds = ".trout-update-olds"
+
+// readOlds is olds' list, with the old trout's own .old files, which
+// updates from before the list made.
+func readOlds(dir string) []string {
+	b, _ := os.ReadFile(filepath.Join(dir, olds))
+	list := strings.Fields(string(b))
+	for _, f := range []string{"trout.old", "trout.exe.old"} {
+		if !slices.Contains(list, f) {
+			list = append(list, f)
 		}
 	}
+	return list
+}
+
+// writeOlds saves list as olds, or removes olds when it's empty.
+func writeOlds(dir string, list []string) error {
+	path := filepath.Join(dir, olds)
+	if len(list) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return os.WriteFile(path, []byte(strings.Join(list, "\n")+"\n"), 0o644)
+}
+
+// Cleanup removes the .old files updates left in dir, once the trout
+// that was running then has quit. Ones still in use stay for next time.
+func Cleanup(dir string) {
+	var keep []string
+	for _, f := range readOlds(dir) {
+		if !filepath.IsLocal(filepath.FromSlash(f)) || !strings.HasSuffix(f, ".old") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, filepath.FromSlash(f))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			keep = append(keep, f)
+		}
+	}
+	writeOlds(dir, keep)
 }

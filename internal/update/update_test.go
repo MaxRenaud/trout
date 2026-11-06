@@ -75,6 +75,68 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+// TestCleanupOnlyOurs: with no update ever run, Cleanup leaves a user's
+// own .old files next to trout alone, and still removes an old trout's
+// trout.old from before trout listed them.
+func TestCleanupOnlyOurs(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"trout", "trout.old", "script.sh.old", "soju-linux-amd64/notes.old"} {
+		path := filepath.Join(dir, filepath.FromSlash(f))
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		os.WriteFile(path, []byte(f), 0o644)
+	}
+	Cleanup(dir)
+	for f, want := range map[string]bool{"trout": true, "trout.old": false, "script.sh.old": true, "soju-linux-amd64/notes.old": true} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); (err == nil) != want {
+			t.Errorf("%s: there %v, want %v", f, err == nil, want)
+		}
+	}
+}
+
+// TestDetectAt: what self-update would replace, found from the program's
+// real path, and whether trout may write there.
+func TestDetectAt(t *testing.T) {
+	root := t.TempDir()
+	mk := func(path string) string {
+		path = filepath.Join(root, filepath.FromSlash(path))
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	cask := mk("brew/Caskroom/trout/0.5.1/trout")
+	archive := mk("trout_0.5.1_linux_amd64/trout")
+	link := filepath.Join(root, "brew", "bin", "trout")
+	os.MkdirAll(filepath.Dir(link), 0o755)
+	if err := os.Symlink(cask, link); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	real := func(p string) string { r, _ := filepath.EvalSymlinks(p); return r }
+
+	in := detectAt(link, true, "")
+	if in.How != Homebrew || in.Dir != filepath.Dir(real(cask)) || in.Brew != filepath.Join(real(root), "brew", "bin", "brew") || in.Writable {
+		t.Errorf("Homebrew's link: %+v", in)
+	}
+	in = detectAt(archive, true, "")
+	if in.How != Archive || in.Dir != filepath.Dir(real(archive)) || !in.Writable {
+		t.Errorf("an archive: %+v", in)
+	}
+	if left, _ := filepath.Glob(filepath.Join(in.Dir, ".trout-*")); len(left) != 0 {
+		t.Errorf("checking left %q", left)
+	}
+	if in := detectAt(archive, false, "v0.5.1"); in.How != GoInstall || in.Writable {
+		t.Errorf("go install: %+v", in)
+	}
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 { // root writes anywhere; Windows ignores the mode
+		os.Chmod(filepath.Dir(archive), 0o555)
+		defer os.Chmod(filepath.Dir(archive), 0o755)
+		if in := detectAt(archive, true, ""); in.How != Archive || in.Writable {
+			t.Errorf("a read-only archive: %+v", in)
+		}
+	}
+}
+
 func TestAssetName(t *testing.T) {
 	for _, c := range [][3]string{
 		{"darwin", "arm64", "trout_0.4.0_darwin_arm64.tar.gz"},
@@ -204,6 +266,7 @@ func TestApply(t *testing.T) {
 			name := AssetName("v0.4.0", c.goos, c.goarch)
 			rel := fakeGitHub(t, name, c.archive(t, these), "")
 			dir := oldInstall(t)
+			os.WriteFile(filepath.Join(dir, "notes.old"), []byte("mine too"), 0o644)
 			var said []string
 			if err := Apply(t.Context(), http.DefaultClient, rel, dir, c.goos, c.goarch, func(s string) { said = append(said, s) }); err != nil {
 				t.Fatal(err)
@@ -227,8 +290,8 @@ func TestApply(t *testing.T) {
 			left, _ := filepath.Glob(filepath.Join(dir, "*.old"))
 			inner, _ := filepath.Glob(filepath.Join(dir, "soju-*", "*.old"))
 			temps, _ := filepath.Glob(filepath.Join(dir, ".trout-*"))
-			if len(left)+len(inner)+len(temps) != 0 {
-				t.Errorf("left behind %q %q %q", left, inner, temps)
+			if len(left) != 1 || filepath.Base(left[0]) != "notes.old" || len(inner)+len(temps) != 0 {
+				t.Errorf("left behind %q %q %q, want only the user's notes.old", left, inner, temps)
 			}
 		})
 	}
