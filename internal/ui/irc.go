@@ -284,7 +284,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		n.Nick = arg(0)
 		line(status, state.RoleNormal, arg(1))
 	case "005":
-		is := irc.ISupport(m)
+		is, unset := irc.ISupport(m)
 		if a.isupport == nil {
 			a.isupport = map[*state.Network]map[string]string{}
 		}
@@ -292,6 +292,23 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 			a.isupport[n] = map[string]string{}
 		}
 		maps.Copy(a.isupport[n], is)
+		for _, k := range unset { // the server took it back: the default again
+			delete(a.isupport[n], k)
+			switch k {
+			case "PREFIX":
+				n.PrefixModes, n.Prefixes = "ov", "@+"
+			case "CHANMODES":
+				n.ChanModes = "beI,k,l,imnpst"
+			case "soju.im/FILEHOST":
+				n.FileHost = ""
+			case "CASEMAPPING":
+				n.CaseMapping = ""
+			case "MONITOR":
+				n.Monitor = false
+			case "CHANTYPES":
+				n.ChanTypes = ""
+			}
+		}
 		if modes, prefixes, ok := irc.ParsePrefix(is["PREFIX"]); ok {
 			n.PrefixModes, n.Prefixes = modes, prefixes
 		}
@@ -306,6 +323,9 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		}
 		if _, ok := is["MONITOR"]; ok {
 			n.Monitor = true
+		}
+		if v, ok := is["CHANTYPES"]; ok {
+			n.ChanTypes = v
 		}
 		line(status, state.RoleNormal, strings.Join(p[min(1, len(p)):], " "))
 	case "JOIN":
@@ -325,8 +345,8 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 				a.quietWho[whoKey(n, ch)] = true
 			}
 			a.fetchHistory(w)
-			if a.joining[strings.ToLower(ch)] {
-				delete(a.joining, strings.ToLower(ch))
+			if a.joining[n.Fold(ch)] {
+				delete(a.joining, n.Fold(ch))
 				a.activate(w)
 			}
 		} else if w != nil {
@@ -388,7 +408,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 				} else {
 					event(w, state.RoleQuit, "* Quits: "+mask()+reason(0))
 				}
-			case w.Kind == state.KQuery && strings.EqualFold(w.Name, nick):
+			case w.Kind == state.KQuery && n.Same(w.Name, nick):
 				line(w, state.RoleQuit, "* Quits: "+mask()+reason(0))
 			}
 		}
@@ -417,8 +437,15 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 				} else {
 					event(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 				}
-			case w.Kind == state.KQuery && strings.EqualFold(w.Name, nick):
-				w.Name = to
+			case w.Kind == state.KQuery && n.Same(w.Name, nick):
+				// A query with the new nick already open keeps it, and
+				// this one its old name: two windows with one name would
+				// leave this one unreachable (Find returns the first).
+				if other := n.Find(state.KQuery, to); other == nil || other == w {
+					w.Name = to
+				} else {
+					line(other, state.RoleEvent, "* "+nick+" is now known as "+to)
+				}
 				line(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 			}
 		}
@@ -1062,10 +1089,16 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			need()
 			break
 		}
-		if !n.IsChannel(arg) {
-			arg = "#" + arg
+		// A list (#a,b) is several channels, each with its # added and
+		// each brought to the front once joined.
+		chans := strings.Split(arg, ",")
+		for i, ch := range chans {
+			if ch != "" && !n.IsChannel(ch) {
+				chans[i] = "#" + ch
+			}
+			a.joining[n.Fold(chans[i])] = true
 		}
-		a.joining[strings.ToLower(arg)] = true
+		arg = strings.Join(chans, ",")
 		if tail != "" {
 			a.sendNet(n, "JOIN", arg, tail)
 		} else {

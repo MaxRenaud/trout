@@ -511,10 +511,7 @@ func RunPasswordCommand(cmd string) (string, error) {
 
 // PasswordCommand is cmd run by the shell, printing into out.
 func PasswordCommand(cmd string) (sh *exec.Cmd, out *bytes.Buffer) {
-	sh = exec.Command("/bin/sh", "-c", cmd)
-	if runtime.GOOS == "windows" {
-		sh = exec.Command("cmd", "/C", cmd)
-	}
+	sh = shell(cmd)
 	out = &bytes.Buffer{}
 	sh.Stdout = out
 	return sh, out
@@ -557,8 +554,15 @@ func WriteFile(path string, data []byte) error {
 // and made the first time it's needed.
 func (c *Config) ClientCert() (tls.Certificate, error) {
 	path := filepath.Join(filepath.Dir(c.Path), "client.pem")
-	if data, err := os.ReadFile(path); err == nil {
+	// Only a missing file makes a new key: one that can't be read just now
+	// (antivirus holding it, say) mustn't replace the key the bouncer
+	// knows this computer by.
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
 		return tls.X509KeyPair(data, data)
+	case !errors.Is(err, fs.ErrNotExist):
+		return tls.Certificate{}, err
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -581,7 +585,7 @@ func (c *Config) ClientCert() (tls.Certificate, error) {
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	data := slices.Concat(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+	data = slices.Concat(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
 		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
 	if err := WriteFile(path, data); err != nil {
 		return tls.Certificate{}, err

@@ -44,6 +44,9 @@ func (a *App) setBouncer(b config.Bouncer, password string) {
 	clear(a.upAt)
 	a.goingTo = nil
 	a.serving, a.focusNet = nil, ""
+	// Another bouncer may take the certificate this one refused, and may
+	// have no networks yet either.
+	a.certFailed, a.toldNoNetworks = false, false
 }
 
 // switchBouncer drops every connection and connects through b instead.
@@ -92,6 +95,9 @@ func (a *App) stopOn(err error) bool {
 	case errors.Is(err, irc.ErrLogin):
 		a.addLine(status, state.RoleQuit, "* "+err.Error())
 		a.openConnect("Login failed. Check the user name and password.")
+	case errors.Is(err, irc.ErrBadName): // retrying won't fill it in
+		a.addLine(status, state.RoleQuit, "* "+err.Error())
+		a.openConnect("The user name can't be empty or have spaces.")
 	default:
 		return false
 	}

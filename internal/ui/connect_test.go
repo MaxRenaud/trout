@@ -189,9 +189,17 @@ func TestSojuNetworks(t *testing.T) {
 	if got := <-sent; got != "PRIVMSG BouncerServ :network status" {
 		t.Fatalf("after a network went down, sent %q", got)
 	}
-	feed(a.home, ":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :Libera (ircs://irc.libera.chat:6697) [disabled]")
+	<-sent // help help, the end marker
+	// Another client adds a network meanwhile: its line in the reply
+	// mustn't end it early or spill into a query.
+	feed(a.home, ":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :Libera (ircs://irc.libera.chat:6697) [disabled]",
+		":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :Rizon (ircs://irc.rizon.net:6697) [connected]",
+		":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :"+servListEnd)
 	if !lib.Disabled || !strings.Contains(a.winTitle(lib.Status()), "[disabled]") {
 		t.Fatalf("Libera disabled %v, title %q", lib.Disabled, a.winTitle(lib.Status()))
+	}
+	if a.home.Find(state.KQuery, "BouncerServ") != nil || len(a.serving) != 0 {
+		t.Fatalf("network status's reply: BouncerServ query opened, or %d commands still waiting", len(a.serving))
 	}
 
 	// Add a network with a SASL login: created disabled, login set, then
@@ -255,6 +263,7 @@ func TestSojuNetworks(t *testing.T) {
 	}
 	feed(a.home, "BOUNCER NETWORK 7 state=disconnected")
 	toServ() // the network status check
+	toServ() // and its end marker
 
 	// /server to a host soju has focuses it; a new one gets added.
 	a.ircCommand(a.home.Status(), "server irc.libera.chat")
@@ -318,14 +327,17 @@ func fakeSoju(t *testing.T) (*App, chan string) {
 		t.Fatalf("connecting to the fake soju: %v", up)
 	}
 	a.Update(up)
-	for _, want := range []string{"BOUNCER LISTNETWORKS", "PRIVMSG BouncerServ :network status"} {
+	for _, want := range []string{"BOUNCER LISTNETWORKS", "PRIVMSG BouncerServ :network status", "PRIVMSG BouncerServ :help help"} {
 		if got := <-sent; got != want {
 			t.Fatalf("on connecting, sent %q, want %q", got, want)
 		}
 	}
 	a.home.Nick = "max"
-	m, _ := ircmsg.ParseLine(":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :no networks yet")
-	a.Update(ircLineMsg{a.home, m})
+	for _, l := range []string{":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :no networks yet",
+		":BouncerServ!BouncerServ@BouncerServ PRIVMSG max :" + servListEnd} {
+		m, _ := ircmsg.ParseLine(l)
+		a.Update(ircLineMsg{a.home, m})
+	}
 	return a, sent
 }
 
@@ -426,10 +438,15 @@ func TestCatchUp(t *testing.T) {
 		t.Fatalf("after reading elsewhere: activity %v, marker %d", alice.Act, alice.Marker)
 	}
 
-	// A dropped connection: on reconnecting, ask for what came after.
+	// A dropped connection: on reconnecting, ask for the newest of what
+	// came after, so a long outage leaves no gap before the live lines;
+	// and a window nothing was said in yet gets what was said meanwhile.
+	quiet := n.Add(&state.Window{Kind: state.KChannel, Name: "#quiet", Joined: true})
+	a.history[quiet] = true // fetched on joining: nothing then
 	a.Update(ircDownMsg{n, errors.New("EOF")})
 	connect(a.dial(n, n.ID, networkCaps))
-	expect("CHATHISTORY AFTER alice timestamp=2026-10-27T12:05:00.000Z 500")
+	expect("CHATHISTORY LATEST alice timestamp=2026-10-27T12:05:00.000Z 500")
+	expect("CHATHISTORY LATEST #quiet * 50")
 
 	// Reading: looking at alice while focused tells soju, but not while
 	// the terminal is in the background.
@@ -466,7 +483,7 @@ func TestNetworkCertificate(t *testing.T) {
 		for {
 			select {
 			case got := <-sent:
-				if got != "PRIVMSG BouncerServ :network status" {
+				if got != "PRIVMSG BouncerServ :network status" && got != "PRIVMSG BouncerServ :help help" {
 					return got
 				}
 			case <-time.After(200 * time.Millisecond):
@@ -571,5 +588,27 @@ func TestServLost(t *testing.T) {
 	a.Update(ircLineMsg{a.home, m})
 	if q := a.home.Find(state.KQuery, "BouncerServ"); q == nil || !strings.Contains(strings.Join(lineTexts(q), "\n"), "hello again") {
 		t.Error("BouncerServ's next message was swallowed as an old command's reply")
+	}
+}
+
+// TestSwitchForgets: switching bouncers starts the new one afresh: the
+// certificate the last one refused is tried again, and having no networks
+// gets said again.
+func TestSwitchForgets(t *testing.T) {
+	a := New(Options{Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max", Login: "certificate"}})
+	a.certFailed, a.toldNoNetworks = true, true
+	a.switchBouncer(config.Bouncer{Address: "irc+insecure://127.0.0.1:2", User: "max", Login: "certificate"}, "")
+	if a.certFailed || a.toldNoNetworks {
+		t.Fatalf("after switching: certFailed %v, toldNoNetworks %v", a.certFailed, a.toldNoNetworks)
+	}
+}
+
+// TestNoUserName: a bouncer with no user name stops and asks for one,
+// instead of retrying a registration that can't be sent.
+func TestNoUserName(t *testing.T) {
+	a := New(Options{Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1"}})
+	a.Update(ircDownMsg{a.home, fmt.Errorf("registering with x: the user name \"\": %w", irc.ErrBadName)})
+	if _, ok := a.dlg.(*formBox); !ok || !a.stopped {
+		t.Fatalf("no user name: dialog %T, stopped %v", a.dlg, a.stopped)
 	}
 }

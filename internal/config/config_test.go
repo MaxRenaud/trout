@@ -118,3 +118,25 @@ func TestWriteFileSymlink(t *testing.T) {
 		}
 	}
 }
+
+// client.pem that can't be read just now is an error, not a reason to
+// replace the key the bouncer knows this computer by.
+func TestClientCertUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("needs file permissions that stop a read")
+	}
+	c := &Config{Path: filepath.Join(t.TempDir(), "config.toml")}
+	if _, err := c.ClientCert(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(filepath.Dir(c.Path), "client.pem")
+	before, _ := os.ReadFile(path)
+	os.Chmod(path, 0)
+	if _, err := c.ClientCert(); err == nil {
+		t.Error("an unreadable client.pem gave a certificate")
+	}
+	os.Chmod(path, 0o600)
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatal("an unreadable client.pem was replaced")
+	}
+}

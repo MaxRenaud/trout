@@ -34,8 +34,20 @@ func (a *App) catchUp(n *state.Network, c *irc.Conn) {
 		return
 	}
 	for _, w := range n.Wins {
-		if w.Kind != state.KStatus && !w.Latest.IsZero() {
-			c.Send("CHATHISTORY", "AFTER", w.Name, ircTime(w.Latest), "500")
+		switch {
+		case w.Kind != state.KChannel && w.Kind != state.KQuery:
+		case w.Latest.IsZero():
+			// Nothing said yet: whatever was, while the connection was
+			// down, is all there is.
+			a.history[w] = true
+			c.Send("CHATHISTORY", "LATEST", w.Name, "*", "50")
+		default:
+			// LATEST with a bound is the newest 500 since w.Latest (soju's
+			// LoadBeforeTime(now, bound)), so a long outage loses its
+			// oldest lines, not the ones right before the live ones as
+			// AFTER would. A window keeps 500 by default anyway, and soju
+		// refuses more than 1000.
+			c.Send("CHATHISTORY", "LATEST", w.Name, ircTime(w.Latest), "500")
 		}
 	}
 	if c.Caps["draft/read-marker"] {

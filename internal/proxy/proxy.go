@@ -83,6 +83,10 @@ func (d *Dialer) excepted(addr string) bool {
 
 // socks4 is SOCKS4, or SOCKS4a for a host name: the proxy looks it up.
 func (d *Dialer) socks4(c net.Conn, host string, port uint16) error {
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		// SOCKS4a would send it as a name to look up, which it isn't.
+		return fmt.Errorf("SOCKS4 can't reach an IPv6 address (%s); use SOCKS5", host)
+	}
 	req := []byte{4, 1, byte(port >> 8), byte(port)}
 	ip := net.ParseIP(host).To4()
 	if ip == nil {
@@ -206,7 +210,7 @@ func (d *Dialer) connect(c net.Conn, addr string) error {
 		return err
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode/100 != 2 { // any 2xx is the tunnel (RFC 9110 9.3.6)
 		return fmt.Errorf("HTTP proxy: %s", resp.Status)
 	}
 	return nil

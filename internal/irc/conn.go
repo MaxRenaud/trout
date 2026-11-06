@@ -76,6 +76,7 @@ type Conn struct {
 	lastRead time.Time
 	pings    int
 	partial  string // a line cut off by a read deadline
+	skipping bool   // inside a line too long to read, dropping it
 }
 
 // LocalAddr and RemoteAddr are the connection's two ends: this computer's
@@ -109,7 +110,7 @@ func Dial(ctx context.Context, cfg Config) (*Conn, error) {
 		}
 		nc = tc
 	}
-	c := &Conn{cfg: cfg, nc: nc, r: bufio.NewReader(nc), Caps: map[string]bool{}, Nick: cfg.Nick}
+	c := &Conn{cfg: cfg, nc: nc, r: bufio.NewReaderSize(nc, maxLine), Caps: map[string]bool{}, Nick: cfg.Nick}
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(30 * time.Second)
@@ -124,11 +125,25 @@ func Dial(ctx context.Context, cfg Config) (*Conn, error) {
 	return c, nil
 }
 
+// ErrBadName is a nick or user name IRC can't carry: empty, or with a
+// space in it.
+var ErrBadName = errors.New("not a name IRC can send")
+
 func (c *Conn) register() error {
-	c.Send("CAP", "LS", "302")
-	c.Send("NICK", c.cfg.Nick)
-	c.Send("USER", c.cfg.User, "0", "*", "trout")
+	// A name that can't go in a middle parameter would never be sent, and
+	// the server would wait for it until the deadline.
+	for _, f := range []struct{ what, v string }{{"nick", c.cfg.Nick}, {"user name", c.cfg.User}} {
+		if f.v == "" || strings.ContainsAny(f.v, " \r\n\x00") || f.v[0] == ':' {
+			return fmt.Errorf("the %s %q: %w", f.what, f.v, ErrBadName)
+		}
+	}
+	for _, l := range [][]string{{"CAP", "LS", "302"}, {"NICK", c.cfg.Nick}, {"USER", c.cfg.User, "0", "*", "trout"}} {
+		if err := c.Send(l[0], l[1:]...); err != nil {
+			return err
+		}
+	}
 	var offered []string
+	waiting := 0 // CAP REQs not answered yet
 	mechs := map[string]bool{} // sasl=PLAIN,EXTERNAL; no list means any
 	for {
 		m, err := c.read()
@@ -177,17 +192,35 @@ func (c *Conn) register() error {
 					c.endCaps()
 				} else {
 					c.Send("CAP", "REQ", strings.Join(req, " "))
+					waiting = 1
 				}
+				continue
 			case "ACK":
 				for _, cp := range list {
 					c.Caps[cp] = true
 				}
-				if c.Caps["sasl"] && c.Mech != "" {
-					c.Send("AUTHENTICATE", c.Mech)
-				} else {
-					c.endCaps()
-				}
 			case "NAK":
+				// A NAK refuses the whole request, not saying which cap
+				// it minded: ask for them one at a time, rather than go
+				// on with none (SASL included).
+				if len(list) > 1 {
+					for _, cp := range list {
+						c.Send("CAP", "REQ", cp)
+					}
+					waiting += len(list)
+				}
+			default:
+				continue
+			}
+			if waiting == 0 {
+				continue // not an answer to ours
+			}
+			if waiting--; waiting > 0 {
+				continue // more answers to come
+			}
+			if c.Caps["sasl"] && c.Mech != "" {
+				c.Send("AUTHENTICATE", c.Mech)
+			} else {
 				c.endCaps()
 			}
 		case "AUTHENTICATE":
@@ -196,7 +229,9 @@ func (c *Conn) register() error {
 				break
 			}
 			creds := "\x00" + c.cfg.User + "\x00" + c.cfg.Password
-			c.Send("AUTHENTICATE", base64.StdEncoding.EncodeToString([]byte(creds)))
+			for _, chunk := range saslChunks(base64.StdEncoding.EncodeToString([]byte(creds))) {
+				c.Send("AUTHENTICATE", chunk)
+			}
 		case "903": // RPL_SASLSUCCESS
 			c.endCaps()
 		case "902", "904", "905", "906":
@@ -204,6 +239,8 @@ func (c *Conn) register() error {
 		case "433": // nick in use
 			c.Nick += "_"
 			c.Send("NICK", c.Nick)
+		case "432": // erroneous nick: another underscore won't fix it
+			return fmt.Errorf("the server refused the nick %q: %s", c.Nick, last(m.Params))
 		case "ERROR", "FAIL":
 			return errors.New(strings.Join(m.Params, " "))
 		case "001":
@@ -214,6 +251,18 @@ func (c *Conn) register() error {
 			c.early = append(c.early, m)
 		}
 	}
+}
+
+// saslChunks splits an AUTHENTICATE payload into the 400-byte pieces
+// IRCv3 SASL allows, with a "+" after one that's exactly a multiple of
+// 400 (or empty) to say it's over.
+func saslChunks(payload string) []string {
+	var out []string
+	for len(payload) >= 400 {
+		out = append(out, payload[:400])
+		payload = payload[400:]
+	}
+	return append(out, cmp.Or(payload, "+"))
 }
 
 func (c *Conn) endCaps() {
@@ -296,12 +345,28 @@ func (c *Conn) Run(handle func(ircmsg.Message)) error {
 	}
 }
 
+// maxLine is the longest line read: IRCv3's 8191 bytes of tags and 512 of
+// message, doubled. Anything longer is no IRC server's.
+const maxLine = 2 * (8191 + 512)
+
 func (c *Conn) read() (ircmsg.Message, error) {
 	for {
-		line, err := c.r.ReadString('\n')
+		chunk, err := c.r.ReadSlice('\n')
 		c.live.Lock()
-		line, c.partial = c.partial+line, ""
-		if err != nil {
+		line := c.partial + string(chunk)
+		c.partial = ""
+		long := c.skipping || len(line) > maxLine || errors.Is(err, bufio.ErrBufferFull)
+		switch {
+		case long:
+			// Dropped, up to its newline, rather than read into memory
+			// without end from a broken server.
+			c.skipping = err != nil
+			if errors.Is(err, bufio.ErrBufferFull) {
+				err = nil
+			}
+			line = ""
+			long = !c.skipping // its end: say so once
+		case err != nil:
 			c.partial = line // a deadline can cut a line short; keep its start
 		}
 		c.live.Unlock()
@@ -310,6 +375,9 @@ func (c *Conn) read() (ircmsg.Message, error) {
 		}
 		line = strings.TrimRight(line, "\r\n")
 		if line == "" {
+			if long && c.cfg.Debug != nil {
+				c.cfg.Debug("<-", fmt.Sprintf("(a line longer than %d bytes, dropped)", maxLine))
+			}
 			continue
 		}
 		if c.cfg.Debug != nil {
@@ -386,17 +454,23 @@ func last(params []string) string {
 }
 
 // ISupport parses an RPL_ISUPPORT message's tokens, without the leading
-// nick and trailing "are supported" text.
-func ISupport(m ircmsg.Message) map[string]string {
-	out := map[string]string{}
+// nick and trailing "are supported" text: the ones it sets, and the ones
+// it takes back ("-TOKEN", for a server that no longer has it).
+func ISupport(m ircmsg.Message) (set map[string]string, unset []string) {
+	set = map[string]string{}
 	if len(m.Params) < 3 {
-		return out
+		return set, nil
 	}
 	for _, tok := range m.Params[1 : len(m.Params)-1] {
+		if k, ok := strings.CutPrefix(tok, "-"); ok {
+			unset = append(unset, k)
+			delete(set, k)
+			continue
+		}
 		k, v, _ := strings.Cut(tok, "=")
-		out[k] = v
+		set[k] = v
 	}
-	return out
+	return set, unset
 }
 
 // ParsePrefix splits an ISUPPORT PREFIX value like "(ov)@+" into its modes

@@ -151,6 +151,63 @@ func TestMsgNoQuery(t *testing.T) {
 	}
 }
 
+// TestNickQueries: a query follows a nick change, matched by the network's
+// CASEMAPPING, but never onto a query already open with the new nick.
+func TestNickQueries(t *testing.T) {
+	a, n, _, feed := optionsApp(t)
+	bob := a.openQuery(n, "bob[1]")
+	carol := a.openQuery(n, "carol")
+	feed(":bob{1}!b@h NICK bobby") // rfc1459: {} are []'s lowercase
+	if bob.Name != "bobby" {
+		t.Fatalf("bob[1]'s query is %q after bob{1} became bobby", bob.Name)
+	}
+	feed(":bobby!b@h NICK carol")
+	queries := 0
+	for _, w := range n.Wins {
+		if w.Kind == state.KQuery && n.Same(w.Name, "carol") {
+			queries++
+		}
+	}
+	if queries != 1 || lastLine(carol) != "* bobby is now known as carol" || lastLine(bob) != "* bobby is now known as carol" {
+		t.Fatalf("%d carol queries; carol's says %q, bobby's %q", queries, lastLine(carol), lastLine(bob))
+	}
+	feed(":CAROL!c@h QUIT :bye")
+	if lastLine(carol) != "* Quits: CAROL (c@h) (bye)" {
+		t.Fatalf("carol's query: %q", lastLine(carol))
+	}
+}
+
+// TestJoinList: /join a,#b[1] joins #a and #b[1], and each comes to the
+// front when its JOIN does, matched by CASEMAPPING.
+func TestJoinList(t *testing.T) {
+	a, n, sent, feed := optionsApp(t)
+	a.ircCommand(n.Status(), "join a,#b[1]")
+	expectSent(t, sent, "JOIN #a,#b[1]")
+	feed(":max!m@h JOIN #A")
+	if a.active.Name != "#A" {
+		t.Fatalf("active is %q after joining #A", a.active.Name)
+	}
+	feed(":max!m@h JOIN #B{1}")
+	if a.active.Name != "#B{1}" || len(a.joining) != 0 {
+		t.Fatalf("active is %q after joining #B{1}; still joining %v", a.active.Name, a.joining)
+	}
+}
+
+// TestISupportChanges: CHANTYPES decides what's a channel, and a -TOKEN
+// takes a feature back.
+func TestISupportChanges(t *testing.T) {
+	a, n, _ := realApp(t)
+	feed := func(l string) { m, _ := ircmsg.ParseLine(l); a.handleIRC(n, m) }
+	feed(":srv 005 max CHANTYPES=# MONITOR=100 :are supported by this server")
+	if n.IsChannel("&local") || !n.IsChannel("#go") || !n.Monitor {
+		t.Fatalf("CHANTYPES=#: &local a channel %v, #go %v; monitor %v", n.IsChannel("&local"), n.IsChannel("#go"), n.Monitor)
+	}
+	feed(":srv 005 max -CHANTYPES -MONITOR :are supported by this server")
+	if !n.IsChannel("&local") || n.Monitor || a.isupport[n]["MONITOR"] != "" {
+		t.Fatalf("after -CHANTYPES -MONITOR: &local a channel %v, monitor %v", n.IsChannel("&local"), n.Monitor)
+	}
+}
+
 // TestNoNetworksYet: a bouncer with no networks (a new one, This Computer
 // the first time) says how to add one and opens Select Server, once.
 func TestNoNetworksYet(t *testing.T) {

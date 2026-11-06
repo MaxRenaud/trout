@@ -470,7 +470,7 @@ func (a *App) join(n *state.Network, ch string) {
 		a.joinChannel(n, ch)
 		return
 	}
-	a.joining[strings.ToLower(ch)] = true
+	a.joining[n.Fold(ch)] = true
 	a.sendNet(n, "JOIN", ch)
 }
 
