@@ -258,6 +258,19 @@ func TestClimbs(t *testing.T) {
 	}
 }
 
+// TestScriptFileRooted: \foo is the root, on Windows the root of the
+// scripts folder's drive, as mIRC has it, not a file in the folder.
+func TestScriptFileRooted(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Config: &config.Config{Path: filepath.Join(dir, "config.toml")}})
+	want := filepath.VolumeName(dir) + string(filepath.Separator) + filepath.Join("foo", "bar.txt")
+	for _, name := range []string{`\foo\bar.txt`, "/foo/bar.txt"} {
+		if got, ok := a.scriptFile(name); !ok || got != want {
+			t.Errorf("scriptFile(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 // TestScriptsFolder runs scripts from a real config: loaded at startup
 // from the scripts folder, with on START, vars.ini and users.ini written
 // there, a file a script writes outside it (mIRC lets it), and folders,

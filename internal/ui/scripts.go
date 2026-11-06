@@ -54,7 +54,7 @@ func (a *App) scriptsDir() string {
 }
 
 // scriptFile is where a script's file is, like mIRC's: a full path is
-// itself, anywhere; any other name is in the scripts folder ($mircdir),
+// itself, anywhere (\foo is the drive's root); any other name is in the scripts folder ($mircdir),
 // and a leading .. goes above it. mIRC's backslashes work too.
 //
 // Unlike mIRC, a .. after a folder's name (logs\#x\..\..) isn't a file:
@@ -73,6 +73,11 @@ func (a *App) scriptFile(name string) (string, bool) {
 		return "", false
 	case filepath.IsAbs(name):
 		return name, true
+	case os.IsPathSeparator(name[0]):
+		// \foo on Windows: the root of the drive, like mIRC's (Windows'
+		// own meaning), which is the scripts folder's drive. Elsewhere
+		// it's IsAbs already.
+		return filepath.VolumeName(a.scriptsDir()) + name, true
 	}
 	return filepath.Join(a.scriptsDir(), name), true
 }
