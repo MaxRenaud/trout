@@ -43,6 +43,18 @@ func TestParseDCCSend(t *testing.T) {
 	}
 }
 
+func TestLocalAddr(t *testing.T) {
+	for ip, want := range map[string]bool{
+		"127.0.0.1": true, "192.168.1.1": true, "10.1.2.3": true, "169.254.1.1": true, "::1": true, "fd7a:115c:a1e0::1": true,
+		"100.64.0.1": true, "100.100.100.100": true, "100.127.255.255": true, // CGNAT, Tailscale's
+		"100.63.255.255": false, "100.128.0.0": false, "8.8.8.8": false, "2001:4860:4860::8888": false,
+	} {
+		if got := localAddr(net.ParseIP(ip)); got != want {
+			t.Errorf("localAddr(%s) = %v", ip, got)
+		}
+	}
+}
+
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 func TestSafeName(t *testing.T) {

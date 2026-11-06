@@ -225,10 +225,13 @@ func parseDCCSend(s string) (file string, ip net.IP, port string, size int64, er
 
 // localAddr reports whether an offer points at this computer or the
 // local network, which a stranger could use to make trout connect to
-// things there.
+// things there. That includes carrier-grade NAT's 100.64.0.0/10, which
+// Tailscale uses for your own computers.
 func localAddr(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || cgnat.Contains(ip)
 }
+
+var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
 // dccPrivacyBox explains, once, what accepting a DCC file means.
 func (a *App) dccPrivacyBox(tr *transfer, ip net.IP) *msgBox {
