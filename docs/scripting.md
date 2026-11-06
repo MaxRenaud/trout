@@ -90,6 +90,7 @@ aren't there: the terminal has those.
 |---|---|
 | `/load -rs file` | loads a script (`-rs` or nothing) |
 | `/load -a file` | loads a file of aliases |
+| `/alias [file] name [commands]` | adds or replaces a one-line alias in an aliases file (`aliases.ini`, or `file` if it's loaded), or removes it with no commands |
 | `/load -ps` `-pc` `-pq` `-pn` `-pm file` | loads popup items for status, channel, query, nicklist or the menubar |
 | `/load -rv file`, `/load -ru file` | adds mIRC's variables or Users file to trout's |
 | `/unload -rs file`, `/reload -rs file` | unloads, or loads again without `on LOAD`/`on START` |
@@ -233,6 +234,8 @@ trout's own commands, and anything trout doesn't know goes to the server.
 
 - A handler that runs too long (100,000 steps) is stopped with an error, where mIRC
   freezes.
+- `/alias` writes its aliases file straight away; mIRC keeps the change until `/saveini`
+  or it closes.
 - A line, a variable's value or what an identifier returns can be up to 64 KB, where
   mIRC's limit is about 10,000 characters; past it, the script stops with mIRC's "Line
   too long" error, so a loop doubling a variable can't take all the memory.

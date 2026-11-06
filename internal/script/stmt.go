@@ -57,6 +57,11 @@ type token struct {
 func tokens(lines []srcLine) []token {
 	var out []token
 	labels := 0 // words ending in :{ still to be matched
+	// A { after a command's first word (not if, elseif, else or while) is
+	// no block: mIRC drops it and its }, and what's between is the
+	// command's text, | still splitting it: noop hi { set %z 1 } sets
+	// nothing, and alias u { set %b 2 } makes u "set 2" (both checked).
+	dropped := 0
 	for _, l := range lines {
 		var cmd []string
 		flush := func() {
@@ -70,6 +75,10 @@ func tokens(lines []srcLine) []token {
 			case "|":
 				flush()
 			case "}":
+				if dropped > 0 {
+					dropped--
+					continue
+				}
 				flush()
 				if labels > 0 {
 					labels--
@@ -77,6 +86,10 @@ func tokens(lines []srcLine) []token {
 				}
 				out = append(out, token{l.n, w})
 			case "{":
+				if len(cmd) > 0 && !opensBlock(cmd[0]) {
+					dropped++
+					continue
+				}
 				flush()
 				out = append(out, token{l.n, w})
 			default:
@@ -89,6 +102,16 @@ func tokens(lines []srcLine) []token {
 		flush()
 	}
 	return out
+}
+
+// opensBlock reports whether a command starting with word takes a { }
+// block after it.
+func opensBlock(word string) bool {
+	switch strings.ToLower(strings.TrimLeft(word, "/")) {
+	case "if", "elseif", "else", "while":
+		return true
+	}
+	return false
 }
 
 // stmts parses a body into statements, adding Problems for unbalanced

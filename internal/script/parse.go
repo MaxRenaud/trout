@@ -14,6 +14,7 @@ type file struct {
 	groups  []group
 	popups  []*popup
 	title   string // a popups.ini's menubar title, its [bpopup]'s first line
+	src     string // as loaded, for /alias to change
 }
 
 type alias struct {
@@ -22,6 +23,7 @@ type alias struct {
 	file  *file
 	body  []stmt
 	src   string // its commands as written, for the input boxes they ask for
+	def   string // $isalias().alias: its definition's first line
 }
 
 // event is an on or ctcp definition.
@@ -319,7 +321,13 @@ func (p *parser) aliasDef(l srcLine, rest string) {
 		p.problem(l.n, false, "alias "+name+" is defined twice; the first one is used")
 		return
 	}
-	p.f.aliases[key] = &alias{name: name, local: local, file: p.f, body: body, src: srcText(lines)}
+	// $isalias().alias is the first line from the name on, in a remote
+	// script, and only the commands in an aliases file (both checked).
+	def := strings.Join(w, " ")
+	if p.f.kind == "aliases" {
+		def = strings.Join(w[1:], " ")
+	}
+	p.f.aliases[key] = &alias{name: name, local: local, file: p.f, body: body, src: srcText(lines), def: def}
 }
 
 func (p *parser) onDef(l srcLine, rest string) {

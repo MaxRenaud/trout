@@ -1305,3 +1305,33 @@ on *:SOCKCLOSE:big:echo -s closed`), 0o600)
 		t.Fatal("the socket was closed")
 	}
 }
+
+// TestAliasCommandFile: a script's /alias writes aliases.ini in the
+// scripts folder and loads it from then on, so the alias is there after a
+// restart; a second one goes in the same file.
+func TestAliasCommandFile(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "scripts"), 0o700)
+	os.WriteFile(filepath.Join(dir, "scripts", "mk.mrc"), []byte("alias mk {\n  alias hi echo -a hi $!me\n  alias /bye echo -a bye\n}"), 0o600)
+	cfg := &config.Config{Path: filepath.Join(dir, "config.toml"), Scripts: []string{"mk.mrc"}}
+	start := func() *App {
+		a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max"}})
+		a.send = func(tea.Msg) {}
+		a.startScripts()
+		return a
+	}
+	a := start()
+	actions, _ := a.scripts.Command(a.home.Name, "", "mk", false, a.scriptHost())
+	a.runScript(actions)
+	got, _ := os.ReadFile(filepath.Join(dir, "scripts", "aliases.ini"))
+	if want := "[aliases]\r\nn0=hi echo -a hi $me\r\nn1=bye echo -a bye\r\n"; string(got) != want {
+		t.Errorf("aliases.ini = %q, want %q", got, want)
+	}
+	if !slices.Contains(a.book().Scripts, "-a aliases.ini") {
+		t.Errorf("scripts %q\n%s", a.book().Scripts, dump(a.home.Status()))
+	}
+	a = start()
+	if got := evalScript(a, "$isalias(hi) $isalias(bye).alias"); got != "$true echo -a bye" {
+		t.Errorf("after a restart: %q", got)
+	}
+}

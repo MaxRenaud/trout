@@ -524,8 +524,8 @@ func TestParseProblems(t *testing.T) {
 
 // TestUnmatchedBrace: a file with a { that's never closed loads, and
 // the block runs to the end of the file, swallowing what follows, like
-// mIRC's (checked; there the line in it is /alias u, which defines u
-// when t runs, but trout has no /alias command).
+// mIRC's (checked: the line in it is /alias u, which defines u when t
+// runs).
 func TestUnmatchedBrace(t *testing.T) {
 	e := New(Options{})
 	ps := e.Load("t.mrc", "alias t {\n  set %a 1\nalias u { set %b 2 }\n  set %c 3\n")
@@ -536,8 +536,8 @@ func TestUnmatchedBrace(t *testing.T) {
 		t.Error("alias u was defined: it's inside t's block")
 	}
 	e.Alias("TestNet", "", "t", "", evalHost())
-	if got := evalIn(t, e, "%a %c"); got != "1 3" {
-		t.Errorf("after /t: %q", got)
+	if got := evalIn(t, e, "%a %c $isalias(u)"); got != "1 3 $true" {
+		t.Errorf("after /t: %q, want 1 3 $true (the line in it is /alias u)", got)
 	}
 }
 

@@ -259,6 +259,7 @@ func (e *Engine) Load(name, src string) []Problem { return e.LoadAs(name, src, "
 // all five popups.
 func (e *Engine) LoadAs(name, src, as string) []Problem {
 	f, problems := parseFileAs(name, src, as)
+	f.src = src
 	problems = append(problems, e.check(f)...)
 	slices.SortStableFunc(problems, func(a, b Problem) int { return a.Line - b.Line })
 	if slices.ContainsFunc(problems, func(p Problem) bool { return p.Fatal }) {

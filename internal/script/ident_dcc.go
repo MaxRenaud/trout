@@ -159,7 +159,7 @@ func isaliasIdent(r *run, fr *frame, c *call) (string, error) {
 	case "fname":
 		return a.file.name, nil
 	case "alias":
-		return a.name + " " + a.src, nil
+		return a.def, nil
 	case "ftype":
 		if a.file.kind == "aliases" {
 			return "alias", nil
