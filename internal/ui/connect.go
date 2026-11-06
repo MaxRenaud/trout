@@ -95,6 +95,9 @@ func (a *App) stopOn(err error) bool {
 	case errors.Is(err, irc.ErrLogin):
 		a.addLine(status, state.RoleQuit, "* "+err.Error())
 		a.openConnect("Login failed. Check the user name and password.")
+	case errors.Is(err, irc.ErrBadName): // retrying won't fill it in
+		a.addLine(status, state.RoleQuit, "* "+err.Error())
+		a.openConnect("The user name can't be empty or have spaces.")
 	default:
 		return false
 	}

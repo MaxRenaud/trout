@@ -602,3 +602,13 @@ func TestSwitchForgets(t *testing.T) {
 		t.Fatalf("after switching: certFailed %v, toldNoNetworks %v", a.certFailed, a.toldNoNetworks)
 	}
 }
+
+// TestNoUserName: a bouncer with no user name stops and asks for one,
+// instead of retrying a registration that can't be sent.
+func TestNoUserName(t *testing.T) {
+	a := New(Options{Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1"}})
+	a.Update(ircDownMsg{a.home, fmt.Errorf("registering with x: the user name \"\": %w", irc.ErrBadName)})
+	if _, ok := a.dlg.(*formBox); !ok || !a.stopped {
+		t.Fatalf("no user name: dialog %T, stopped %v", a.dlg, a.stopped)
+	}
+}
