@@ -6,7 +6,6 @@ import (
 	"github.com/MaxRenaud/trout/internal/state"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 // selection is text being drag-selected in the message pane. Rows index
@@ -96,11 +95,17 @@ func (a *App) selectedText() string {
 		}
 		started = true
 		col := r.indent
+		var cc clusterCells
+		in := false // whether the cluster being read is selected
 		for _, sr := range r.runes {
-			if col >= from && col < to {
+			// A combining mark or skin tone goes with the cell it's drawn in.
+			if !cc.joins(sr.R) {
+				in = col >= from && col < to
+			}
+			if in {
 				cur = append(cur, sr.R)
 			}
-			col += runewidth.RuneWidth(sr.R)
+			col += cc.add(sr.R)
 		}
 	}
 	if started {

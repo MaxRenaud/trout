@@ -3,8 +3,6 @@ package ui
 import (
 	"hash/fnv"
 	"strings"
-
-	"github.com/mattn/go-runewidth"
 )
 
 // SRune is a rune with its resolved style, and the URL it's part of.
@@ -194,9 +192,12 @@ func wrap(line []SRune, w, indent int) [][]SRune {
 	avail := w
 	for start := 0; start < len(line); {
 		width, end, brk := 0, start, -1
+		var cc clusterCells
 		for end < len(line) {
-			rw := runewidth.RuneWidth(line[end].R)
-			if width+rw > avail {
+			// A rune that joins the cluster before it stays with it.
+			joins := end > start && cc.joins(line[end].R)
+			rw := cc.add(line[end].R)
+			if width+rw > avail && !joins {
 				break
 			}
 			width += rw

@@ -491,11 +491,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.KeyMsg:
-		if k, ok := a.joinSurrogates(msg); ok {
+		if k, ok := a.joinSurrogates(msg); ok && !a.inputOff() {
 			cmd = a.key(k)
 		}
 	case tea.MouseMsg:
-		cmd = a.mouse(msg)
+		if !a.inputOff() {
+			cmd = a.mouse(msg)
+		}
 	}
 	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds(), a.activeChanged())
 	a.keepAsking()
@@ -859,8 +861,11 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft {
+		// Under a dialog, a menu or the color palette, a thumb that isn't
+		// theirs is covered: their blank parts have no regions of their own.
 		r, ok := a.hit(m.X, m.Y)
-		if ok && r.S == "thumb" && (r.Kind == HitMsgScroll || r.Kind == HitNickScroll || r.Kind == HitDlg ||
+		covered := len(a.menus) > 0 || a.pal != nil || a.dlg != nil && r.Kind != HitDlg
+		if ok && !covered && r.S == "thumb" && (r.Kind == HitMsgScroll || r.Kind == HitNickScroll || r.Kind == HitDlg ||
 			r.Kind == HitCustomScroll || r.Kind == HitSideScroll) {
 			a.drag, a.thumbKind, a.thumbGrab = dragThumb, r.Kind, m.Y-r.Y
 			return nil
@@ -877,6 +882,10 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			if m.X != a.downX || m.Y != a.downY {
 				return a.menuRelease(m.X, m.Y)
 			}
+		case m.Button == tea.MouseButtonWheelUp:
+			a.menuWheel(m.X, m.Y, -3)
+		case m.Button == tea.MouseButtonWheelDown:
+			a.menuWheel(m.X, m.Y, 3)
 		case m.Button == tea.MouseButtonLeft || m.Button == tea.MouseButtonRight:
 			return a.menuClick(m.X, m.Y)
 		}

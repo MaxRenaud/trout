@@ -249,7 +249,12 @@ func kitty(e Env) Terminal {
 	t := Terminal{Name: "kitty", Fix: FixConfigLine, Config: filepath.Join(dir, "kitty.conf"),
 		Line: "macos_option_as_alt left", After: "Quit and reopen kitty, which reads this setting when it starts."}
 	if v, ok := setting(t.Config, "macos_option_as_alt"); ok {
-		t.OK = v != "no"
+		// kitty takes left, right, both, or a yes/no word; anything
+		// else, like no, n, false or none, is off.
+		switch strings.ToLower(v) {
+		case "left", "right", "both", "y", "yes", "true":
+			t.OK = true
+		}
 	}
 	return t
 }

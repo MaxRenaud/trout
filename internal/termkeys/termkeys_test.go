@@ -87,6 +87,14 @@ func TestConfigLine(t *testing.T) {
 	if !Detect(k).OK {
 		t.Fatal("kitty with both")
 	}
+	// kitty reads these as on and off, like its own config parser.
+	for v, on := range map[string]bool{"left": true, "right": true, "yes": true, "y": true, "True": true,
+		"no": false, "n": false, "false": false, "none": false} {
+		os.WriteFile(term.Config, []byte("macos_option_as_alt "+v+"\n"), 0o644)
+		if Detect(k).OK != on {
+			t.Errorf("kitty with %s: OK is %v", v, !on)
+		}
+	}
 }
 
 func TestManual(t *testing.T) {

@@ -1,7 +1,9 @@
 package ui
 
 import (
-	"strings"
+	"slices"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
@@ -103,16 +105,26 @@ func (f *formBox) labelW() int {
 	return w
 }
 
+// note is the note's rows in a box w wide, capitalized, and at least one
+// row: it's kept for the note even when there isn't one yet.
+func (f *formBox) note(w int) []string {
+	if f.Note == "" {
+		return []string{""}
+	}
+	return wrapText([]string{capitalize(f.Note)}, w-6)
+}
+
 func (f *formBox) size(a *App) (int, int) {
-	w := max(f.labelW()+1+formFieldW+6, runewidth.StringWidth(f.Note)+6,
-		buttonsWidth(f.Buttons)+4, runewidth.StringWidth(f.Title)+8)
-	for _, l := range f.Lines {
+	// The text wraps to fit the screen; the fields don't.
+	lines, note := wrapText(f.Lines, a.w-6), f.note(a.w)
+	w := max(f.labelW()+1+formFieldW+6, buttonsWidth(f.Buttons)+4, runewidth.StringWidth(f.Title)+8)
+	for _, l := range slices.Concat(lines, note) {
 		w = max(w, runewidth.StringWidth(l)+6)
 	}
 	// The fields, then a blank row and the note.
-	content := f.step()*len(f.Fields) - (f.step() - 1) + 2
-	if len(f.Lines) > 0 {
-		content += len(f.Lines) + 1
+	content := f.step()*len(f.Fields) - (f.step() - 1) + 1 + len(note)
+	if len(lines) > 0 {
+		content += len(lines) + 1
 	}
 	return w, content + 6
 }
@@ -121,11 +133,12 @@ func (f *formBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	t := a.theme()
 	face := Style{FG: t.FaceText, BG: t.Face}
 	tx, tw, row := x+3, w-6, y+2
-	for _, l := range f.Lines {
+	lines := wrapText(f.Lines, tw)
+	for _, l := range lines {
 		c.Text(tx, row, tw, l, face)
 		row++
 	}
-	if len(f.Lines) > 0 {
+	if len(lines) > 0 {
 		row++
 	}
 	lw := f.labelW()
@@ -174,13 +187,19 @@ func (f *formBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		a.addRegion(Region{X: bx, Y: row, W: bw, H: 1, Kind: HitDlg, S: "field", I: i})
 		row += f.step()
 	}
-	if f.Note != "" {
-		note := strings.ToUpper(f.Note[:1]) + f.Note[1:]
-		c.Text(tx, y+h-5, tw, note, Style{FG: t.Warn, BG: t.Face, Bold: true})
+	note := f.note(w)
+	for i, l := range note {
+		c.Text(tx, y+h-4-len(note)+i, tw, l, Style{FG: t.Warn, BG: t.Face, Bold: true})
 	}
 	// While typing in a field, Enter presses the first button, so it's
 	// drawn as the default.
 	a.dlgButtons(c, x, y+h-3, w, f.Buttons, max(0, f.focus-len(f.Fields)))
+}
+
+// capitalize uppercases s's first letter, which may be more than a byte.
+func capitalize(s string) string {
+	r, n := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[n:]
 }
 
 // press pushes button i: the last one cancels, any other submits.
