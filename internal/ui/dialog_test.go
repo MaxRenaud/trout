@@ -2,9 +2,22 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
+
+// TestFormNoteCapitalized: a note starting with a letter of more than one
+// byte is capitalized whole, not cut in half.
+func TestFormNoteCapitalized(t *testing.T) {
+	a := New(Options{})
+	a.w, a.h = 110, 30
+	f := &formBox{Title: "Test", Fields: []*formField{newField("Name:", "", false)},
+		Buttons: []string{"OK", "Cancel"}, Note: "échec: «nope»"}
+	if got := dialogText(a, f); !strings.Contains(got, "Échec: «nope»") {
+		t.Errorf("the note shows as:\n%s", got)
+	}
+}
 
 // TestListBoxSizeCached: a list of 50,000 channels is measured once, not
 // on every frame, and measured again when its rows change.

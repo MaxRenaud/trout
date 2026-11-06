@@ -1,7 +1,8 @@
 package ui
 
 import (
-	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
@@ -175,12 +176,18 @@ func (f *formBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		row += f.step()
 	}
 	if f.Note != "" {
-		note := strings.ToUpper(f.Note[:1]) + f.Note[1:]
+		note := capitalize(f.Note)
 		c.Text(tx, y+h-5, tw, note, Style{FG: t.Warn, BG: t.Face, Bold: true})
 	}
 	// While typing in a field, Enter presses the first button, so it's
 	// drawn as the default.
 	a.dlgButtons(c, x, y+h-3, w, f.Buttons, max(0, f.focus-len(f.Fields)))
+}
+
+// capitalize uppercases s's first letter, which may be more than a byte.
+func capitalize(s string) string {
+	r, n := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[n:]
 }
 
 // press pushes button i: the last one cancels, any other submits.
