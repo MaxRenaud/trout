@@ -395,6 +395,40 @@ func TestDCCOfferSafety(t *testing.T) {
 	}
 }
 
+// TestDCCSameName: two downloads at once of files with the same name go
+// to different files, also when the name is taken on disk, and one that
+// has ended doesn't hold its name.
+func TestDCCSameName(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn = false
+	a.downloadDir = t.TempDir()
+	a.messaged[n.ID+" bot"], a.messaged[n.ID+" bot2"] = time.Now(), time.Now()
+	offer := func(from, name string) *transfer {
+		t.Helper()
+		before := len(a.transfers)
+		feed(":" + from + "!b@h PRIVMSG max :\x01DCC SEND " + name + " 134744072 6800 1024\x01") // 8.8.8.8
+		if a.dlg != nil || len(a.transfers) != before+1 {
+			t.Fatalf("an offer you asked for: dialog %T, %d transfers", a.dlg, len(a.transfers))
+		}
+		return a.transfers[before]
+	}
+	os.WriteFile(filepath.Join(a.downloadDir, "notes.txt"), nil, 0o644)
+	var paths []string
+	for _, tr := range []*transfer{offer("bot", "pack.bin"), offer("bot2", "pack.bin"), offer("bot", "notes.txt"), offer("bot2", "notes.txt")} {
+		paths = append(paths, filepath.Base(tr.path))
+	}
+	if want := []string{"pack.bin", "pack (1).bin", "notes (1).txt", "notes (2).txt"}; !slices.Equal(paths, want) {
+		t.Fatalf("saved to %q, want %q", paths, want)
+	}
+	a.transfers[1].done = true
+	if tr := offer("bot2", "pack.bin"); filepath.Base(tr.path) != "pack (1).bin" {
+		t.Fatalf("an ended download kept its name: %q", tr.path)
+	}
+	for _, tr := range a.transfers {
+		a.cancelTransfer(tr)
+	}
+}
+
 // TestDCCReplay: offers in history the bouncer replays are dropped, chats
 // like files: their senders stopped listening long ago.
 func TestDCCReplay(t *testing.T) {

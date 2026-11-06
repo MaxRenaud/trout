@@ -264,31 +264,52 @@ func (a *App) dccTarget(tr *transfer) error {
 	if err != nil {
 		return err
 	}
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	tr.base, tr.existing, tr.renamed = filepath.Join(dir, name), -1, ""
+	tr.base, tr.existing = filepath.Join(dir, name), -1
 	if info, err := os.Stat(tr.base); err == nil && info.Mode().IsRegular() {
 		tr.existing = info.Size()
 	}
-	for i := 1; tr.renamed == ""; i++ { // the first free "name (n).ext"
-		path := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
-		switch _, err := os.Stat(path); {
-		case errors.Is(err, os.ErrNotExist):
-			tr.renamed = path
-		case err != nil:
-			return err
-		}
+	if tr.renamed, err = a.freeName(tr.base); err != nil {
+		return err
 	}
 	tr.path = tr.base
-	if tr.existing >= 0 {
+	switch {
+	case a.busy(tr.base): // another download's: not to resume or overwrite
+		tr.path, tr.existing = tr.renamed, -1
+	case tr.existing >= 0:
 		tr.path = tr.renamed
 	}
-	if o := a.earlierTry(tr); o != nil {
+	if o := a.earlierTry(tr); o != nil && !a.busy(o.path) {
 		if info, err := os.Stat(o.path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() < tr.size {
 			tr.path, tr.from = o.path, info.Size()
 		}
 	}
 	return nil
+}
+
+// freeName is the first "name (n).ext" next to base that's neither there
+// nor being downloaded to.
+func (a *App) freeName(base string) (string, error) {
+	dir, name := filepath.Split(base)
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 1; ; i++ {
+		path := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
+		if a.busy(path) {
+			continue
+		}
+		switch _, err := os.Stat(path); {
+		case errors.Is(err, os.ErrNotExist):
+			return path, nil
+		case err != nil:
+			return "", err
+		}
+	}
+}
+
+// busy reports whether a download that hasn't ended writes to path. Case
+// doesn't count: Windows' and macOS's disks usually ignore it.
+func (a *App) busy(path string) bool {
+	return slices.ContainsFunc(a.transfers, func(o *transfer) bool { return !o.done && strings.EqualFold(o.path, path) })
 }
 
 // earlierTry is the latest download of the same file from the same
@@ -305,6 +326,16 @@ func (a *App) earlierTry(tr *transfer) *transfer {
 // dccStart gets the file: right away, or after the sender agrees to
 // resume (DCC RESUME, then its DCC ACCEPT).
 func (a *App) dccStart(tr *transfer) tea.Cmd {
+	// Another download took the name while you were deciding: a new one,
+	// so they don't write into the same file.
+	if a.busy(tr.path) {
+		path, err := a.freeName(tr.base)
+		if err != nil {
+			a.addLine(tr.net.Status(), state.RoleQuit, "* Can't get "+tr.file+": "+err.Error())
+			return nil
+		}
+		tr.path, tr.from = path, 0
+	}
 	a.transfers = append(a.transfers, tr)
 	// Like mIRC, each download gets its own window, which doesn't take
 	// the focus from what you're typing in.
