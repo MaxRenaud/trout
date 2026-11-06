@@ -571,6 +571,13 @@ func TestEchoActivity(t *testing.T) {
 	if ch.Act != state.ActEvent {
 		t.Errorf("echo: activity %d, want an event's", ch.Act)
 	}
+	// soju syncing a read marker works the activity out again from the
+	// unread lines: the echo is still an event.
+	a.conns[n] = &irc.Conn{Caps: map[string]bool{"draft/read-marker": true}}
+	a.applyRead(ch)
+	if ch.Act != state.ActEvent {
+		t.Errorf("echo after a read marker: activity %d, want an event's", ch.Act)
+	}
 	a.runScript([]script.Action{{Echo: &script.Echo{Network: n.Name, Window: "#go", Color: -1, Text: "hi", Message: true}}})
 	if ch.Act != state.ActMsg {
 		t.Errorf("echo -m: activity %d, want a message's", ch.Act)

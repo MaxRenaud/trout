@@ -486,18 +486,16 @@ func (a *App) runScript(actions []script.Action) tea.Cmd {
 			a.scriptURL(act.URL)
 		case act.Echo != nil:
 			w := a.scriptWindow(act.Echo.Network, act.Echo.Window)
-			l := state.Line{Time: time.Now(), Role: state.RoleNormal, Text: act.Echo.Text}
+			// An echo marks its window like an event (a join's color), not a
+			// message, unless it's -m: mIRC's help says -m "indicates that the
+			// line should be treated as a user message, not an event". The
+			// line keeps that, so syncing a read marker doesn't make it a
+			// message.
+			l := state.Line{Time: time.Now(), Role: state.RoleNormal, Text: act.Echo.Text, Event: !act.Echo.Message}
 			if act.Echo.Color >= 0 && act.Echo.Color < 16 {
 				l.Color = act.Echo.Color + 1
 			}
-			// An echo marks its window like an event (a join's color), not a
-			// message, unless it's -m: mIRC's help says -m "indicates that the
-			// line should be treated as a user message, not an event".
-			was := w.Act
 			a.addLineL(w, l)
-			if !act.Echo.Message {
-				w.Act = min(w.Act, max(was, state.ActEvent))
-			}
 		case act.Command != "":
 			cmds = append(cmds, a.scriptCommand(a.scriptWindow(act.Network, act.Window), act.Command))
 		}

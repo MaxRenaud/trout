@@ -121,7 +121,7 @@ func (a *App) applyRead(w *state.Window) {
 	w.Marker = max(w.Marker, read)
 	w.Act = state.ActNone
 	for _, l := range w.Lines[read:] {
-		w.Act = max(w.Act, state.ActivityFor(l.Role))
+		w.Act = max(w.Act, l.Activity())
 	}
 }
 

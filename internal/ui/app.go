@@ -1501,7 +1501,7 @@ func (a *App) addLineL(w *state.Window, l state.Line) {
 			return
 		}
 	}
-	if lvl := state.ActivityFor(l.Role); lvl > w.Act {
+	if lvl := l.Activity(); lvl > w.Act {
 		w.Act = lvl
 	}
 }

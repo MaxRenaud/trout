@@ -48,9 +48,12 @@ const (
 	RoleCount
 )
 
-// ActivityFor is the activity a new line of role r marks a window with.
-func ActivityFor(r Role) Activity {
-	switch r {
+// Activity is what a new line marks its window with.
+func (l Line) Activity() Activity {
+	if l.Event {
+		return ActEvent
+	}
+	switch l.Role {
 	case RoleOwn:
 		return ActNone
 	case RoleHighlight:
@@ -70,6 +73,9 @@ type Line struct {
 	Color  int
 	NoBeep bool
 	Sel    bool // selected, in a custom window's listbox
+	// Event is a script's echo without -m: it marks its window like an
+	// event, not a message, like mIRC's.
+	Event bool
 }
 
 // ListEntry is one entry of a channel's ban, exception or invite list.
