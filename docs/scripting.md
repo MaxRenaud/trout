@@ -250,6 +250,10 @@ trout's own commands, and anything trout doesn't know goes to the server.
   `/savebuf` and `/filter` only read custom windows (the bouncer keeps the others' logs).
 - A socket that fails says so in mIRC's terms (`$sockerr` 3, or 4 for a name that doesn't
   resolve, and Windows' error numbers in `$sock().wserr`), whatever the system.
+- A socket's receive buffer holds up to 1 MB that the script hasn't read (say, data that
+  never ends a line for `/sockread %var`). Past that the socket closes, with `on
+  SOCKCLOSE` and `$sockerr` 3, where `/sockread -f` still gets what was there. mIRC leaves
+  unread data with the system, which makes the other end wait.
 
 ## For developers
 

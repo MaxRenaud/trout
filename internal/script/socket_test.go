@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -210,5 +211,47 @@ on *:SOCKREAD:raw:{
 	}
 	if leak := evalIn(t, e, "%leak"); leak != "" {
 		t.Fatal("a &binvar outlived its SOCKREAD")
+	}
+}
+
+// TestSockRecvLimit: data that never ends a line doesn't pile up without
+// end: past sockRecvMax the socket fails, on SOCKCLOSE with $sockerr 3,
+// where what's waiting can still be read, and the client is told to drop
+// it. Lines that do end are read as they come, however many arrive.
+func TestSockRecvLimit(t *testing.T) {
+	e := New(Options{})
+	if p := e.Load("t.mrc", `alias go sockopen raw example.com 80
+on *:SOCKREAD:raw:{
+  sockread %l
+  if ($sockbr) inc %lines
+}
+on *:SOCKCLOSE:raw:{
+  sockread -f %rest
+  set %closed $sockerr $sock(raw).wsmsg $sockbr
+}`); len(p) > 0 {
+		t.Fatal(p)
+	}
+	h := evalHost()
+	acts, _ := e.Alias("TestNet", "", "go", "", h)
+	id := acts[0].Sock.ID
+	e.SockOpened(id, "93.184.215.14:80", nil, h)
+	for range 1000 {
+		e.SockRead(id, []byte(strings.Repeat("x", 99)+"\n"), h)
+	}
+	if got := evalIn(t, e, "%lines $sock(raw).rq"); got != "1000 0" {
+		t.Fatalf("lines and rq: %s", got)
+	}
+	chunk := []byte(strings.Repeat("y", 4096))
+	dropped := false
+	for i := 0; i <= sockRecvMax/len(chunk) && !dropped; i++ {
+		for _, a := range e.SockRead(id, chunk, h) {
+			dropped = dropped || a.Sock != nil && a.Sock.Close && a.Sock.ID == id
+		}
+	}
+	if !dropped || evalIn(t, e, "$sock(raw,0)") != "0" {
+		t.Fatalf("a buffer past %d bytes kept the socket (rq %s)", sockRecvMax, evalIn(t, e, "$sock(raw).rq"))
+	}
+	if got, want := evalIn(t, e, "%closed"), "3 [0] Receive buffer full "+strconv.Itoa(sockRecvMax+len(chunk)); got != want {
+		t.Fatalf("on SOCKCLOSE: %q, want %q", got, want)
 	}
 }

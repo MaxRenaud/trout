@@ -1,6 +1,7 @@
 package script
 
 import (
+	"bytes"
 	"errors"
 	"net"
 	"net/netip"
@@ -44,6 +45,7 @@ type socket struct {
 	active   bool // connected; before, it's connecting
 	mark     string
 	buf      []byte // received, not yet /sockread
+	scanned  int    // how much of buf is known to have no LF
 	sent     int
 	rcvd     int // read by the script, like mIRC's .rcvd (checked)
 	sq       int // queued to send
@@ -57,6 +59,38 @@ type socket struct {
 
 // sockMax is how much can wait in a socket's send queue, like mIRC's.
 const sockMax = 16384
+
+// sockRecvMax is how much can wait in a socket's receive buffer. mIRC
+// leaves what a script hasn't read in the system's buffer, which makes the
+// other end wait; trout reads it all in, so it needs a limit of its own:
+// past it, the socket fails like a connection that broke (on SOCKCLOSE
+// with $sockerr 3, where what's there can still be read with -f).
+const sockRecvMax = 1 << 20
+
+// lineEnd is how far a /sockread line goes: past the buffer's first LF,
+// or 0 if there isn't one. What it has looked through it remembers, so
+// data that keeps coming without one isn't searched again and again.
+func (s *socket) lineEnd() int {
+	if i := slices.Index(s.buf[s.scanned:], '\n'); i >= 0 {
+		s.scanned += i
+		return s.scanned + 1
+	}
+	s.scanned = len(s.buf)
+	return 0
+}
+
+// take is the buffer's first n bytes, which /sockread reads: they're
+// gone from it.
+func (s *socket) take(n int) []byte {
+	b := s.buf[:n]
+	s.buf = s.buf[n:]
+	if len(s.buf) == 0 {
+		s.buf = nil // not s.buf[:0], which would write over b
+	}
+	s.scanned = max(0, s.scanned-n)
+	s.rcvd += n
+	return b
+}
 
 func (e *Engine) sockByName(name string) *socket {
 	for _, s := range e.socks {
@@ -267,18 +301,14 @@ func (r *run) cmdSockRead(fr *frame, rest string) error {
 			n = min(len(s.buf), numbytes)
 		}
 		if strings.Contains(sw, "n") {
-			n = 0
-			if i := slices.Index(s.buf, '\n'); i >= 0 {
-				n = i + 1
-			} else if strings.Contains(sw, "f") {
+			n = s.lineEnd()
+			if n == 0 && strings.Contains(sw, "f") {
 				n = len(s.buf)
 			}
 		}
 		r.sockReads++
 		r.sockBin = true
-		r.setBin(rest, slices.Clone(s.buf[:n]))
-		s.buf = slices.Clone(s.buf[n:])
-		s.rcvd += n
+		r.setBin(rest, slices.Clone(s.take(n)))
 		r.sockBR = n
 		return nil
 	}
@@ -290,17 +320,13 @@ func (r *run) cmdSockRead(fr *frame, rest string) error {
 		return err
 	}
 	r.sockReads++
-	n := 0
-	if i := slices.Index(s.buf, '\n'); i >= 0 {
-		n = i + 1
-	} else if strings.Contains(sw, "f") {
+	n := s.lineEnd()
+	if n == 0 && strings.Contains(sw, "f") {
 		n = len(s.buf)
 	}
-	line := s.buf[:n]
-	s.buf = slices.Clone(s.buf[n:])
-	s.rcvd += n
+	line := s.take(n)
 	r.sockBR = n
-	line = []byte(strings.TrimSuffix(strings.TrimSuffix(string(line), "\n"), "\r"))
+	line = bytes.TrimSuffix(bytes.TrimSuffix(line, []byte("\n")), []byte("\r"))
 	r.setVar(fr, name, decodeText(line), r.isTemp(name))
 	return nil
 }
@@ -375,14 +401,20 @@ func (e *Engine) SockRead(id int, data []byte, h Host) []Action {
 			break
 		}
 		if r.sockReads == 0 {
-			s.buf = nil
+			s.buf, s.scanned = nil, 0
 			break
 		}
 		// Again while there's another line for a /sockread %var, or any
 		// bytes for a &binvar.
-		if len(s.buf) == before || len(s.buf) == 0 || !r.sockBin && !slices.Contains(s.buf, '\n') {
+		if len(s.buf) == before || len(s.buf) == 0 || !r.sockBin && s.lineEnd() == 0 {
 			break
 		}
+	}
+	if s := e.sockByID(id); s != nil && len(s.buf) > sockRecvMax {
+		s.wserr, s.wsmsg = 0, "[0] Receive buffer full"
+		r.sockEvent("SOCKCLOSE", s, 3)
+		e.dropSock(s)
+		r.actions = append(r.actions, Action{Sock: &Sock{ID: id, Close: true}})
 	}
 	return r.finish()
 }
