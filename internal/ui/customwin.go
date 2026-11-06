@@ -37,24 +37,57 @@ func (c customWin) Lines(side bool) []script.WinLine {
 	return out
 }
 
+// SetLines is the window's lines after a change. The engine hands the
+// whole list over, so the lines it didn't touch are found again (those
+// before and after the change) and keep the time they were added, which
+// timestamps and Save to File show; the line marker stays after the same
+// line, also when the oldest are trimmed at the window's buffer.
 func (c customWin) SetLines(side bool, lines []script.WinLine) {
+	old := c.w.Lines
+	if side {
+		old = c.w.Custom.Side
+	}
+	same := func(i, j int) bool { return old[i].Text == lines[j].Text }
+	pre := 0
+	for pre < len(old) && pre < len(lines) && same(pre, pre) {
+		pre++
+	}
+	suf := 0
+	for suf < len(old)-pre && suf < len(lines)-pre && same(len(old)-1-suf, len(lines)-1-suf) {
+		suf++
+	}
 	now := time.Now()
 	out := make([]state.Line, len(lines))
 	for i, l := range lines {
-		out[i] = state.Line{Time: now, Role: state.RoleNormal, Text: l.Text, Sel: l.Sel}
+		t := now
+		switch {
+		case i < pre:
+			t = old[i].Time
+		case i >= len(lines)-suf:
+			t = old[i-len(lines)+len(old)].Time
+		}
+		out[i] = state.Line{Time: t, Role: state.RoleNormal, Text: l.Text, Sel: l.Sel}
 		if l.Color >= 0 {
 			out[i].Color = l.Color%16 + 1
 		}
 	}
-	if n := len(out) - state.MaxLines; n > 0 {
-		out = out[n:]
-	}
+	trim := max(0, len(out)-state.MaxLines)
+	out = out[trim:]
 	if side {
 		c.w.Custom.Side = out
 		return
 	}
+	if m := c.w.Marker; m > 0 {
+		switch {
+		case m <= pre:
+		case m >= len(old)-suf:
+			m += len(lines) - len(old)
+		default: // in what changed: after it
+			m = len(lines) - suf
+		}
+		c.w.Marker = max(0, m-trim)
+	}
 	c.w.Lines = out
-	c.w.Marker = min(c.w.Marker, len(out))
 }
 
 func (c customWin) Opts() script.WinOpts {
