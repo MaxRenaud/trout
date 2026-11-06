@@ -287,9 +287,10 @@ func (r *run) compareOp(fr *frame, op, v1, v2 string) (bool, error) {
 	case "&":
 		return num1 && num2 && int64(n1)&int64(n2) != 0, nil
 	case "isin":
-		return strings.Contains(strings.ToLower(v2), strings.ToLower(v1)), nil
+		// $null is in nothing, not in everything (checked).
+		return v1 != "" && strings.Contains(strings.ToLower(v2), strings.ToLower(v1)), nil
 	case "isincs":
-		return strings.Contains(v2, v1), nil
+		return v1 != "" && strings.Contains(v2, v1), nil
 	case "iswm":
 		return wildMatch(v1, v2, false), nil
 	case "iswmcs":
