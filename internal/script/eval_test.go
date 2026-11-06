@@ -499,7 +499,7 @@ on *:TEXT:*:#:msg # second`
 
 func TestParseProblems(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
-		{"alias t {\n echo hi\n", "line 1: this { has no matching }"},
+		{"alias t {\n echo hi\n", "line 1: this { has no matching }, so everything after it is part of this block"},
 		{"on *:JOIN:#:{ echo hi } }", ""},
 		{"on *:FOO:#:echo", "line 1: on FOO isn't supported"},
 		{"on friend:TEXT:*:#:echo", ""},
@@ -519,6 +519,25 @@ func TestParseProblems(t *testing.T) {
 		if strings.Join(got, "; ") != c.want {
 			t.Errorf("%q: got %q, want %q", c.src, got, c.want)
 		}
+	}
+}
+
+// TestUnmatchedBrace: a file with a { that's never closed loads, and
+// the block runs to the end of the file, swallowing what follows, like
+// mIRC's (checked; there the line in it is /alias u, which defines u
+// when t runs, but trout has no /alias command).
+func TestUnmatchedBrace(t *testing.T) {
+	e := New(Options{})
+	ps := e.Load("t.mrc", "alias t {\n  set %a 1\nalias u { set %b 2 }\n  set %c 3\n")
+	if len(ps) != 1 || ps[0].Fatal {
+		t.Fatalf("problems %v", ps)
+	}
+	if _, ok := e.Alias("TestNet", "", "u", "", evalHost()); ok {
+		t.Error("alias u was defined: it's inside t's block")
+	}
+	e.Alias("TestNet", "", "t", "", evalHost())
+	if got := evalIn(t, e, "%a %c"); got != "1 3" {
+		t.Errorf("after /t: %q", got)
 	}
 }
 

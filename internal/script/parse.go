@@ -454,8 +454,11 @@ func (p *parser) body(l srcLine, first string) []srcLine {
 			return trimOpen(out)
 		}
 	}
-	p.problem(l.n, true, "this { has no matching }")
-	return nil
+	// The file still loads, and the block runs to its end, like mIRC's
+	// (checked): what came after is part of it. trout says so, which mIRC
+	// doesn't, since the aliases after it are quietly gone.
+	p.problem(l.n, false, "this { has no matching }, so everything after it is part of this block")
+	return trimOpen(out)
 }
 
 // trimOpen drops the opening { a body's first line starts with.
