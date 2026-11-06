@@ -103,6 +103,26 @@ func TestDockerInstall(t *testing.T) {
 			t.Errorf("WebSocket from %s: %s, want %s", origin, got, want)
 		}
 	}
+	// A certificate that can't be had (no CA there) leaves nothing behind:
+	// no trout-cert, no units, so the next probe doesn't say cert=yes.
+	acme := ACMEDirectory
+	ACMEDirectory = "https://127.0.0.1:1/directory"
+	cert, _ := Existing(r, f, "127.0.0.1", "max", in.Password, in.Pin, "cert")
+	ACMEDirectory = acme
+	cert.Progress = func(s string) { t.Log(s) }
+	if err := cert.StageFiles(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.Setup(ctx); err == nil {
+		t.Fatal("cert: no error without a CA")
+	}
+	if left := docker("exec", id, "sh", "-c", "ls /usr/local/bin/trout-cert /etc/systemd/system/trout-cert.service "+
+		"/etc/systemd/system/trout-cert.timer /var/lib/trout-cert 2>/dev/null || true"); left != "" {
+		t.Errorf("a failed cert left %q", left)
+	}
+	if f, err := Probe(ctx, r); err != nil || f.Cert {
+		t.Errorf("after a failed cert: %+v, %v", f, err)
+	}
 	up, _ := Existing(r, f, "127.0.0.1", "max", in.Password, in.Pin, "update")
 	up.Dial = dial
 	for _, step := range []func(context.Context) error{up.StageFiles, up.Setup, up.Check} {

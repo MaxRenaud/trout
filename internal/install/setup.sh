@@ -140,6 +140,10 @@ remove | purge)
 	;;
 cert)
 	[ -x /usr/local/bin/soju ] && [ -f /etc/soju/tls.key ] || fail "soju isn't set up on this server: set it up first"
+	# A first certificate that fails (or anything before it) doesn't leave
+	# port 80 open and trout-cert half set up for the next probe to find;
+	# one that was set up already stays as it was.
+	[ -f /etc/systemd/system/trout-cert.timer ] || trap cert_remove EXIT
 	step "Installing trout-cert"
 	install -m 0755 -o root -g root "$here/trout-cert" /usr/local/bin/
 	install -d -m 0700 /var/lib/trout-cert
@@ -149,6 +153,7 @@ cert)
 	/usr/local/bin/trout-cert renew -host "$TROUT_HOST" -acme "$TROUT_ACME" -steps
 	step "Renewing it from now on, twice a day when it's due"
 	systemctl enable --now trout-cert.timer >/dev/null 2>&1
+	trap - EXIT
 	step "done"
 	exit 0
 	;;
