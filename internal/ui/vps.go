@@ -264,6 +264,7 @@ func (w *installWizard) keepOrDelete(a *App) {
 		case 1:
 			a.addLine(a.home.Status(), state.RoleInfo, "* Kept "+w.serverName+" at "+w.prov.Name()+" ("+w.server.IPv4+")")
 			w.close(a)
+			return w.cleanup()
 		default:
 			a.openDialog(w)
 		}

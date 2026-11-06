@@ -731,3 +731,46 @@ func TestOneLocalStart(t *testing.T) {
 		t.Fatal("a second start while the first runs")
 	}
 }
+
+// TestInstallCleansUpOnFailure: a setup that fails, or that you cancel,
+// doesn't leave the uploaded TLS key and setup.sh (the account's password
+// in it) in your home on the server.
+func TestInstallCleansUpOnFailure(t *testing.T) {
+	const rm = "rm -rf /home/max/.trout-install"
+	t.Run("failed", func(t *testing.T) {
+		srv := &fakeServer{sudo: "nopasswd"}
+		a, _ := installApp(t, srv)
+		a.hooks.check = func(context.Context, *install.Installer) error { return errors.New("nothing listens on port 6697") }
+		openOwnServer(a)
+		_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		drive(a, cmd)
+		if w := wizard(t, a); w.step != instFailed || !slices.Contains(srv.lines(), rm) {
+			t.Fatalf("step %d, ran %q", w.step, srv.lines())
+		}
+	})
+	t.Run("cancelled", func(t *testing.T) {
+		srv := &fakeServer{sudo: "password", password: "hunter2"}
+		a, _ := installApp(t, srv)
+		openOwnServer(a)
+		_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		drive(a, cmd)
+		if f, ok := a.dlg.(*formBox); !ok || f.Title != "sudo Password" {
+			t.Fatalf("no sudo password prompt: %T", a.dlg)
+		}
+		_, cmd = a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		drive(a, cmd)
+		if a.dlg != nil || !slices.Contains(srv.lines(), rm) {
+			t.Fatalf("dialog %T, ran %q", a.dlg, srv.lines())
+		}
+	})
+	t.Run("not before uploading", func(t *testing.T) {
+		srv := &fakeServer{sudo: "nopasswd"}
+		a, _ := installApp(t, srv)
+		openOwnServer(a)
+		w := wizard(t, a)
+		drive(a, w.leave(a))
+		if len(srv.lines()) != 0 {
+			t.Fatalf("ran %q", srv.lines())
+		}
+	})
+}

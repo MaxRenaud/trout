@@ -61,6 +61,7 @@ type installWizard struct {
 	log    []string
 	err    string // why it failed, or (by hand) what's still missing
 	asked  bool   // ssh already had the terminal once
+	staged bool   // files may be in in.Stage() on the server: the key, the password
 	seq    int    // messages from a cancelled try don't count
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -401,6 +402,7 @@ func (w *installWizard) probed(a *App, f install.Facts, host string) tea.Cmd {
 	case install.ByHand:
 		w.say("There's no sudo on this server")
 	}
+	w.staged = true
 	return w.run("stage", w.in.StageFiles)
 }
 
@@ -443,16 +445,31 @@ func (w *installWizard) done() tea.Cmd {
 	default:
 		w.say("soju is gone from " + w.host)
 	}
+	return w.cleanup()
+}
+
+// cleanup removes the uploaded files from the server, once they're done
+// with or the setup failed or stopped: the TLS key and the account's
+// password in setup.sh shouldn't stay in your home there. Failing to
+// delete them is fine.
+func (w *installWizard) cleanup() tea.Cmd {
 	in := w.in
-	return func() tea.Msg { // the uploaded files; failing to delete them is fine
-		in.Cleanup(context.Background())
+	if in == nil || !w.staged {
+		return nil
+	}
+	w.staged = false
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		in.Cleanup(ctx)
 		return nil
 	}
 }
 
+// fail stops the setup with why; Try Again uploads everything again.
 func (w *installWizard) fail(why string) tea.Cmd {
 	w.step, w.err = instFailed, why
-	return nil
+	return w.cleanup()
 }
 
 func (w *installWizard) close(a *App) {
@@ -479,10 +496,11 @@ func (w *installWizard) leave(a *App) tea.Cmd {
 	case w.step == instDone && (w.server != nil || w.mode != ""):
 		w.close(a)
 		return a.finishInstall(w)
-	case w.server != nil:
+	case w.server != nil: // Keep It cleans up; Back carries on
 		w.keepOrDelete(a)
 	default:
 		w.close(a)
+		return w.cleanup()
 	}
 	return nil
 }
