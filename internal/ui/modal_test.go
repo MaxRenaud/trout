@@ -12,7 +12,7 @@ import (
 )
 
 // TestTooSmall: below 60x16 the note fills the whole screen, wrapped, and
-// the last frame's menubar and editbox can't be clicked or typed into.
+// the last frame's menubar can't be clicked, but keys work (to type /exit).
 func TestTooSmall(t *testing.T) {
 	a, n, _ := realApp(t)
 	ch := n.Find(state.KChannel, "#go")
@@ -44,8 +44,8 @@ func TestTooSmall(t *testing.T) {
 		t.Error("a click opened a menu nobody can see")
 	}
 	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hi")})
-	if got := string(a.edit(ch).Buf); got != "" {
-		t.Errorf("typing reached the editbox: %q", got)
+	if got := string(a.edit(ch).Buf); got != "hi" {
+		t.Errorf("typing didn't reach the editbox: %q", got)
 	}
 }
 

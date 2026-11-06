@@ -101,11 +101,12 @@ func (a *App) hit(x, y int) (Region, bool) {
 // in. Then it shows only a note.
 func (a *App) tooSmall() bool { return a.w < 60 || a.h < 16 }
 
-// inputOff reports whether keys and clicks do nothing because the screen
-// only shows tooSmall's note: there's nothing on it to aim them at. Before
-// the terminal's first size (and in tests that never give one) nothing's
-// been drawn yet either, so input goes through.
-func (a *App) inputOff() bool { return a.w > 0 && a.h > 0 && a.tooSmall() }
+// clicksOff reports whether clicks do nothing because the screen only
+// shows tooSmall's note: there's nothing on it to aim them at. Keys still
+// work, so typing /exit (or growing the window) gets you out. Before the
+// terminal's first size (and in tests that never give one) nothing's been
+// drawn yet either, so clicks go through.
+func (a *App) clicksOff() bool { return a.w > 0 && a.h > 0 && a.tooSmall() }
 
 func (a *App) View() string {
 	t := a.theme()

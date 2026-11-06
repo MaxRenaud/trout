@@ -491,11 +491,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.KeyMsg:
-		if k, ok := a.joinSurrogates(msg); ok && !a.inputOff() {
+		if k, ok := a.joinSurrogates(msg); ok {
 			cmd = a.key(k)
 		}
 	case tea.MouseMsg:
-		if !a.inputOff() {
+		if !a.clicksOff() {
 			cmd = a.mouse(msg)
 		}
 	}
