@@ -101,3 +101,31 @@ func TestCopyKeepsMarks(t *testing.T) {
 		t.Errorf("copied %q", got)
 	}
 }
+
+// TestEditBoxClusterCells: in a text box, an emoji with a skin tone takes
+// the two cells it's drawn in, so a click after it lands on the right
+// character and a box scrolled to its end shows the caret.
+func TestEditBoxClusterCells(t *testing.T) {
+	thumb := "\U0001F44D\U0001F3FD" // 👍🏽, two cells
+	e := &state.EditBox{Buf: []rune(thumb + "ab")}
+	clickEditBox(e, 4, false) // cells: 1-2 the thumb, 3 a, 4 b
+	if e.Pos != 3 {
+		t.Errorf("a click on b put the cursor at %d, want 3", e.Pos)
+	}
+	clickEditBox(e, 2, false) // the thumb's second cell
+	if e.Pos != 0 {
+		t.Errorf("a click on the thumb put the cursor at %d, want 0", e.Pos)
+	}
+
+	a := New(Options{Demo: true})
+	c := NewCanvas(12, 1, Style{})
+	e = &state.EditBox{Buf: []rune(strings.Repeat(thumb, 8))}
+	e.Pos = len(e.Buf)
+	caret := a.drawEditBox(c, e, 0, 0, 12, true, false)
+	if caret != 9 || e.Off != 8 {
+		t.Errorf("at the end of 8 thumbs in 10 cells: caret at %d, off %d (want 9 and 8: four thumbs and the caret, from a thumb's start)", caret, e.Off)
+	}
+	if lines := editLayout([]rune(strings.Repeat(thumb, 3)), 4); len(lines) != 2 || lines[0] != (editSpan{0, 4}) {
+		t.Errorf("3 thumbs in 4 cells wrap as %v, want 2 then 1", lines)
+	}
+}

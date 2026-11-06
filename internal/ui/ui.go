@@ -772,15 +772,16 @@ func (a *App) drawEditBox(c *Canvas, e *state.EditBox, x, y, w int, caret, mask 
 	if e.Pos < e.Off {
 		e.Off = e.Pos
 	}
+	cells := boxCells(e.Buf, mask)
 	for e.Off < e.Pos {
 		width := 0
-		for _, r := range e.Buf[e.Off:e.Pos] {
-			width += boxRuneWidth(r, mask)
+		for _, cw := range cells[e.Off:e.Pos] {
+			width += cw
 		}
 		if width < avail {
 			break
 		}
-		e.Off++
+		e.Off = state.Step(e.Buf, e.Off, 1) // never from inside a cluster
 	}
 	cx, caretX := x+1, x+1
 	from, to, sel := e.Selection()

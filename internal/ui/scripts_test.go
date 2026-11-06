@@ -1335,3 +1335,34 @@ func TestAliasCommandFile(t *testing.T) {
 		t.Errorf("after a restart: %q", got)
 	}
 }
+
+// TestScriptsEditorClusters: a line with an emoji and its skin tone draws
+// past it, the caret steps over it as one, a click after it lands on the
+// right character, and Backspace takes it whole.
+func TestScriptsEditorClusters(t *testing.T) {
+	thumb := "\U0001F44D\U0001F3FD"
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a.scriptMem = map[string]string{"t.mrc": "alias t echo " + thumb + " done\n"}
+	a.openScriptsTab(edRemote)
+	ed := a.dlg.(*scriptEditor)
+	ed.loadPrompt(a)
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("t.mrc")}
+	a.dlg.key(a, "enter")
+	d := ed.doc()
+	if !strings.Contains(a.View(), thumb+" done") {
+		t.Errorf("the line stops at the thumb:\n%s", a.View())
+	}
+	d.moveTo(0, 13, false) // after "alias t echo "
+	ed.key(a, "right")
+	if d.col != 15 {
+		t.Errorf("right over the thumb: col %d, want 15", d.col)
+	}
+	if row, col := ed.posAt(d, ed.tx+16, ed.ty); row != 0 || col != 16 { // the d of done
+		t.Errorf("a click on done's d: %d:%d, want 0:16", row, col)
+	}
+	ed.key(a, "backspace")
+	if got := string(d.lines[0]); got != "alias t echo  done" || d.col != 13 {
+		t.Errorf("Backspace after the thumb: %q at %d", got, d.col)
+	}
+}

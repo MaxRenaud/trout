@@ -37,8 +37,9 @@ func (e *EditBox) Backspace() {
 		return
 	}
 	if e.Pos > 0 {
-		e.Buf = slices.Delete(e.Buf, e.Pos-1, e.Pos)
-		e.Pos--
+		from := Step(e.Buf, e.Pos, -1) // the whole cluster before it
+		e.Buf = slices.Delete(e.Buf, from, e.Pos)
+		e.Pos = from
 	}
 }
 
@@ -47,13 +48,14 @@ func (e *EditBox) Delete() {
 		return
 	}
 	if e.Pos < len(e.Buf) {
-		e.Buf = slices.Delete(e.Buf, e.Pos, e.Pos+1)
+		e.Buf = slices.Delete(e.Buf, e.Pos, Step(e.Buf, e.Pos, 1))
 	}
 }
 
+// Move moves the cursor d clusters (see Step).
 func (e *EditBox) Move(d int) {
 	e.Sel = false
-	e.Pos = clamp(e.Pos+d, 0, len(e.Buf))
+	e.Pos = Step(e.Buf, clamp(e.Pos, 0, len(e.Buf)), d)
 }
 
 // Selection is the selected runes' range, if any.
@@ -145,6 +147,7 @@ func (e *EditBox) LineMove(d int) bool {
 	default:
 		return false
 	}
+	e.Pos = Snap(e.Buf, e.Pos)
 	e.Sel = false
 	return true
 }

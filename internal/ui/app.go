@@ -679,9 +679,9 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		e.Sel = false
 		_, e.Pos = e.Line()
 	case "shift+left":
-		e.Extend(func() { e.Pos-- })
+		e.Extend(func() { e.Pos = state.Step(e.Buf, e.Pos, -1) })
 	case "shift+right":
-		e.Extend(func() { e.Pos++ })
+		e.Extend(func() { e.Pos = state.Step(e.Buf, e.Pos, 1) })
 	case "shift+home":
 		e.Extend(func() { e.Pos, _ = e.Line() })
 	case "shift+end":

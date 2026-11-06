@@ -20,6 +20,7 @@ type editSpan struct{ from, to int }
 // wider than w cells.
 func editLayout(buf []rune, w int) []editSpan {
 	w = max(1, w)
+	cells := boxCells(buf, false)
 	var out []editSpan
 	start := 0
 	for i := 0; i <= len(buf); i++ {
@@ -28,8 +29,8 @@ func editLayout(buf []rune, w int) []editSpan {
 		}
 		cur, width := start, 0
 		for j := start; j < i; j++ {
-			rw := editWidth(buf[j])
-			if width+rw > w && j > cur {
+			rw := cells[j]
+			if width+rw > w && j > cur && rw > 0 { // a cluster stays on one row
 				out = append(out, editSpan{cur, j})
 				cur, width = j, 0
 			}
@@ -140,9 +141,10 @@ func editPosAt(e *state.EditBox, row, rel, w int) int {
 		return len(e.Buf)
 	}
 	sp := spans[row]
+	cells := boxCells(e.Buf, false)
 	i, cx := sp.from, 1
 	for i < sp.to {
-		cw := editWidth(e.Buf[i])
+		cw := cells[i]
 		if cx+cw > rel {
 			break
 		}

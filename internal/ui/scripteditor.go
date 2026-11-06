@@ -14,7 +14,6 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 
 	"github.com/MaxRenaud/trout/internal/config"
 	"github.com/MaxRenaud/trout/internal/script"
@@ -394,6 +393,7 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 		}
 		line := d.lines[row]
 		cx := 0
+		cells := edCells(line)
 		for j := d.left; j < len(line) && cx < ed.tw; j++ {
 			st := text
 			if hasSel && inSel(row, j, r1, c1, r2, c2) {
@@ -406,11 +406,13 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 				}
 				continue
 			}
-			n := c.Rune(ed.tx+cx, sy, ed.tw-cx, line[j], st)
-			if n == 0 {
+			// A rune joining the cluster before it adds no cells; only one
+			// that doesn't fit ends the line.
+			if cells[j] > ed.tw-cx {
 				break
 			}
-			cx += n
+			c.Rune(ed.tx+cx, sy, ed.tw-cx, line[j], st)
+			cx += cells[j]
 		}
 		if hasSel && row >= r1 && row < r2 && cx < ed.tw { // the line break
 			c.Set(ed.tx+cx, sy, ' ', sel)
@@ -443,17 +445,27 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 // drawing, caret and mouse.
 const tabWidth = 2
 
-func edRuneWidth(r rune) int {
-	if r == '\t' {
-		return tabWidth
+// edCells is how many cells each of a line's runes adds in the editor:
+// tabs tabWidth, and a rune joining the cluster before it (a skin tone, an
+// accent) none, the way the Canvas draws them.
+func edCells(rs []rune) []int {
+	out := make([]int, len(rs))
+	var cc clusterCells
+	for i, r := range rs {
+		if r == '\t' {
+			cc = clusterCells{}
+			out[i] = tabWidth
+			continue
+		}
+		out[i] = cc.add(r)
 	}
-	return runewidth.RuneWidth(r)
+	return out
 }
 
 func runesWidth(rs []rune) int {
 	n := 0
-	for _, r := range rs {
-		n += edRuneWidth(r)
+	for _, w := range edCells(rs) {
+		n += w
 	}
 	return n
 }
@@ -470,7 +482,7 @@ func (d *scriptDoc) scrollToCaret(w, h int) {
 		d.left = d.col
 	}
 	for d.left < d.col && runesWidth(line[d.left:d.col]) >= w {
-		d.left++
+		d.left = state.Step(line, d.left, 1)
 	}
 }
 
@@ -479,8 +491,9 @@ func (ed *scriptEditor) posAt(d *scriptDoc, x, y int) (int, int) {
 	row := clamp(d.top+y-ed.ty, 0, len(d.lines)-1)
 	line := d.lines[row]
 	col, cx := min(d.left, len(line)), 0
+	cells := edCells(line)
 	for x >= ed.tx && col < len(line) {
-		w := edRuneWidth(line[col])
+		w := cells[col]
 		if cx+w > x-ed.tx {
 			break
 		}
@@ -529,7 +542,7 @@ func (d *scriptDoc) moveTo(row, col int, extend bool) {
 		d.sel = false
 	}
 	d.row = clamp(row, 0, len(d.lines)-1)
-	d.col = clamp(col, 0, len(d.lines[d.row]))
+	d.col = state.Snap(d.lines[d.row], clamp(col, 0, len(d.lines[d.row]))) // never inside a cluster
 	d.follow, d.lastOp = true, ""
 }
 
@@ -542,14 +555,14 @@ func (d *scriptDoc) move(k string, page int, extend bool) {
 	switch k {
 	case "left":
 		if col > 0 {
-			col--
+			col = state.Step(line, col, -1)
 		} else if row > 0 {
 			row--
 			col = len(d.lines[row])
 		}
 	case "right":
 		if col < len(line) {
-			col++
+			col = state.Step(line, col, 1)
 		} else if row < len(d.lines)-1 {
 			row, col = row+1, 0
 		}
@@ -698,8 +711,9 @@ func (d *scriptDoc) backspace() bool {
 	switch {
 	case d.col > 0:
 		d.lines = slices.Clone(d.lines)
-		d.lines[d.row] = slices.Delete(slices.Clone(d.lines[d.row]), d.col-1, d.col)
-		d.col--
+		from := state.Step(d.lines[d.row], d.col, -1) // the whole cluster
+		d.lines[d.row] = slices.Delete(slices.Clone(d.lines[d.row]), from, d.col)
+		d.col = from
 	case d.row > 0:
 		d.col = len(d.lines[d.row-1])
 		d.lines = slices.Replace(slices.Clone(d.lines), d.row-1, d.row+1, slices.Concat(d.lines[d.row-1], d.lines[d.row]))
@@ -717,7 +731,7 @@ func (d *scriptDoc) del() bool {
 	switch {
 	case d.col < len(d.lines[d.row]):
 		d.lines = slices.Clone(d.lines)
-		d.lines[d.row] = slices.Delete(slices.Clone(d.lines[d.row]), d.col, d.col+1)
+		d.lines[d.row] = slices.Delete(slices.Clone(d.lines[d.row]), d.col, state.Step(d.lines[d.row], d.col, 1))
 	case d.row < len(d.lines)-1:
 		d.lines = slices.Replace(slices.Clone(d.lines), d.row, d.row+2, slices.Concat(d.lines[d.row], d.lines[d.row+1]))
 	default:

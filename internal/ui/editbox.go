@@ -9,34 +9,39 @@ import (
 	"github.com/MaxRenaud/trout/internal/state"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattn/go-runewidth"
 )
 
 // ctrlGlyph is how mIRC formatting codes show up while typing.
 var ctrlGlyph = map[rune]rune{0x02: 'B', 0x03: 'K', 0x0f: 'O', 0x16: 'R', 0x1d: 'I', 0x1e: 'E', 0x1f: 'U'}
 
-func editWidth(r rune) int {
-	if _, ok := ctrlGlyph[r]; ok {
-		return 1
+// boxCells is how many cells each of buf's runes adds in a text box, the
+// way the Canvas draws them: a rune that joins the cluster before it (a
+// skin tone, an accent) adds none. Format codes show as one-cell glyphs;
+// a masked box shows one dot a rune.
+func boxCells(buf []rune, mask bool) []int {
+	out := make([]int, len(buf))
+	var cc clusterCells
+	for i, r := range buf {
+		switch _, code := ctrlGlyph[r]; {
+		case mask:
+			out[i] = 1
+		case code:
+			cc = clusterCells{}
+			out[i] = 1
+		default:
+			out[i] = cc.add(r)
+		}
 	}
-	return runewidth.RuneWidth(r)
-}
-
-// boxRuneWidth is r's width in a text box; masked boxes show one dot per
-// rune.
-func boxRuneWidth(r rune, mask bool) int {
-	if mask {
-		return 1
-	}
-	return editWidth(r)
+	return out
 }
 
 // clickEditBox moves the cursor to where a text box was clicked, rel
 // columns from its left edge.
 func clickEditBox(e *state.EditBox, rel int, mask bool) {
+	cells := boxCells(e.Buf, mask)
 	i, cx := e.Off, 1
 	for i < len(e.Buf) {
-		cw := boxRuneWidth(e.Buf[i], mask)
+		cw := cells[i]
 		if cx+cw > rel {
 			break
 		}
