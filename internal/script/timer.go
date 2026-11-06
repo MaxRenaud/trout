@@ -57,11 +57,21 @@ func (e *Engine) expire(now time.Time) {
 		}
 	}
 	for _, t := range e.tables {
-		for key, at := range t.expires {
+		due := false
+		for _, at := range t.expires {
 			if !at.After(now) {
-				t.del(t.names[key])
+				due = true
+				break
 			}
 		}
+		if !due {
+			continue
+		}
+		// In one pass: many items added with the same -uN expire together.
+		t.delWhere(func(item string) bool {
+			at, ok := t.expires[strings.ToLower(item)]
+			return ok && !at.After(now)
+		})
 	}
 }
 

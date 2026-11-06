@@ -604,3 +604,39 @@ func TestInputBoxes(t *testing.T) {
 		t.Errorf("asked %q, did %+v", asked, acts)
 	}
 }
+
+// TestHashBulkDelete: /hdel -w and -u expiry on a big table delete in one
+// pass, not one pass per item.
+func TestHashBulkDelete(t *testing.T) {
+	h := evalHost()
+	big := func(e *Engine) {
+		tb := newTable("big", 100)
+		tb.expires = map[string]time.Time{}
+		for i := range 50000 {
+			tb.set("item"+itoa(i), "x")
+			if i%2 == 0 {
+				tb.expires["item"+itoa(i)] = h.now.Add(-time.Second)
+			}
+		}
+		e.tables["big"] = tb
+	}
+	start := time.Now()
+	e := New(Options{})
+	load(t, e, "h.mrc", `alias t hdel -w big item*1 | echo -a $hget(big,0).item $hget(big,item1) $hget(big,item2) $hget(big,1).item`)
+	big(e)
+	actions, _ := e.Alias("TestNet", "#trout", "t", "", h)
+	if got := echoes(actions); !slices.Equal(got, []string{"45000 x item0"}) {
+		t.Errorf("hdel -w: got %q", got)
+	}
+	e = New(Options{})
+	load(t, e, "h.mrc", `alias t echo -a $hget(big,0).item $hget(big,1).item $hget(big,2).item`)
+	big(e)
+	e.Tick(h)
+	actions, _ = e.Alias("TestNet", "#trout", "t", "", h)
+	if got := echoes(actions); !slices.Equal(got, []string{"25000 item1 item3"}) {
+		t.Errorf("expiry: got %q", got)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
