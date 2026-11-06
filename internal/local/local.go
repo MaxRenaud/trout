@@ -6,9 +6,11 @@ package local
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -18,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ergochat/irc-go/ircmsg"
 
 	"github.com/MaxRenaud/trout/internal/install"
 )
@@ -39,7 +43,7 @@ var listenRe = regexp.MustCompile(`(?m)^listen irc\+insecure://(127\.0\.0\.1:[0-
 // password. A soju already running from dir (left by a trout that
 // crashed, or another one open) is used as it is, and Stop leaves it be.
 func Start(ctx context.Context, dir, account, password string) (*Soju, error) {
-	soju, sojuctl, err := Find()
+	soju, _, err := Find() // sojuctl is for servers; here trout talks to soju itself
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +62,7 @@ func Start(ctx context.Context, dir, account, password string) (*Soju, error) {
 			return nil, err
 		}
 	}
-	if err := setAccount(ctx, sojuctl, dir, account, password); err != nil {
+	if err := setAccount(ctx, s.admin(), account, password); err != nil {
 		s.Stop()
 		return nil, err
 	}
@@ -155,21 +159,59 @@ hostname localhost
 }
 
 // setAccount makes account, or sets its password, so it always matches
-// what trout has in its credentials file.
-func setAccount(ctx context.Context, sojuctl, dir, account, password string) error {
-	ctl := func(args ...string) error {
-		cmd := exec.CommandContext(ctx, sojuctl, append([]string{"-config", "config"}, args...)...)
-		cmd.Dir = dir // the config's paths are relative to it
-		out, err := cmd.CombinedOutput()
+// what trout has in its credentials file. It says so on soju's admin
+// socket itself, the way sojuctl does, so the password is never on a
+// command line where ps would show it to the computer's other users.
+func setAccount(ctx context.Context, sock, account, password string) error {
+	if adminRun(ctx, sock, "user", "status", account) == nil {
+		return adminRun(ctx, sock, "user", "update", account, "-password", password, "-admin=true")
+	}
+	return adminRun(ctx, sock, "user", "create", "-username", account, "-password", password, "-admin=true")
+}
+
+// adminRun runs a BouncerServ command on soju's admin socket at sock, like
+// sojuctl: words quoted like Go strings, then PRIVMSGs until "BOUNCERSERV
+// OK", or something else that's the error.
+func adminRun(ctx context.Context, sock string, words ...string) error {
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", sock)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	deadline, _ := ctx.Deadline()
+	c.SetDeadline(cmp.Or(deadline, time.Now().Add(10*time.Second)))
+	quoted := make([]string, len(words))
+	for i, w := range words {
+		quoted[i] = strconv.Quote(w)
+	}
+	msg := ircmsg.MakeMessage(nil, "", "BOUNCERSERV", strings.Join(quoted, " "))
+	line, err := msg.Line()
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(c, line); err != nil {
+		return err
+	}
+	sc := bufio.NewScanner(c)
+	for sc.Scan() {
+		m, err := ircmsg.ParseLine(sc.Text())
 		if err != nil {
-			return fmt.Errorf("sojuctl %s: %v: %s", args[0]+" "+args[1], err, strings.TrimSpace(string(out)))
+			return err
 		}
-		return nil
+		switch {
+		case m.Command == "PRIVMSG":
+		case m.Command == "BOUNCERSERV" && len(m.Params) > 0 && m.Params[0] == "OK":
+			return nil
+		default:
+			why := ""
+			if len(m.Params) > 0 {
+				why = m.Params[len(m.Params)-1]
+			}
+			return fmt.Errorf("soju's %s %s: %s", words[0], words[1], why)
+		}
 	}
-	if ctl("user", "status", account) == nil {
-		return ctl("user", "update", account, "-password", password, "-admin=true")
-	}
-	return ctl("user", "create", "-username", account, "-password", password, "-admin=true")
+	return cmp.Or(sc.Err(), io.ErrUnexpectedEOF)
 }
 
 // Stop ends the soju Start started (not one it found running), waiting a

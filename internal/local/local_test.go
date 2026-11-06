@@ -14,9 +14,15 @@ import (
 // TestLocal runs the real soju for this computer (dev/build-soju), so it's
 // skipped until that's built.
 func TestLocal(t *testing.T) {
-	if _, _, err := Find(); err != nil {
+	soju, _, err := Find()
+	if err != nil {
 		t.Skip(err)
 	}
+	// No sojuctl: trout sets the account on soju's admin socket itself, so
+	// its password is never on a command line for ps to show.
+	find := Find
+	Find = func() (string, string, error) { return soju, filepath.Join(t.TempDir(), "no-sojuctl"), nil }
+	t.Cleanup(func() { Find = find })
 	// A short folder: Unix socket paths can't be long, and t.TempDir's are.
 	dir, err := os.MkdirTemp(shortTemp(), "trout-local-")
 	if err != nil {
