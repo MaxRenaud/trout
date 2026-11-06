@@ -1078,6 +1078,56 @@ on *:SOCKCLOSE:*:echo -s $sockname closed`), 0o600)
 	}
 }
 
+// TestSockHandshakeTimeout: an SSL socket to a server that takes the
+// connection and never answers fails on SOCKOPEN, as timed out, instead of
+// connecting forever.
+func TestSockHandshakeTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close() // and says nothing
+		}
+	}()
+	old := sockHandshakeTimeout
+	sockHandshakeTimeout = 200 * time.Millisecond
+	defer func() { sockHandshakeTimeout = old }()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "scripts"), 0o700)
+	os.WriteFile(filepath.Join(dir, "scripts", "sock.mrc"), []byte(`alias go sockopen -e mute 127.0.0.1 `+port+`
+on *:SOCKOPEN:mute:echo -s $sockname opened $sockerr $sock($sockname).wsmsg`), 0o600)
+	cfg := &config.Config{Path: filepath.Join(dir, "config.toml"), Scripts: []string{"sock.mrc"}}
+	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max"}})
+	msgs := make(chan tea.Msg, 16)
+	a.send = func(m tea.Msg) { msgs <- m }
+	a.startScripts()
+	actions, _ := a.scripts.Command(a.home.Name, "", "go", false, a.scriptHost())
+	a.runScript(actions)
+	select {
+	case m := <-msgs:
+		a.Update(m)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handshake is still waiting")
+	}
+	if !slices.ContainsFunc(a.home.Status().Lines, func(l state.Line) bool {
+		return l.Text == "mute opened 3 [10060] Connection timed out"
+	}) {
+		t.Fatalf("status window:\n%s", dump(a.home.Status()))
+	}
+	if len(a.socks) != 0 {
+		t.Errorf("%d sockets left", len(a.socks))
+	}
+}
+
 // evalScript is what text evaluates to in the scripts.
 func evalScript(a *App, text string) string {
 	a.scripts.Command(a.home.Name, "", "set %_eval "+text, true, a.scriptHost())

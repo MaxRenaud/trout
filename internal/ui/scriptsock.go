@@ -51,6 +51,9 @@ type scriptSock struct {
 	done   chan struct{} // closed: the writer stops
 }
 
+// sockHandshakeTimeout is how long an SSL socket's handshake can take.
+var sockHandshakeTimeout = 30 * time.Second
+
 // scriptSocket does what the engine asked with a socket.
 func (a *App) scriptSocket(s *script.Sock) {
 	switch {
@@ -85,10 +88,14 @@ func (a *App) sockOpen(s *script.Sock) {
 		d := net.Dialer{Timeout: 30 * time.Second}
 		conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(s.Host, strconv.Itoa(s.Port)))
 		if err == nil && s.TLS {
+			// The dialer's timeout is only the connection's: a server that
+			// takes it and says nothing would leave the handshake waiting.
+			hctx, stop := context.WithTimeout(ctx, sockHandshakeTimeout)
 			tc := tls.Client(conn, &tls.Config{ServerName: s.Host, InsecureSkipVerify: s.Insecure})
-			if err = tc.HandshakeContext(ctx); err != nil {
+			if err = tc.HandshakeContext(hctx); err != nil {
 				conn.Close()
 			}
+			stop()
 			conn = tc
 		}
 		send(sockOpenedMsg{s.ID, conn, err})

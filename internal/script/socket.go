@@ -2,6 +2,7 @@ package script
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net"
 	"net/netip"
@@ -420,7 +421,9 @@ func (e *Engine) SockRead(id int, data []byte, h Host) []Action {
 }
 
 // SockWritten is the client saying it sent n bytes queued on a socket, or
-// couldn't: on SOCKWRITE.
+// couldn't: on SOCKWRITE, with $sockerr, and then the socket is gone, as
+// a connection that couldn't send is broken; what was queued after it
+// would never go.
 func (e *Engine) SockWritten(id, n int, err error, h Host) []Action {
 	r := e.newRun(h)
 	s := e.sockByID(id)
@@ -435,6 +438,10 @@ func (e *Engine) SockWritten(id, n int, err error, h Host) []Action {
 		s.wserr, s.wsmsg, code = sockError(err)
 	}
 	r.sockEvent("SOCKWRITE", s, code)
+	if err != nil && e.sockByID(id) != nil {
+		e.dropSock(s)
+		r.actions = append(r.actions, Action{Sock: &Sock{ID: id, Close: true}})
+	}
 	return r.finish()
 }
 
@@ -484,7 +491,7 @@ func sockError(err error) (wserr int, wsmsg string, sockerr int) {
 		wserr = winsock[errno]
 	case errors.As(err, &errno) && errno >= 10000 && errno < 12000: // Windows' own number
 		wserr = int(errno)
-	case errors.Is(err, os.ErrDeadlineExceeded):
+	case errors.Is(err, os.ErrDeadlineExceeded), errors.Is(err, context.DeadlineExceeded):
 		wserr = 10060
 	}
 	if text, ok := winsockText[wserr]; ok {
