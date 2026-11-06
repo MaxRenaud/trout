@@ -388,7 +388,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 				} else {
 					event(w, state.RoleQuit, "* Quits: "+mask()+reason(0))
 				}
-			case w.Kind == state.KQuery && strings.EqualFold(w.Name, nick):
+			case w.Kind == state.KQuery && n.Same(w.Name, nick):
 				line(w, state.RoleQuit, "* Quits: "+mask()+reason(0))
 			}
 		}
@@ -417,8 +417,15 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 				} else {
 					event(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 				}
-			case w.Kind == state.KQuery && strings.EqualFold(w.Name, nick):
-				w.Name = to
+			case w.Kind == state.KQuery && n.Same(w.Name, nick):
+				// A query with the new nick already open keeps it, and
+				// this one its old name: two windows with one name would
+				// leave this one unreachable (Find returns the first).
+				if other := n.Find(state.KQuery, to); other == nil || other == w {
+					w.Name = to
+				} else {
+					line(other, state.RoleEvent, "* "+nick+" is now known as "+to)
+				}
 				line(w, state.RoleEvent, "* "+nick+" is now known as "+to)
 			}
 		}

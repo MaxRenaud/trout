@@ -151,6 +151,32 @@ func TestMsgNoQuery(t *testing.T) {
 	}
 }
 
+// TestNickQueries: a query follows a nick change, matched by the network's
+// CASEMAPPING, but never onto a query already open with the new nick.
+func TestNickQueries(t *testing.T) {
+	a, n, _, feed := optionsApp(t)
+	bob := a.openQuery(n, "bob[1]")
+	carol := a.openQuery(n, "carol")
+	feed(":bob{1}!b@h NICK bobby") // rfc1459: {} are []'s lowercase
+	if bob.Name != "bobby" {
+		t.Fatalf("bob[1]'s query is %q after bob{1} became bobby", bob.Name)
+	}
+	feed(":bobby!b@h NICK carol")
+	queries := 0
+	for _, w := range n.Wins {
+		if w.Kind == state.KQuery && n.Same(w.Name, "carol") {
+			queries++
+		}
+	}
+	if queries != 1 || lastLine(carol) != "* bobby is now known as carol" || lastLine(bob) != "* bobby is now known as carol" {
+		t.Fatalf("%d carol queries; carol's says %q, bobby's %q", queries, lastLine(carol), lastLine(bob))
+	}
+	feed(":CAROL!c@h QUIT :bye")
+	if lastLine(carol) != "* Quits: CAROL (c@h) (bye)" {
+		t.Fatalf("carol's query: %q", lastLine(carol))
+	}
+}
+
 // TestNoNetworksYet: a bouncer with no networks (a new one, This Computer
 // the first time) says how to add one and opens Select Server, once.
 func TestNoNetworksYet(t *testing.T) {
