@@ -2,12 +2,52 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
+
+// TestTooSmall: below 60x16 the note fills the whole screen, wrapped, and
+// the last frame's menubar and editbox can't be clicked or typed into.
+func TestTooSmall(t *testing.T) {
+	a, n, _ := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	a.View()
+	var menu Region
+	for _, r := range a.regions {
+		if r.Kind == HitMenuBar {
+			menu = r
+			break
+		}
+	}
+	a.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	lines := plainLines(a.View())
+	if len(lines) != 10 {
+		t.Fatalf("%d lines, want 10", len(lines))
+	}
+	for i, l := range lines {
+		if w := runewidth.StringWidth(l); w != 40 {
+			t.Errorf("line %d is %d cells wide, want 40: %q", i, w, l)
+		}
+	}
+	if !strings.Contains(lines[1], "60x16") {
+		t.Errorf("the note isn't wrapped: %q", lines)
+	}
+	a.Update(tea.MouseMsg{X: menu.X, Y: menu.Y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	a.Update(tea.MouseMsg{X: menu.X, Y: menu.Y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+	if len(a.menus) != 0 {
+		t.Error("a click opened a menu nobody can see")
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hi")})
+	if got := string(a.edit(ch).Buf); got != "" {
+		t.Errorf("typing reached the editbox: %q", got)
+	}
+}
 
 // TestDialogCoversThumb: pressing a dialog's blank part over the message
 // pane's scrollbar thumb and dragging doesn't scroll the channel behind.

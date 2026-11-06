@@ -489,11 +489,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.KeyMsg:
-		if k, ok := a.joinSurrogates(msg); ok {
+		if k, ok := a.joinSurrogates(msg); ok && !a.inputOff() {
 			cmd = a.key(k)
 		}
 	case tea.MouseMsg:
-		cmd = a.mouse(msg)
+		if !a.inputOff() {
+			cmd = a.mouse(msg)
+		}
 	}
 	cmd = tea.Batch(cmd, a.openWaiting(), a.takeScriptCmds(), a.activeChanged())
 	a.keepAsking()
