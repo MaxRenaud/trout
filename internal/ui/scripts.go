@@ -253,17 +253,27 @@ func readIniList(data, section string) []string {
 			continue
 		}
 		if _, v, ok := strings.Cut(l, "="); in && ok {
+			// A lone CR ends a line for mIRC too: what's after it isn't
+			// this entry's (see writeIniList).
+			v, _, _ = strings.Cut(v, "\r")
 			out = append(out, v)
 		}
 	}
 	return out
 }
 
-// writeIniList writes lines as an ini section's n0=, n1=...
+// writeIniList writes lines as an ini section's n0=, n1=... Each line
+// stops at a CR or LF in it. mIRC writes those as they are (checked), so
+// a variable set to "a" $lf "n9=%x 1" comes back after a restart as "a"
+// and a %x too; trout keeps the "a" and leaves out what would be another
+// entry, which someone else's text could otherwise add.
 func writeIniList(section string, lines []string) string {
 	var b strings.Builder
 	b.WriteString("[" + section + "]\r\n")
 	for i, l := range lines {
+		if j := strings.IndexAny(l, "\r\n"); j >= 0 {
+			l = l[:j]
+		}
 		b.WriteString("n" + strconv.Itoa(i) + "=" + l + "\r\n")
 	}
 	return b.String()
