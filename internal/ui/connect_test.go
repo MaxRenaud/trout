@@ -438,10 +438,15 @@ func TestCatchUp(t *testing.T) {
 		t.Fatalf("after reading elsewhere: activity %v, marker %d", alice.Act, alice.Marker)
 	}
 
-	// A dropped connection: on reconnecting, ask for what came after.
+	// A dropped connection: on reconnecting, ask for the newest of what
+	// came after, so a long outage leaves no gap before the live lines;
+	// and a window nothing was said in yet gets what was said meanwhile.
+	quiet := n.Add(&state.Window{Kind: state.KChannel, Name: "#quiet", Joined: true})
+	a.history[quiet] = true // fetched on joining: nothing then
 	a.Update(ircDownMsg{n, errors.New("EOF")})
 	connect(a.dial(n, n.ID, networkCaps))
-	expect("CHATHISTORY AFTER alice timestamp=2026-10-27T12:05:00.000Z 500")
+	expect("CHATHISTORY LATEST alice timestamp=2026-10-27T12:05:00.000Z 500")
+	expect("CHATHISTORY LATEST #quiet * 50")
 
 	// Reading: looking at alice while focused tells soju, but not while
 	// the terminal is in the background.
