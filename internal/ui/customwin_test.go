@@ -4,10 +4,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
 
+	"github.com/MaxRenaud/trout/internal/script"
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
@@ -148,5 +150,59 @@ func TestCustomWindows(t *testing.T) {
 	typed(ch, "//window -c @chat")
 	if got := status(); got == "closed @chat" || a.customWin("@chat") != nil {
 		t.Errorf("/window -c: %q", got)
+	}
+}
+
+// TestCustomWinSetLines: a change to a custom window's lines keeps the
+// times of the lines it didn't touch, and the line marker after the same
+// line, also when the oldest are trimmed at the window's buffer.
+func TestCustomWinSetLines(t *testing.T) {
+	then := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	w := &state.Window{Kind: state.KCustom, Name: "@log", Custom: &state.Custom{}}
+	for _, s := range []string{"a", "b", "c"} {
+		w.Lines = append(w.Lines, state.Line{Time: then, Text: s})
+	}
+	w.Marker = 3 // after c
+	c := customWin{w: w}
+	set := func(texts ...string) {
+		t.Helper()
+		var lines []script.WinLine
+		for _, s := range texts {
+			lines = append(lines, script.WinLine{Text: s, Color: -1})
+		}
+		c.SetLines(false, lines)
+		var got []string
+		for _, l := range w.Lines {
+			got = append(got, l.Text)
+		}
+		if !slices.Equal(got, texts[len(texts)-len(got):]) {
+			t.Fatalf("lines %q, want %q", got, texts)
+		}
+	}
+	kept := func(texts ...string) {
+		t.Helper()
+		for _, l := range w.Lines {
+			if slices.Contains(texts, l.Text) != l.Time.Equal(then) {
+				t.Errorf("%q's time is %v", l.Text, l.Time)
+			}
+		}
+	}
+	set("a", "b", "c", "d") // aline
+	kept("a", "b", "c")
+	set("b", "c", "d") // dline 1
+	kept("b", "c")
+	set("x", "b", "c", "d") // iline 1
+	kept("b", "c")
+	set("x", "b", "C", "d") // rline 3
+	kept("b")
+	if w.Marker != 3 {
+		t.Fatalf("marker %d, want 3: after C", w.Marker)
+	}
+	old := state.MaxLines
+	state.MaxLines = 3
+	defer func() { state.MaxLines = old }()
+	set("x", "b", "C", "d", "e")
+	if w.Marker != 1 || w.Lines[0].Text != "C" {
+		t.Fatalf("after trimming: marker %d on %q, want 1 after C", w.Marker, w.Lines[0].Text)
 	}
 }

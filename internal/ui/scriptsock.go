@@ -51,6 +51,9 @@ type scriptSock struct {
 	done   chan struct{} // closed: the writer stops
 }
 
+// sockHandshakeTimeout is how long an SSL socket's handshake can take.
+var sockHandshakeTimeout = 30 * time.Second
+
 // scriptSocket does what the engine asked with a socket.
 func (a *App) scriptSocket(s *script.Sock) {
 	switch {
@@ -85,10 +88,14 @@ func (a *App) sockOpen(s *script.Sock) {
 		d := net.Dialer{Timeout: 30 * time.Second}
 		conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(s.Host, strconv.Itoa(s.Port)))
 		if err == nil && s.TLS {
+			// The dialer's timeout is only the connection's: a server that
+			// takes it and says nothing would leave the handshake waiting.
+			hctx, stop := context.WithTimeout(ctx, sockHandshakeTimeout)
 			tc := tls.Client(conn, &tls.Config{ServerName: s.Host, InsecureSkipVerify: s.Insecure})
-			if err = tc.HandshakeContext(ctx); err != nil {
+			if err = tc.HandshakeContext(hctx); err != nil {
 				conn.Close()
 			}
+			stop()
 			conn = tc
 		}
 		send(sockOpenedMsg{s.ID, conn, err})
@@ -103,14 +110,18 @@ func (a *App) sockOpened(m sockOpenedMsg) tea.Cmd {
 		}
 		return nil
 	}
+	// on SOCKOPEN waits its turn behind a script that's asking, and can
+	// ask itself, like on SOCKREAD.
+	h := a.scriptHost()
 	if m.err != nil {
 		delete(a.socks, m.id)
-		return a.runScript(a.scripts.SockOpened(m.id, "", m.err, a.scriptHost()))
+		return a.scriptAsking(func() []script.Action { return a.scripts.SockOpened(m.id, "", m.err, h) })
 	}
 	sc.conn = m.conn
 	go sc.read(m.id, a.send)
 	go sc.write(m.id, a.send)
-	return a.runScript(a.scripts.SockOpened(m.id, m.conn.RemoteAddr().String(), nil, a.scriptHost()))
+	remote := m.conn.RemoteAddr().String()
+	return a.scriptAsking(func() []script.Action { return a.scripts.SockOpened(m.id, remote, nil, h) })
 }
 
 // sockMsg hands the engine what a socket's goroutines reported.

@@ -235,9 +235,9 @@ func isDigits(s string) bool {
 	return s != "" && strings.Trim(s, "0123456789") == ""
 }
 
-// setText replaces d's lines, with tabs as two spaces.
+// setText replaces d's lines.
 func (d *scriptDoc) setText(s string) {
-	s = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\t", "  ").Replace(s)
+	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s)
 	s = strings.TrimSuffix(s, "\n")
 	d.lines = nil
 	for l := range strings.SplitSeq(s, "\n") {
@@ -399,6 +399,13 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 			if hasSel && inSel(row, j, r1, c1, r2, c2) {
 				st = sel
 			}
+			if line[j] == '\t' { // as two spaces; it's saved as a tab
+				for range min(tabWidth, ed.tw-cx) {
+					c.Set(ed.tx+cx, sy, ' ', st)
+					cx++
+				}
+				continue
+			}
 			n := c.Rune(ed.tx+cx, sy, ed.tw-cx, line[j], st)
 			if n == 0 {
 				break
@@ -430,10 +437,23 @@ func (ed *scriptEditor) draw(a *App, c *Canvas, x, y, w, h int) {
 	a.dlgButtonsTaken(c, x, y+h-3, w, edButtons, max(0, ed.focus-1), edMnemonics)
 }
 
+// tabWidth is how many cells a tab takes in the editor. The file keeps
+// its tabs: mIRC's editor shows them at tab stops; here a tab is always
+// two cells, so a column is the same number of cells on every line's
+// drawing, caret and mouse.
+const tabWidth = 2
+
+func edRuneWidth(r rune) int {
+	if r == '\t' {
+		return tabWidth
+	}
+	return runewidth.RuneWidth(r)
+}
+
 func runesWidth(rs []rune) int {
 	n := 0
 	for _, r := range rs {
-		n += runewidth.RuneWidth(r)
+		n += edRuneWidth(r)
 	}
 	return n
 }
@@ -460,7 +480,7 @@ func (ed *scriptEditor) posAt(d *scriptDoc, x, y int) (int, int) {
 	line := d.lines[row]
 	col, cx := min(d.left, len(line)), 0
 	for x >= ed.tx && col < len(line) {
-		w := runewidth.RuneWidth(line[col])
+		w := edRuneWidth(line[col])
 		if cx+w > x-ed.tx {
 			break
 		}
@@ -641,7 +661,7 @@ func (d *scriptDoc) deleteSel() bool {
 
 func (d *scriptDoc) insert(rs []rune) bool {
 	d.deleteSel()
-	s := strings.NewReplacer("\r\n", "\n", "\r", "\n", "\t", "  ").Replace(string(rs))
+	s := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(string(rs))
 	parts := strings.Split(s, "\n")
 	line := d.lines[d.row]
 	head, tail := line[:d.col], line[d.col:]

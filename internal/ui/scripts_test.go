@@ -258,9 +258,23 @@ func TestClimbs(t *testing.T) {
 	}
 }
 
+// TestScriptFileRooted: \foo is the root, on Windows the root of the
+// scripts folder's drive, as mIRC has it, not a file in the folder.
+func TestScriptFileRooted(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Config: &config.Config{Path: filepath.Join(dir, "config.toml")}})
+	want := filepath.VolumeName(dir) + string(filepath.Separator) + filepath.Join("foo", "bar.txt")
+	for _, name := range []string{`\foo\bar.txt`, "/foo/bar.txt"} {
+		if got, ok := a.scriptFile(name); !ok || got != want {
+			t.Errorf("scriptFile(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 // TestScriptsFolder runs scripts from a real config: loaded at startup
 // from the scripts folder, with on START, vars.ini and users.ini written
-// there, and a file a script writes outside it (mIRC lets it).
+// there, a file a script writes outside it (mIRC lets it), and folders,
+// which only /mkdir makes.
 func TestScriptsFolder(t *testing.T) {
 	dir := t.TempDir()
 	folder := filepath.Join(dir, "scripts")
@@ -273,6 +287,9 @@ func TestScriptsFolder(t *testing.T) {
   write ..\escape.txt nope
   write logs\#x\..\..\..\climbed.txt nope
   write $mircdir $+ logs\#x\..\..\climbed.txt nope
+  write nofolder\a.txt nope
+  mkdir "made"
+  write made\a.txt yes
 }
 alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 	os.WriteFile(filepath.Join(folder, "settings.ini"), []byte("[main]\r\ngreeting=hello\r\n"), 0o600)
@@ -299,6 +316,13 @@ alias who echo -a $level(boss) $readini(settings.ini,main,greeting)`), 0o600)
 		if _, err := os.Stat(p); err == nil {
 			t.Errorf("%s written", p)
 		}
+	}
+	// /write makes no folders, like mIRC's; /mkdir does.
+	if _, err := os.Stat(filepath.Join(folder, "nofolder")); err == nil {
+		t.Error("/write made a folder")
+	}
+	if got, _ := os.ReadFile(filepath.Join(folder, "made", "a.txt")); string(got) != "yes\r\n" {
+		t.Errorf("after /mkdir, made\\a.txt = %q", got)
 	}
 	actions, ok := a.scripts.Command(a.home.Name, "", "who", false, a.scriptHost())
 	if !ok {
@@ -585,6 +609,35 @@ func TestScriptsEditorFiles(t *testing.T) {
 	ed.press(a, "OK")
 	if got := a.scriptMenu("channel", a.active, nil); len(got) != 1 || got[0].Label != "Hello" {
 		t.Errorf("channel popup = %+v", got)
+	}
+}
+
+// TestScriptsEditorTabs: a script's tabs stay tabs when it's saved from
+// the editor, shown as two cells, the caret and the mouse counting them
+// so.
+func TestScriptsEditorTabs(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	a.scriptMem = map[string]string{"t.mrc": "alias t {\n\techo -a\ttab\n}\n"}
+	a.openScriptsTab(edRemote)
+	ed := a.dlg.(*scriptEditor)
+	ed.loadPrompt(a)
+	a.dlg.(*formBox).Fields[0].Edit = state.EditBox{Buf: []rune("t.mrc")}
+	a.dlg.key(a, "enter")
+	d := ed.doc()
+	a.View()
+	if row, col := ed.posAt(d, ed.tx+2, ed.ty+1); row != 1 || col != 1 {
+		t.Errorf("the cell after the tab is %d:%d, want 1:1", row, col)
+	}
+	if !strings.Contains(a.View(), "  echo -a  tab") {
+		t.Errorf("tabs aren't drawn as two cells:\n%s", a.View())
+	}
+	d.moveTo(1, 0, false)
+	ed.key(a, "end")
+	ed.typed(a, []rune("!"))
+	ed.press(a, "OK")
+	if got := a.scriptMem["t.mrc"]; got != "alias t {\n\techo -a\ttab!\n}\n" {
+		t.Errorf("saved %q", got)
 	}
 }
 
@@ -1075,6 +1128,56 @@ on *:SOCKCLOSE:*:echo -s $sockname closed`), 0o600)
 	}
 	if n := evalScript(a, "$sock(*,0)"); len(a.socks) != 0 || n != "0" {
 		t.Errorf("sockets left open: %d here, %s in the engine", len(a.socks), n)
+	}
+}
+
+// TestSockHandshakeTimeout: an SSL socket to a server that takes the
+// connection and never answers fails on SOCKOPEN, as timed out, instead of
+// connecting forever.
+func TestSockHandshakeTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close() // and says nothing
+		}
+	}()
+	old := sockHandshakeTimeout
+	sockHandshakeTimeout = 200 * time.Millisecond
+	defer func() { sockHandshakeTimeout = old }()
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "scripts"), 0o700)
+	os.WriteFile(filepath.Join(dir, "scripts", "sock.mrc"), []byte(`alias go sockopen -e mute 127.0.0.1 `+port+`
+on *:SOCKOPEN:mute:echo -s $sockname opened $sockerr $sock($sockname).wsmsg`), 0o600)
+	cfg := &config.Config{Path: filepath.Join(dir, "config.toml"), Scripts: []string{"sock.mrc"}}
+	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://127.0.0.1:1", User: "max"}})
+	msgs := make(chan tea.Msg, 16)
+	a.send = func(m tea.Msg) { msgs <- m }
+	a.startScripts()
+	actions, _ := a.scripts.Command(a.home.Name, "", "go", false, a.scriptHost())
+	a.runScript(actions)
+	select {
+	case m := <-msgs:
+		a.Update(m)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handshake is still waiting")
+	}
+	if !slices.ContainsFunc(a.home.Status().Lines, func(l state.Line) bool {
+		return l.Text == "mute opened 3 [10060] Connection timed out"
+	}) {
+		t.Fatalf("status window:\n%s", dump(a.home.Status()))
+	}
+	if len(a.socks) != 0 {
+		t.Errorf("%d sockets left", len(a.socks))
 	}
 }
 

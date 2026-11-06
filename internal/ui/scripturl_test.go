@@ -2,14 +2,43 @@ package ui
 
 import (
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/MaxRenaud/trout/internal/script"
 )
+
+// TestURLGetReusesConnections: $urlget's requests share connections, so
+// asking again and again doesn't leave a new one open each time.
+func TestURLGetReusesConnections(t *testing.T) {
+	var conns atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+	for range 5 {
+		if res := fetchURL(t.Context(), &script.URLGet{Method: "GET", URL: srv.URL}, "trout/test"); res.Err != nil || string(res.Body) != "ok" {
+			t.Fatalf("fetch: %+v", res)
+		}
+	}
+	if n := conns.Load(); n != 1 {
+		t.Errorf("5 requests opened %d connections", n)
+	}
+	(&App{}).cancelURLs()
+}
 
 // TestScriptURLGet runs $urlget for real against a local web server: a
 // POST with the script's headers and body, the reply into a &binvar, a
