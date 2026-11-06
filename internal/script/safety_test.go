@@ -631,7 +631,20 @@ func TestLineTooLong(t *testing.T) {
 	}
 }
 
-// TestCalcDeep:$calc nested too deep for the stack is an error, not a
+// TestContinuedBeforeSection: a $& line just before an ini section's
+// header doesn't take the lines after the header with it.
+func TestContinuedBeforeSection(t *testing.T) {
+	lines, _ := sourceLines("alias a echo -a one $&\n[script]\nn0=alias b echo -a bee\nn1=alias c echo -a sea")
+	var got []string
+	for _, l := range lines {
+		got = append(got, l.text)
+	}
+	if want := []string{"alias a echo -a one", "[script]", "alias b echo -a bee", "alias c echo -a sea"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestCalcDeep: $calc nested too deep for the stack is an error, not a
 // crash Go can't recover from.
 func TestCalcDeep(t *testing.T) {
 	if _, ok := calc(strings.Repeat("(", 10_000_000) + "1"); ok {
@@ -646,7 +659,7 @@ func TestCalcDeep(t *testing.T) {
 	}
 }
 
-// TestHashBulkDelete:/hdel -w and -u expiry on a big table delete in one
+// TestHashBulkDelete: /hdel -w and -u expiry on a big table delete in one
 // pass, not one pass per item.
 func TestHashBulkDelete(t *testing.T) {
 	h := evalHost()
