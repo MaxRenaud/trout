@@ -600,7 +600,9 @@ func switches(rest string) (sw, after string) {
 }
 
 // varName reads a %variable name at the start of rest. The name can be
-// built with evaluation brackets, like mIRC's "set %a [ $+ $nick ] 1".
+// built with evaluation brackets that start with $+, like mIRC's
+// "set %a [ $+ $nick ] 1"; any other bracket is the value, so
+// "set %x [ $1 ]" sets %x (checked).
 func (r *run) varName(fr *frame, rest string) (name, after string, err error) {
 	words := strings.Fields(rest)
 	if len(words) == 0 || !strings.HasPrefix(words[0], "%") {
@@ -608,7 +610,7 @@ func (r *run) varName(fr *frame, rest string) (name, after string, err error) {
 	}
 	name = words[0][1:]
 	i := 1
-	for i < len(words) && words[i] == "[" && r.literal == 0 {
+	for i+1 < len(words) && words[i] == "[" && words[i+1] == "$+" && r.literal == 0 {
 		j := closeBracket(words, i)
 		v, _, _, err := r.bracket(fr, words[i+1:j])
 		if err != nil {

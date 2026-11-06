@@ -297,6 +297,15 @@ func TestStatements(t *testing.T) {
     inc %i
   }
 }`, "", []string{"#trout: 1", "#trout: 2", "#trout: 3"}},
+		// A bracket after the name is the value unless it starts with $+
+		// (checked in mIRC).
+		{"set with brackets", `alias t {
+  set %x [ $1 ]
+  set %y [ [ $1 ] ]
+  set %a. [ $+ $1 ] 5
+  inc %a. [ $+ $1 ] [ $2 ]
+  echo -a %x %y %a.hello / %xhello %yhello
+}`, "hello 2", []string{"#trout: hello hello 7 /"}},
 		{"break and continue", `alias t {
   var %i = 0
   while (1) {
