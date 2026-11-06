@@ -182,6 +182,10 @@ func TestSOCKS4(t *testing.T) {
 	if _, err := d.DialContext(t.Context(), "tcp", echo); err == nil {
 		t.Fatal("a refused SOCKS4 request connected")
 	}
+	d.User = "me"
+	if _, err := d.DialContext(t.Context(), "tcp", "[::1]:6697"); err == nil || !strings.Contains(err.Error(), "IPv6") {
+		t.Fatalf("SOCKS4 to an IPv6 address: %v", err)
+	}
 }
 
 func TestHTTPConnect(t *testing.T) {
@@ -195,7 +199,8 @@ func TestHTTPConnect(t *testing.T) {
 			c.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\n\r\n"))
 			return ""
 		}
-		c.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n"))
+		// Any 2xx is a tunnel; some proxies say 204 or 201.
+		c.Write([]byte("HTTP/1.1 204 No Content\r\n\r\n"))
 		return req.Host
 	})
 	d := &Dialer{Type: "http", Addr: addr, User: "me", Password: "pw"}
