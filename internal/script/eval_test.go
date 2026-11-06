@@ -615,3 +615,19 @@ func TestBigNumbers(t *testing.T) {
 		t.Errorf("$bvar().long = %q", got)
 	}
 }
+
+// TestLabelBrace: a word ending in :{ in a body is text, but its } is
+// matched to it, as mIRC's loader does (checked): no "} has no matching
+// {", and the next alias is still an alias.
+func TestLabelBrace(t *testing.T) {
+	for _, body := range []string{"return sad :{ }", "return sad :{ | return y }"} {
+		e := New(Options{})
+		if probs := e.Load("t.mrc", "alias u { "+body+" }\nalias v return ok\nalias t echo -a $u $v"); len(probs) > 0 {
+			t.Errorf("%s: %v", body, probs)
+		}
+		actions, _ := e.Alias("TestNet", "#trout", "t", "", evalHost())
+		if got := echoes(actions); !slices.Equal(got, []string{"sad :{ ok"}) {
+			t.Errorf("%s: got %q", body, got)
+		}
+	}
+}
