@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/MaxRenaud/trout/internal/state"
 
@@ -23,18 +24,71 @@ type openMenu struct {
 	Items      []MenuItem
 	X, Y, W, H int
 	Sel        int // highlighted item, or -1
+	Top        int // the first item shown, when it scrolls
 }
 
 func (m *openMenu) contains(x, y int) bool {
 	return x >= m.X && x < m.X+m.W && y >= m.Y && y < m.Y+m.H
 }
 
+// scrolls reports whether the menu is taller than the screen. Then, like
+// Windows menus (mIRC's), it shows an arrow row at its top and bottom, and
+// the items between them scroll: clicking an arrow or the mouse wheel
+// scrolls, and so does moving the highlight past the end with the keys.
+// Windows also scrolls while the pointer rests on an arrow, which needs a
+// timer; here it's a click.
+func (m *openMenu) scrolls() bool { return len(m.Items) > m.H-2 }
+
+// rows is how many items show at once.
+func (m *openMenu) rows() int {
+	if m.scrolls() {
+		return m.H - 4
+	}
+	return len(m.Items)
+}
+
+// itemY is the screen row of the first item shown.
+func (m *openMenu) itemY() int {
+	if m.scrolls() {
+		return m.Y + 2
+	}
+	return m.Y + 1
+}
+
 func (m *openMenu) itemAt(x, y int) (int, bool) {
-	i := y - m.Y - 1
-	if x <= m.X || x >= m.X+m.W-1 || i < 0 || i >= len(m.Items) {
+	row := y - m.itemY()
+	if x <= m.X || x >= m.X+m.W-1 || row < 0 || row >= m.rows() {
 		return 0, false
 	}
-	return i, true
+	return m.Top + row, true
+}
+
+// arrowAt is -1 on the up arrow of a menu that scrolls, 1 on the down
+// arrow, and 0 elsewhere.
+func (m *openMenu) arrowAt(x, y int) int {
+	switch {
+	case !m.scrolls() || x <= m.X || x >= m.X+m.W-1:
+		return 0
+	case y == m.Y+1:
+		return -1
+	case y == m.Y+m.H-2:
+		return 1
+	}
+	return 0
+}
+
+// scroll moves the items shown by d, keeping within them.
+func (m *openMenu) scroll(d int) {
+	m.Top = clamp(m.Top+d, 0, max(len(m.Items)-m.rows(), 0))
+}
+
+// show scrolls so item i is in view.
+func (m *openMenu) show(i int) {
+	if i < m.Top {
+		m.scroll(i - m.Top)
+	} else if n := m.rows(); i >= m.Top+n {
+		m.scroll(i - m.Top - n + 1)
+	}
 }
 
 func (a *App) pushMenu(items []MenuItem, x, y int) {
@@ -46,7 +100,7 @@ func (a *App) pushMenu(items []MenuItem, x, y int) {
 	if kw > 0 {
 		lw += kw + 3
 	}
-	m := openMenu{Items: items, W: lw + 8, H: len(items) + 2, Sel: -1}
+	m := openMenu{Items: items, W: lw + 8, H: min(len(items)+2, a.h), Sel: -1}
 	m.X = clamp(x, 0, a.w-m.W)
 	m.Y = clamp(y, 0, a.h-m.H)
 	a.menus = append(a.menus, m)
@@ -103,7 +157,7 @@ func (a *App) openSub(level, i int) {
 	if it.Sub == nil || it.Disabled {
 		return
 	}
-	a.pushMenu(it.Sub, p.X+p.W, p.Y+i)
+	a.pushMenu(it.Sub, p.X+p.W, p.itemY()+i-p.Top-1)
 	if sub := &a.menus[len(a.menus)-1]; p.X+p.W+sub.W > a.w {
 		sub.X = max(0, p.X-sub.W)
 	}
@@ -155,6 +209,9 @@ func (a *App) menuClick(x, y int) tea.Cmd {
 		if i, ok := m.itemAt(x, y); ok {
 			return a.activateItem(l, i)
 		}
+		if d := m.arrowAt(x, y); d != 0 {
+			a.scrollMenu(l, d)
+		}
 		return nil
 	}
 	if r, ok := a.hit(x, y); ok && a.onBar(r) && r.I != a.menuBar {
@@ -163,6 +220,29 @@ func (a *App) menuClick(x, y int) tea.Cmd {
 	}
 	a.closeMenus()
 	return nil
+}
+
+// scrollMenu scrolls menus[l] by d items, closing its submenu, which
+// would no longer be beside its item.
+func (a *App) scrollMenu(l, d int) {
+	m := &a.menus[l]
+	top := m.Top
+	m.scroll(d)
+	if m.Top != top {
+		a.menus = a.menus[:l+1]
+	}
+}
+
+// menuWheel scrolls the menu under the pointer, if it scrolls.
+func (a *App) menuWheel(x, y, d int) {
+	for l, m := range slices.Backward(a.menus) {
+		if m.contains(x, y) {
+			if m.scrolls() {
+				a.scrollMenu(l, d)
+			}
+			return
+		}
+	}
 }
 
 // menuRelease chooses the item under the pointer, if it's one (not a
@@ -207,6 +287,7 @@ func (a *App) menuKey(k string) tea.Cmd {
 			}
 		}
 		m.Sel = i
+		m.show(i)
 	case "right":
 		if m.Sel >= 0 && m.Items[m.Sel].Sub != nil {
 			return a.activateItem(l, m.Sel)
@@ -238,8 +319,24 @@ func (a *App) drawMenus(c *Canvas) {
 		m := &a.menus[mi]
 		a.raisedBox(c, m.X, m.Y, m.W, m.H)
 		right := m.X + m.W - 1
-		for i, it := range m.Items {
-			y := m.Y + 1 + i
+		if m.scrolls() {
+			for _, ar := range []struct {
+				y    int
+				r    rune
+				more bool
+			}{{m.Y + 1, '▲', m.Top > 0}, {m.Y + m.H - 2, '▼', m.Top+m.rows() < len(m.Items)}} {
+				st := face
+				if !ar.more {
+					st.FG = t.Disabled
+				}
+				c.Fill(m.X+1, ar.y, m.W-2, 1, st)
+				c.Set(m.X+m.W/2, ar.y, ar.r, st)
+			}
+		}
+		for row := range m.rows() {
+			i := m.Top + row
+			it := m.Items[i]
+			y := m.itemY() + row
 			if it.Sep {
 				for x := m.X + 1; x < right; x++ {
 					c.Set(x, y, '─', lo)

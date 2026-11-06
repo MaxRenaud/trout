@@ -18,9 +18,72 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ergochat/irc-go/ircmsg"
+	"github.com/mattn/go-runewidth"
 
 	"github.com/MaxRenaud/trout/internal/state"
 )
+
+// TestTallMenuScrolls: a menu taller than the screen fits it, with arrows
+// at its top and bottom like Windows's, and every item can be reached by
+// the keys, the wheel and the arrows.
+func TestTallMenuScrolls(t *testing.T) {
+	a, _, feed := realApp(t)
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	for i := range 40 {
+		feed(":max!m@h JOIN #chan" + strconv.Itoa(i))
+	}
+	a.openMenuBar(menuWindow)
+	m := &a.menus[0]
+	if m.Y < 0 || m.Y+m.H > a.h {
+		t.Fatalf("the menu is rows %d to %d of %d", m.Y, m.Y+m.H, a.h)
+	}
+	shows := func(label string) bool {
+		for _, l := range plainLines(a.View()) {
+			if strings.Contains(l, label) {
+				return true
+			}
+		}
+		return false
+	}
+	last := m.Items[len(m.Items)-1].Label
+	if !strings.HasSuffix(last, "#chan39") || shows(last+" ") {
+		t.Fatalf("%q, the last item, shouldn't show yet", last)
+	}
+	// Up from no highlight wraps to the last item, which scrolls into view.
+	a.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if !shows(last+" ") || !shows("▲") {
+		t.Errorf("Up didn't bring %q into view", last)
+	}
+	for _, l := range plainLines(a.View()) {
+		if w := runewidth.StringWidth(l); w != a.w {
+			t.Errorf("a line is %d cells wide, want %d", w, a.w)
+		}
+	}
+	// Clicking the item under the pointer chooses the right one.
+	m = &a.menus[0]
+	a.Update(tea.MouseMsg{X: m.X + 3, Y: m.Y + m.H - 3, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if a.active.Name != "#chan39" {
+		t.Fatalf("clicking the last row chose %q", a.active.Name)
+	}
+
+	// The wheel and the arrows scroll.
+	a.openMenuBar(menuWindow)
+	m = &a.menus[0]
+	a.Update(tea.MouseMsg{X: m.X + 3, Y: m.Y + 5, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if m.Top != 3 {
+		t.Errorf("the wheel scrolled to %d, want 3", m.Top)
+	}
+	a.Update(tea.MouseMsg{X: m.X + 3, Y: m.Y + 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if m.Top != 2 || len(a.menus) != 1 {
+		t.Errorf("the up arrow scrolled to %d, want 2", m.Top)
+	}
+	for range 50 {
+		a.Update(tea.MouseMsg{X: m.X + 3, Y: m.Y + m.H - 2, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	}
+	if !shows(last + " ") {
+		t.Errorf("the down arrow didn't reach %q", last)
+	}
+}
 
 func TestParseDCCSend(t *testing.T) {
 	for in, want := range map[string]string{

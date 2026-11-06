@@ -880,6 +880,10 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 			if m.X != a.downX || m.Y != a.downY {
 				return a.menuRelease(m.X, m.Y)
 			}
+		case m.Button == tea.MouseButtonWheelUp:
+			a.menuWheel(m.X, m.Y, -3)
+		case m.Button == tea.MouseButtonWheelDown:
+			a.menuWheel(m.X, m.Y, 3)
 		case m.Button == tea.MouseButtonLeft || m.Button == tea.MouseButtonRight:
 			return a.menuClick(m.X, m.Y)
 		}
