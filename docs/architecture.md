@@ -179,7 +179,8 @@ enabled.
   deopper, banning one unbans.
 - **Ignores** are typed and timed, like mIRC: `/ignore -pcntikd -u60 mask` (private,
   channel, notice, ctcp, invite, codes, dcc); with no type, everything. An open query still
-  shows the person's private messages.
+  shows the person's private messages. `/ignore nick 2` ignores by address, `$mask`'s type 2
+  of the address from the address list or a USERHOST.
 - **Perform** (Options > Connect) is a network's commands on connect. soju runs them as the
   network's connect-command, so they run even when trout isn't open; trout keeps a copy in
   config.toml for the dialog.

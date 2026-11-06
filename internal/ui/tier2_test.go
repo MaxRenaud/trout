@@ -66,6 +66,45 @@ func TestIgnoreTypes(t *testing.T) {
 	}
 }
 
+// TestIgnoreMaskType: /ignore nick type ignores by address, like mIRC,
+// from the address list or a USERHOST, so a nick change doesn't get
+// around it.
+func TestIgnoreMaskType(t *testing.T) {
+	a, n, _, feed := optionsApp(t)
+	w := n.AddChannel(&state.Window{Kind: state.KChannel, Name: "#go", Joined: true})
+	list := func() string { return strings.Join(a.netList(listIgnore, n), "|") }
+	feed(":dave!~d@host.dave.example PRIVMSG #go :hi")
+	a.ircCommand(w, "ignore dave 1")
+	if got := list(); got != "*!*d@host.dave.example" {
+		t.Fatalf("/ignore dave 1: %q", got)
+	}
+	if !a.ignored(n, mustParse(t, ":dave_!~d@host.dave.example PRIVMSG #go :still me")) {
+		t.Fatal("a new nick got around the ignore")
+	}
+	a.ircCommand(w, "ignore -r dave 1")
+	if got := list(); got != "" {
+		t.Fatalf("/ignore -r dave 1 left %q", got)
+	}
+
+	// Not in the address list: asked for, and someone else's answer (your
+	// own /userhost) isn't taken for it.
+	// (fakeSoju doesn't pass on lines starting USER, so USERHOST isn't
+	// seen there.)
+	a.ircCommand(w, "ignore erin 2")
+	if len(a.ignoreLookups) != 1 || list() != "" {
+		t.Fatalf("/ignore erin 2 didn't wait for USERHOST: %+v, %q", a.ignoreLookups, list())
+	}
+	feed(":srv 302 max :frank=+f@frank.example", ":srv 302 max :erin*=-~e@erin.example")
+	if got := list(); got != "*!*@erin.example" {
+		t.Fatalf("/ignore erin 2: %q", got)
+	}
+	a.ircCommand(w, "ignore zed 2")
+	feed(":srv 302 max :")
+	if got := list(); got != "*!*@erin.example|zed!*@*" || !strings.Contains(w.Lines[len(w.Lines)-2].Text, "zed isn't on") {
+		t.Fatalf("/ignore of someone not on: %q, %q", got, w.Lines[len(w.Lines)-2].Text)
+	}
+}
+
 // TestControl auto-ops someone listed on join, and undoes a deop of a
 // protected op.
 func TestControl(t *testing.T) {
@@ -96,6 +135,15 @@ func TestControl(t *testing.T) {
 	feed(":frank!f@trusted.example MODE #go -o dave", ":evil!e@h MODE #go -o dave")
 	if got := <-sent; got != "MODE #go -o+o evil dave" {
 		t.Errorf("after a protected op's deop, sent %q", got)
+	}
+
+	// An entry for #go protects nobody in #other, from bans either.
+	a.memBook.Control = []config.ControlEntry{{Mask: "carol!*@*", Kinds: "p", Channels: []string{"#go"}}}
+	n.AddChannel(&state.Window{Kind: state.KChannel, Name: "#other", Joined: true,
+		Nicks: []state.Nick{{Prefix: "@", Name: "max"}, {Prefix: "@", Name: "carol"}}})
+	feed(":op2!o@h MODE #other +b *!*@*", ":op2!o@h MODE #other -o carol", ":evil!e@h MODE #go -o carol")
+	if got := <-sent; got != "MODE #go -o+o evil carol" {
+		t.Errorf("a protect entry for #go answered in #other: sent %q", got)
 	}
 }
 

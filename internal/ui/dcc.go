@@ -35,6 +35,11 @@ var dccModes = []string{"ask", "auto", "ignore"}
 // to count as one you asked for (/msg Bot xdcc send #5).
 const askedWithin = 5 * time.Minute
 
+// dccOfferAge is how old an offer can be, by its server time: older ones
+// are history the bouncer replays, and their senders stopped listening
+// long ago.
+const dccOfferAge = 2 * time.Minute
+
 // errCancelled ends a download you stopped.
 var errCancelled = errors.New("cancelled")
 
@@ -97,7 +102,7 @@ func (a *App) dccOffer(n *state.Network, m ircmsg.Message, args string, t time.T
 	case err != nil:
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" sent a DCC offer trout can't read: "+err.Error(), t)
 		return
-	case time.Since(t) > 2*time.Minute: // replayed: the sender gave up long ago
+	case time.Since(t) > dccOfferAge: // replayed: the sender gave up long ago
 		return
 	case port == "0":
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" offers "+file+" with passive DCC, which trout doesn't do yet", t)
@@ -108,14 +113,82 @@ func (a *App) dccOffer(n *state.Network, m ircmsg.Message, args string, t time.T
 	case a.dccTypeIgnored(safeName(file)):
 		a.dccIgnoredLine(n, file, nick, t)
 		return
+	case a.dccFlooded(n, nick):
+		return
 	}
 	tr := &transfer{net: n, nick: nick, trusted: a.dccTrusted(m.Source), file: file, addr: net.JoinHostPort(ip.String(), port), port: port, size: size}
-	a.whenFree(func(a *App) tea.Cmd {
+	a.dccWhenFree(n, nick, func(a *App) tea.Cmd {
 		if a.dccWarn {
 			a.openDialog(a.dccPrivacyBox(tr, ip))
 			return nil
 		}
 		return a.dccDecide(tr, ip)
+	})
+}
+
+// A flood of DCC offers mustn't bury you in dialogs or Get windows: like
+// CTCP replies (ctcpBurst), only dccBurst offers from one sender in
+// dccWindow get through, and behind an open dialog at most dccQueueSender
+// of theirs wait, and dccQueueMax in all. A sender's newer chat offer
+// replaces one that waits (chatOffer).
+const (
+	dccBurst       = 10
+	dccWindow      = 30 * time.Second
+	dccQueueSender = 3
+	dccQueueMax    = 10
+)
+
+// dccFlood is what's needed for that, by sender (dccKey): their recent
+// offers, their offers waiting (and all of them), the flood noted in the
+// status window, and the chat offer that waits.
+type dccFlood struct {
+	offers  map[string][]time.Time
+	queued  map[string]int
+	waiting int
+	noted   map[string]bool
+	chat    map[string]func(a *App) tea.Cmd
+}
+
+// dccKey names nick on n for dccFlood.
+func dccKey(n *state.Network, nick string) string { return n.ID + " " + n.Fold(nick) }
+
+// dccFlooded reports whether an offer from nick is one too many, and says
+// so once a flood.
+func (a *App) dccFlooded(n *state.Network, nick string) bool {
+	f := &a.dccFlood
+	if f.offers == nil {
+		f.offers, f.queued, f.noted, f.chat = map[string][]time.Time{}, map[string]int{}, map[string]bool{}, map[string]func(*App) tea.Cmd{}
+	}
+	key := dccKey(n, nick)
+	for k, ts := range f.offers {
+		if f.offers[k] = slices.DeleteFunc(ts, func(at time.Time) bool { return time.Since(at) > dccWindow }); len(f.offers[k]) == 0 {
+			delete(f.offers, k)
+			delete(f.noted, k)
+		}
+	}
+	busy := a.dlg != nil || len(a.menus) > 0 // so whenFree would hold it
+	if len(f.offers[key]) < dccBurst && (!busy || f.queued[key] < dccQueueSender && f.waiting < dccQueueMax) {
+		f.offers[key] = append(f.offers[key], time.Now())
+		return false
+	}
+	if !f.noted[key] {
+		f.noted[key] = true
+		a.addLine(n.Status(), state.RoleInfo, "* Ignoring DCC offers from "+nick+" for now: too many at once")
+	}
+	return true
+}
+
+// dccWhenFree is whenFree for an offer from nick, counted while it waits.
+func (a *App) dccWhenFree(n *state.Network, nick string, open func(a *App) tea.Cmd) {
+	f, key := &a.dccFlood, dccKey(n, nick)
+	f.waiting++
+	f.queued[key]++
+	a.whenFree(func(a *App) tea.Cmd {
+		f.waiting--
+		if f.queued[key]--; f.queued[key] <= 0 {
+			delete(f.queued, key)
+		}
+		return open(a)
 	})
 }
 
@@ -152,10 +225,13 @@ func parseDCCSend(s string) (file string, ip net.IP, port string, size int64, er
 
 // localAddr reports whether an offer points at this computer or the
 // local network, which a stranger could use to make trout connect to
-// things there.
+// things there. That includes carrier-grade NAT's 100.64.0.0/10, which
+// Tailscale uses for your own computers.
 func localAddr(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || cgnat.Contains(ip)
 }
+
+var cgnat = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
 // dccPrivacyBox explains, once, what accepting a DCC file means.
 func (a *App) dccPrivacyBox(tr *transfer, ip net.IP) *msgBox {
@@ -259,31 +335,52 @@ func (a *App) dccTarget(tr *transfer) error {
 	if err != nil {
 		return err
 	}
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	tr.base, tr.existing, tr.renamed = filepath.Join(dir, name), -1, ""
+	tr.base, tr.existing = filepath.Join(dir, name), -1
 	if info, err := os.Stat(tr.base); err == nil && info.Mode().IsRegular() {
 		tr.existing = info.Size()
 	}
-	for i := 1; tr.renamed == ""; i++ { // the first free "name (n).ext"
-		path := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
-		switch _, err := os.Stat(path); {
-		case errors.Is(err, os.ErrNotExist):
-			tr.renamed = path
-		case err != nil:
-			return err
-		}
+	if tr.renamed, err = a.freeName(tr.base); err != nil {
+		return err
 	}
 	tr.path = tr.base
-	if tr.existing >= 0 {
+	switch {
+	case a.busy(tr.base): // another download's: not to resume or overwrite
+		tr.path, tr.existing = tr.renamed, -1
+	case tr.existing >= 0:
 		tr.path = tr.renamed
 	}
-	if o := a.earlierTry(tr); o != nil {
+	if o := a.earlierTry(tr); o != nil && !a.busy(o.path) {
 		if info, err := os.Stat(o.path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() < tr.size {
 			tr.path, tr.from = o.path, info.Size()
 		}
 	}
 	return nil
+}
+
+// freeName is the first "name (n).ext" next to base that's neither there
+// nor being downloaded to.
+func (a *App) freeName(base string) (string, error) {
+	dir, name := filepath.Split(base)
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for i := 1; ; i++ {
+		path := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
+		if a.busy(path) {
+			continue
+		}
+		switch _, err := os.Stat(path); {
+		case errors.Is(err, os.ErrNotExist):
+			return path, nil
+		case err != nil:
+			return "", err
+		}
+	}
+}
+
+// busy reports whether a download that hasn't ended writes to path. Case
+// doesn't count: Windows' and macOS's disks usually ignore it.
+func (a *App) busy(path string) bool {
+	return slices.ContainsFunc(a.transfers, func(o *transfer) bool { return !o.done && strings.EqualFold(o.path, path) })
 }
 
 // earlierTry is the latest download of the same file from the same
@@ -300,6 +397,16 @@ func (a *App) earlierTry(tr *transfer) *transfer {
 // dccStart gets the file: right away, or after the sender agrees to
 // resume (DCC RESUME, then its DCC ACCEPT).
 func (a *App) dccStart(tr *transfer) tea.Cmd {
+	// Another download took the name while you were deciding: a new one,
+	// so they don't write into the same file.
+	if a.busy(tr.path) {
+		path, err := a.freeName(tr.base)
+		if err != nil {
+			a.addLine(tr.net.Status(), state.RoleQuit, "* Can't get "+tr.file+": "+err.Error())
+			return nil
+		}
+		tr.path, tr.from = path, 0
+	}
 	a.transfers = append(a.transfers, tr)
 	// Like mIRC, each download gets its own window, which doesn't take
 	// the focus from what you're typing in.
@@ -324,12 +431,22 @@ func (a *App) dccAccept(n *state.Network, nick, args string) {
 		return
 	}
 	port := f[len(f)-2]
+	pos, err := strconv.ParseInt(f[len(f)-1], 10, 64)
 	for _, tr := range a.transfers {
-		if tr.resuming && tr.net == n && strings.EqualFold(tr.nick, nick) && tr.port == port {
-			tr.resuming = false
-			a.later(a.dccGo(tr))
+		if !tr.resuming || tr.net != n || !strings.EqualFold(tr.nick, nick) || tr.port != port {
+			continue
+		}
+		tr.resuming = false
+		// The sender resumes where it says: what's here past that is cut
+		// off. Past what's here, the file would have a hole.
+		if err != nil || pos < 0 || pos > tr.from {
+			tr.done, tr.err, tr.ended = true, fmt.Errorf("%s would resume at byte %s, past what's here", nick, f[len(f)-1]), time.Now()
+			a.addLine(n.Status(), state.RoleQuit, "* DCC: "+tr.file+" from "+nick+" failed: "+tr.err.Error())
 			return
 		}
+		tr.from = pos
+		a.later(a.dccGo(tr))
+		return
 	}
 }
 
@@ -368,11 +485,27 @@ func download(ctx context.Context, dial func(context.Context, string, string) (n
 
 	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	if from > 0 {
-		flags = os.O_WRONLY | os.O_APPEND
+		flags = os.O_WRONLY
 	}
 	f, err := os.OpenFile(path, flags, 0o644)
 	if err != nil {
 		return from, err
+	}
+	if from > 0 { // resumed: keep the first from bytes, write after them
+		info, err := f.Stat()
+		if err == nil && info.Size() < from {
+			err = fmt.Errorf("the file is shorter than %s now", sizeText(from))
+		}
+		if err == nil {
+			err = f.Truncate(from)
+		}
+		if err == nil {
+			_, err = f.Seek(from, io.SeekStart)
+		}
+		if err != nil {
+			f.Close()
+			return from, err
+		}
 	}
 	got, buf, ack := from, make([]byte, 64<<10), make([]byte, 4)
 	last := time.Now()
@@ -576,19 +709,27 @@ func (a *App) downloads() (string, error) {
 }
 
 // safeName keeps a file name from going anywhere but where it's put: no
-// folders, no hidden files, no control characters.
+// folders, no hidden files, no control characters. It's also the name
+// Windows would really save, on every OS, so the file type ignore list
+// checks what lands on disk: Windows drops trailing dots and spaces
+// ("evil.exe. ." is evil.exe) and takes "evil.exe::$DATA" for a stream
+// of evil.exe, so the characters it can't have in a name become _.
 func safeName(name string) string {
 	name = filepath.Base(strings.ReplaceAll(name, `\`, "/"))
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || r == '/' {
+		switch {
+		case r < 0x20 || r == 0x7f || r == '/':
 			return -1
+		case strings.ContainsRune(`<>:"|?*`, r):
+			return '_'
 		}
 		return r
 	}, name)
 	name = strings.TrimLeft(strings.TrimSpace(name), ".")
 	if len(name) > 200 {
-		name = name[:200]
+		name = strings.ToValidUTF8(name[:200], "")
 	}
+	name = strings.TrimRight(name, ". ")
 	return cmp.Or(name, "download")
 }
 

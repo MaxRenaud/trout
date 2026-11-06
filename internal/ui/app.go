@@ -205,6 +205,8 @@ type App struct {
 	messaged       map[string]time.Time // whom you last messaged, by network ID + " " + nick
 	transfers      []*transfer
 	chats          []*dccChat
+	dccFlood       dccFlood                     // DCC offers lately, to keep a flood of them out
+	ignoreLookups  []ignoreLookup               // /ignore nick type, waiting for USERHOST
 	waiting        []func(a *App) tea.Cmd       // dialogs to open once nothing is (whenFree)
 	installing     *installWizard               // the setup running, whose messages count
 	hooks          *installHooks                // tests: no ssh, binaries or login for real

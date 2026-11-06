@@ -267,6 +267,13 @@ func TestDCCOptions(t *testing.T) {
 	if !strings.Contains(lastLine(n.Status()), "Ignored setup.exe") || len(a.transfers) != 0 {
 		t.Fatalf("an .exe offer: %q", lastLine(n.Status()))
 	}
+	// Names Windows would save as .exe files are ignored as .exe files.
+	for _, name := range []string{"evil.exe.", `"evil.exe. . ."`} {
+		a.dccOffer(n, mustParse(t, ":eve!e@h PRIVMSG max :x"), "SEND "+name+" 2130706433 5000 10", time.Now())
+		if !strings.Contains(lastLine(n.Status()), "Ignored") || len(a.transfers) != 0 || a.dlg != nil {
+			t.Fatalf("an offer of %s: %q", name, lastLine(n.Status()))
+		}
+	}
 	a.dccIgnoreMode = 1 // accept only the list
 	if !a.dccTypeIgnored("song.mp3") || a.dccTypeIgnored("x.exe") {
 		t.Fatal("accept-only mode")

@@ -43,6 +43,18 @@ func TestParseDCCSend(t *testing.T) {
 	}
 }
 
+func TestLocalAddr(t *testing.T) {
+	for ip, want := range map[string]bool{
+		"127.0.0.1": true, "192.168.1.1": true, "10.1.2.3": true, "169.254.1.1": true, "::1": true, "fd7a:115c:a1e0::1": true,
+		"100.64.0.1": true, "100.100.100.100": true, "100.127.255.255": true, // CGNAT, Tailscale's
+		"100.63.255.255": false, "100.128.0.0": false, "8.8.8.8": false, "2001:4860:4860::8888": false,
+	} {
+		if got := localAddr(net.ParseIP(ip)); got != want {
+			t.Errorf("localAddr(%s) = %v", ip, got)
+		}
+	}
+}
+
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 func TestSafeName(t *testing.T) {
@@ -54,6 +66,12 @@ func TestSafeName(t *testing.T) {
 		"evil\x1b[2Jname":  "evil[2Jname",
 		"..":               "download",
 		"":                 "download",
+		// What Windows would save: no trailing dots or spaces, no streams.
+		"evil.exe.":        "evil.exe",
+		"evil.exe. . .":    "evil.exe",
+		"evil.exe::$DATA":  "evil.exe__$DATA",
+		`a<b>c"d|e?f*.txt`: "a_b_c_d_e_f_.txt",
+		". . .":            "download",
 	} {
 		if got := safeName(in); got != want {
 			t.Errorf("safeName(%q) = %q, want %q", in, got, want)
@@ -104,6 +122,34 @@ func TestDownload(t *testing.T) {
 	if got, _ := os.ReadFile(path); !bytes.Equal(got, content) {
 		t.Fatalf("resumed file is %d bytes and differs", len(got))
 	}
+	// Resumed before the end of what's there (the sender's ACCEPT said
+	// so): what's past it is replaced, not appended to.
+	os.Truncate(path, 1000)
+	from <- 500
+	if _, err := download(t.Context(), (&net.Dialer{}).DialContext, 30*time.Second, ln.Addr().String(), path, 500, int64(len(content)), func(int64) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, content) {
+		t.Fatalf("a file resumed at 500 of 1000 is %d bytes and differs", len(got))
+	}
+}
+
+// TestDCCAccept: a sender's DCC ACCEPT says where it resumes; trout
+// resumes there, or gives up if that's past what it has.
+func TestDCCAccept(t *testing.T) {
+	a, n, feed := realApp(t)
+	tr := &transfer{net: n, nick: "bot", file: "f.bin", path: filepath.Join(t.TempDir(), "f.bin"), addr: "127.0.0.1:1", port: "6800", size: 1000, from: 100, resuming: true}
+	a.transfers = append(a.transfers, tr)
+	feed(":bot!b@h PRIVMSG max :\x01DCC ACCEPT f.bin 6800 200\x01")
+	if !tr.done || tr.err == nil || tr.resuming {
+		t.Fatalf("an ACCEPT past what's here: done %v, err %v", tr.done, tr.err)
+	}
+	tr.done, tr.err, tr.resuming = false, nil, true
+	feed(":bot!b@h PRIVMSG max :\x01DCC ACCEPT f.bin 6800 50\x01")
+	if tr.resuming || tr.from != 50 || tr.cancel == nil {
+		t.Fatalf("an ACCEPT at 50: resuming %v, from %d", tr.resuming, tr.from)
+	}
+	tr.cancel()
 }
 
 func TestIgnoreAndCTCP(t *testing.T) {
@@ -386,6 +432,100 @@ func TestDCCOfferSafety(t *testing.T) {
 	feed(":bot!b@h PRIVMSG max :\x01DCC SEND x.bin 134744072 6800 1024\x01")
 	if !strings.Contains(lastLine(n.Status()), "Can't get x.bin") {
 		t.Fatalf("a folder trout can't search: %q", lastLine(n.Status()))
+	}
+}
+
+// TestDCCSameName: two downloads at once of files with the same name go
+// to different files, also when the name is taken on disk, and one that
+// has ended doesn't hold its name.
+func TestDCCSameName(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn = false
+	a.downloadDir = t.TempDir()
+	a.messaged[n.ID+" bot"], a.messaged[n.ID+" bot2"] = time.Now(), time.Now()
+	offer := func(from, name string) *transfer {
+		t.Helper()
+		before := len(a.transfers)
+		feed(":" + from + "!b@h PRIVMSG max :\x01DCC SEND " + name + " 134744072 6800 1024\x01") // 8.8.8.8
+		if a.dlg != nil || len(a.transfers) != before+1 {
+			t.Fatalf("an offer you asked for: dialog %T, %d transfers", a.dlg, len(a.transfers))
+		}
+		return a.transfers[before]
+	}
+	os.WriteFile(filepath.Join(a.downloadDir, "notes.txt"), nil, 0o644)
+	var paths []string
+	for _, tr := range []*transfer{offer("bot", "pack.bin"), offer("bot2", "pack.bin"), offer("bot", "notes.txt"), offer("bot2", "notes.txt")} {
+		paths = append(paths, filepath.Base(tr.path))
+	}
+	if want := []string{"pack.bin", "pack (1).bin", "notes (1).txt", "notes (2).txt"}; !slices.Equal(paths, want) {
+		t.Fatalf("saved to %q, want %q", paths, want)
+	}
+	a.transfers[1].done = true
+	if tr := offer("bot2", "pack.bin"); filepath.Base(tr.path) != "pack (1).bin" {
+		t.Fatalf("an ended download kept its name: %q", tr.path)
+	}
+	for _, tr := range a.transfers {
+		a.cancelTransfer(tr)
+	}
+}
+
+// TestDCCFlood: a flood of DCC offers while you're in a dialog leaves one
+// chat dialog to answer (for the newest offer), a few file offers from
+// the sender, said once, and only so many from many senders.
+func TestDCCFlood(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn = false
+	a.downloadDir = t.TempDir()
+	typing := &formBox{Title: "Typing", Buttons: []string{"OK", "Cancel"}, Fields: []*formField{newField("Text:", "", false)}}
+	a.openDialog(typing)
+	for i := range 50 {
+		feed(":bob!b@h PRIVMSG max :\x01DCC CHAT chat 134744072 " + strconv.Itoa(5000+i) + "\x01")
+	}
+	if len(a.waiting) != 1 {
+		t.Fatalf("50 chat offers: %d waiting", len(a.waiting))
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if d, ok := a.dlg.(*msgBox); !ok || d.Title != "DCC Chat" {
+		t.Fatalf("after the dialog, %T", a.dlg)
+	}
+	a.dlg.key(a, "enter") // Accept; the connection isn't made here
+	if a.dlg != nil || len(a.chats) != 1 || a.chats[0].addr != "8.8.8.8:5049" {
+		t.Fatalf("after the chat dialog: %T, chats %+v", a.dlg, a.chats)
+	}
+	a.closeWindow(a.chats[0].win)
+
+	a.openDialog(typing)
+	for range 50 {
+		feed(":bob!b@h PRIVMSG max :\x01DCC SEND f.bin 134744072 6800 1024\x01")
+	}
+	notes := 0
+	for _, l := range n.Status().Lines {
+		if strings.Contains(l.Text, "Ignoring DCC offers from bob") {
+			notes++
+		}
+	}
+	if len(a.waiting) != dccQueueSender || notes != 1 {
+		t.Fatalf("50 file offers: %d waiting, noted %d times", len(a.waiting), notes)
+	}
+	for i := range 20 {
+		feed(":bot" + strconv.Itoa(i) + "!b@h PRIVMSG max :\x01DCC SEND f.bin 134744072 6800 1024\x01")
+	}
+	if a.dccFlood.waiting != dccQueueMax || len(a.waiting) != dccQueueMax {
+		t.Fatalf("%d offers wait (%d dialogs), want %d", a.dccFlood.waiting, len(a.waiting), dccQueueMax)
+	}
+	a.dlg, a.waiting = nil, nil
+}
+
+// TestDCCReplay: offers in history the bouncer replays are dropped, chats
+// like files: their senders stopped listening long ago.
+func TestDCCReplay(t *testing.T) {
+	a, n, feed := realApp(t)
+	a.dccWarn, a.dccChat = false, 1 // auto: a chat would connect at once
+	a.downloadDir = t.TempDir()
+	feed("@time=2020-01-01T00:00:00.000Z :bob!b@h PRIVMSG max :\x01DCC CHAT chat 134744072 5000\x01",
+		"@time=2020-01-01T00:00:00.000Z :bob!b@h PRIVMSG max :\x01DCC SEND f.bin 134744072 5000 10\x01")
+	if a.dlg != nil || len(a.chats) != 0 || len(a.transfers) != 0 || len(a.waiting) != 0 || n.Find(state.KChat, "=bob") != nil {
+		t.Fatalf("replayed offers: dialog %T, %d chats, %d transfers", a.dlg, len(a.chats), len(a.transfers))
 	}
 }
 

@@ -58,6 +58,8 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 	case err != nil:
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" sent a DCC chat offer trout can't read: "+err.Error(), t)
 		return
+	case time.Since(t) > dccOfferAge: // replayed, like an old file offer
+		return
 	case port == "0":
 		a.addLineAt(status, state.RoleInfo, "* "+nick+" offers a passive DCC chat, which needs an open port here; trout doesn't do that", t)
 		return
@@ -89,7 +91,7 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 		a.openDialog(d)
 		return nil
 	}
-	a.whenFree(func(a *App) tea.Cmd {
+	open := func(a *App) tea.Cmd {
 		if !a.dccWarn {
 			return decide(a)
 		}
@@ -110,6 +112,22 @@ func (a *App) chatOffer(n *state.Network, nick, rest string, trusted bool, t tim
 		}
 		a.openDialog(d)
 		return nil
+	}
+	// A newer offer from them while one waits replaces it, as they listen
+	// for the newest.
+	key := dccKey(n, nick)
+	if _, ok := a.dccFlood.chat[key]; ok {
+		a.dccFlood.chat[key] = open
+		return
+	}
+	if a.dccFlooded(n, nick) {
+		return
+	}
+	a.dccFlood.chat[key] = open
+	a.dccWhenFree(n, nick, func(a *App) tea.Cmd {
+		open := a.dccFlood.chat[key]
+		delete(a.dccFlood.chat, key)
+		return open(a)
 	})
 }
 
