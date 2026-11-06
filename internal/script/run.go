@@ -869,7 +869,8 @@ func itoa(n int) string { return strconv.Itoa(n) }
 func itoa64(n int64) string { return strconv.FormatInt(n, 10) }
 func utoa(n uint32) string  { return strconv.FormatUint(uint64(n), 10) }
 
-// atoi is n, or 0 if s isn't a number.
+// atoi is n, or 0 if s isn't a number. A number too big for an int is
+// the biggest one (strconv's), so $99999999999999999999 isn't $0.
 func atoi(s string) int {
 	n, _ := strconv.Atoi(s)
 	return n

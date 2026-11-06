@@ -45,6 +45,8 @@ var evalCases = []struct{ in, want string }{
 	{"$2-3", "two three"},
 	{"$0", "4"},
 	{"$9", ""},
+	{"$99999999999999999999", ""},
+	{"$4294967297", ""},
 	{"$1's joke", "one's joke"},
 	{"Hel $+ lo th $+ ere $+ !", "Hello there!"},
 	{"a $null b", "a b"},

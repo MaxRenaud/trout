@@ -631,7 +631,22 @@ func TestLineTooLong(t *testing.T) {
 	}
 }
 
-// TestContinuedBeforeSection: a $& line just before an ini section's
+// TestTimerHuge: a timer's runs and interval, however big, don't overflow:
+// like mIRC, more runs than 2147483647 are 2147483647, and a longer
+// interval is an error.
+func TestTimerHuge(t *testing.T) {
+	got := runAlias(t, `alias t {
+  .timera 99999999999999999999 1 noop
+  .timerb 4294967297 2147483647 noop
+  echo -a $timer(a).reps $timer(b).reps $timer(b).delay
+  .timerc 1 2147483648 noop
+}`, "")
+	if len(got) != 2 || got[0] != "#trout: 2147483647 2147483647 2147483647" || !strings.Contains(got[1], "/timer: invalid parameters") {
+		t.Errorf("got %q", got)
+	}
+}
+
+// TestContinuedBeforeSection:a $& line just before an ini section's
 // header doesn't take the lines after the header with it.
 func TestContinuedBeforeSection(t *testing.T) {
 	lines, _ := sourceLines("alias a echo -a one $&\n[script]\nn0=alias b echo -a bee\nn1=alias c echo -a sea")
