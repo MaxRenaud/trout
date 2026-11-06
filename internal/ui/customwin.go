@@ -285,7 +285,9 @@ func (a *App) customEvent(w *state.Window, event string, line int) tea.Cmd {
 	if line > 0 {
 		params = []string{strconv.Itoa(line)}
 	}
-	return a.runScript(a.scripts.WindowEvent(event, w.Net.Name, w.Name, params, a.scriptHost()))
+	// Behind a script that's asking, like an event; and it can ask too.
+	h, net, name := a.scriptHost(), w.Net.Name, w.Name
+	return a.scriptAsking(func() []script.Action { return a.scripts.WindowEvent(event, net, name, params, h) })
 }
 
 // customClick is a click in a custom window's listbox: it selects the

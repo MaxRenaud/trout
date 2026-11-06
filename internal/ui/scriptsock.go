@@ -110,14 +110,18 @@ func (a *App) sockOpened(m sockOpenedMsg) tea.Cmd {
 		}
 		return nil
 	}
+	// on SOCKOPEN waits its turn behind a script that's asking, and can
+	// ask itself, like on SOCKREAD.
+	h := a.scriptHost()
 	if m.err != nil {
 		delete(a.socks, m.id)
-		return a.runScript(a.scripts.SockOpened(m.id, "", m.err, a.scriptHost()))
+		return a.scriptAsking(func() []script.Action { return a.scripts.SockOpened(m.id, "", m.err, h) })
 	}
 	sc.conn = m.conn
 	go sc.read(m.id, a.send)
 	go sc.write(m.id, a.send)
-	return a.runScript(a.scripts.SockOpened(m.id, m.conn.RemoteAddr().String(), nil, a.scriptHost()))
+	remote := m.conn.RemoteAddr().String()
+	return a.scriptAsking(func() []script.Action { return a.scripts.SockOpened(m.id, remote, nil, h) })
 }
 
 // sockMsg hands the engine what a socket's goroutines reported.

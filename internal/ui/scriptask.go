@@ -13,7 +13,10 @@ import (
 // shows the box and goes on with everything else; the answer hands the
 // run back. Meanwhile other script runs wait their turn, like the rest of
 // a script waits in mIRC, and $? in a run that can't wait (^ events, on
-// INPUT, a CTCP's) is an error.
+// INPUT, a CTCP's) is an error. Those still run while another waits:
+// trout needs their answer (did they halt?) before it shows the line or
+// sends the reply, so they can't join the queue. They share the engine's
+// $readn, $ferr and open files with the waiting run.
 
 // scriptRun is a script run that may stop to ask.
 type scriptRun struct {
