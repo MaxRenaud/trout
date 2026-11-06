@@ -306,7 +306,7 @@ func fakeSoju(t *testing.T) (*App, chan string) {
 				nc.Write([]byte(":soju 001 max :Welcome\r\n"))
 			case strings.HasPrefix(line, "PING "): // trout's liveness check, answered like soju does
 				nc.Write([]byte(":soju PONG soju " + strings.TrimPrefix(line, "PING ") + "\r\n"))
-			case strings.HasPrefix(line, "NICK"), strings.HasPrefix(line, "USER"), strings.HasPrefix(line, "BOUNCER BIND"):
+			case strings.HasPrefix(line, "NICK"), strings.HasPrefix(line, "USER "), strings.HasPrefix(line, "BOUNCER BIND"):
 			default:
 				sent <- line
 			}

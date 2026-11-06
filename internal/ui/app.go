@@ -205,20 +205,21 @@ type App struct {
 	messaged       map[string]time.Time // whom you last messaged, by network ID + " " + nick
 	transfers      []*transfer
 	chats          []*dccChat
-	dccFlood       dccFlood                     // DCC offers lately, to keep a flood of them out
-	ignoreLookups  []ignoreLookup               // /ignore nick type, waiting for USERHOST
-	waiting        []func(a *App) tea.Cmd       // dialogs to open once nothing is (whenFree)
-	installing     *installWizard               // the setup running, whose messages count
-	hooks          *installHooks                // tests: no ssh, binaries or login for real
-	moving         []movedNet                   // networks to make on a new bouncer once it's connected
-	movingTo       string                       // that bouncer's name
-	netsBatch      string                       // the batch of the bouncer's network list, while it comes
-	highHalf       rune                         // Windows: an emoji's first UTF-16 half, waiting for its second
-	unechoed       map[*state.Network][]sentMsg // sent, not yet echoed back by the bouncer
-	liveness       [3]time.Duration             // tests: irc.Config's Idle, AfterSend, PingWait
-	local          *local.Soju                  // trout's own soju, for the This Computer bouncer
-	localStarting  bool                         // one is starting
-	cloudTokens    map[string]string            // without a config (tests): cloud API tokens
+	dccFlood       dccFlood                      // DCC offers lately, to keep a flood of them out
+	ignoreLookups  []ignoreLookup                // /ignore nick type, waiting for USERHOST
+	localInfo      map[*state.Network]*localInfo // $host and $ip, from USERHOST on connect
+	waiting        []func(a *App) tea.Cmd        // dialogs to open once nothing is (whenFree)
+	installing     *installWizard                // the setup running, whose messages count
+	hooks          *installHooks                 // tests: no ssh, binaries or login for real
+	moving         []movedNet                    // networks to make on a new bouncer once it's connected
+	movingTo       string                        // that bouncer's name
+	netsBatch      string                        // the batch of the bouncer's network list, while it comes
+	highHalf       rune                          // Windows: an emoji's first UTF-16 half, waiting for its second
+	unechoed       map[*state.Network][]sentMsg  // sent, not yet echoed back by the bouncer
+	liveness       [3]time.Duration              // tests: irc.Config's Idle, AfterSend, PingWait
+	local          *local.Soju                   // trout's own soju, for the This Computer bouncer
+	localStarting  bool                          // one is starting
+	cloudTokens    map[string]string             // without a config (tests): cloud API tokens
 	dccSeq         int
 
 	urls          []seenURL                    // URLs List
@@ -442,6 +443,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.dccUpdate(msg)
 	case chatUpMsg, chatLineMsg, chatDownMsg:
 		a.chatUpdate(msg)
+	case localIPMsg, localInfoTimeoutMsg:
+		cmd = a.localInfoUpdate(msg)
 	case uploadDoneMsg:
 		a.uploaded(msg)
 	case instStepMsg, instPhaseMsg:

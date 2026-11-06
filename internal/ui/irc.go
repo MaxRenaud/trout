@@ -283,6 +283,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 	case "001":
 		n.Nick = arg(0)
 		line(status, state.RoleNormal, arg(1))
+		return a.askLocalInfo(n)
 	case "005":
 		is, unset := irc.ISupport(m)
 		if a.isupport == nil {
@@ -578,6 +579,9 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		}
 		line(status, state.RoleInfo, "* "+m.Command+" "+strings.Join(p, " "))
 	default:
+		if cmd, ok := a.localInfoReply(n, m); ok {
+			return cmd
+		}
 		if a.who(n, m) || a.ignoreUserhost(n, m) {
 			return nil
 		}

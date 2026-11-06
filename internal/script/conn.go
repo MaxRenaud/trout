@@ -23,7 +23,8 @@ type NetInfo struct {
 	AwayMsg    string
 	Idle       time.Duration // since we last said something
 	RealName   string        // $fullname
-	IP         string        // this computer\'s address on the connection: $ip
+	Host       string        // our host as the server sees it: $host (mIRC's Local Info)
+	IP         string        // its address: $ip
 	ServerIP   string        // the server\'s (through a bouncer, the bouncer\'s): $serverip
 }
 
@@ -193,8 +194,10 @@ var connIdents = map[string]builtin{
 		return "", nil
 	},
 	"ssl": func(r *run, fr *frame, c *call) (string, error) { return boolStr(r.h.Info(fr.network).SSL), nil },
-	// $ip is this computer's address on the connection; $serverip the
+	// $host and $ip are our host and address as the server sees them,
+	// from mIRC's Local Info lookup (USERHOST on connect); $serverip the
 	// server's, which with a bouncer is the bouncer's.
+	"host":     func(r *run, fr *frame, c *call) (string, error) { return r.h.Info(fr.network).Host, nil },
 	"ip":       func(r *run, fr *frame, c *call) (string, error) { return r.h.Info(fr.network).IP, nil },
 	"serverip": func(r *run, fr *frame, c *call) (string, error) { return r.h.Info(fr.network).ServerIP, nil },
 	"status": func(r *run, fr *frame, c *call) (string, error) {

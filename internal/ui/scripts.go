@@ -61,10 +61,21 @@ func (a *App) scriptsDir() string {
 // so write logs\ $+ $chan $+ .log in a channel named #x\..\..\..\foo
 // would write outside the folder its script meant. Nobody writes dir\..
 // on purpose. Max agreed to this one (2026-11-05).
+//
+// Also unlike mIRC, which has no ~, a leading ~/ is your home folder, as
+// in a terminal. Names from IRC can't make one: nicks and channels have
+// no /, and a channel starts with # anyway. Max agreed (2026-11-06).
 func (a *App) scriptFile(name string) (string, bool) {
 	name = strings.ReplaceAll(name, `\`, "/")
 	if climbs(name) {
 		return "", false
+	}
+	if rest, ok := strings.CutPrefix(name, "~/"); ok || name == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", false
+		}
+		return filepath.Join(home, filepath.FromSlash(rest)), true
 	}
 	name = filepath.Clean(filepath.FromSlash(name))
 	switch {
@@ -679,8 +690,7 @@ func (a *App) handleIRC(n *state.Network, m ircmsg.Message) tea.Cmd {
 		return actions
 	}))
 	if m.Command == "376" || m.Command == "422" {
-		// The end of the MOTD: on CONNECT, like mIRC's.
-		cmds = append(cmds, a.scriptEvent(script.Event{Kind: "CONNECT", Network: n.Name}))
+		cmds = append(cmds, a.motdEnded(n))
 	}
 	return tea.Batch(cmds...)
 }
@@ -851,7 +861,10 @@ func (h scriptHost) Info(network string) script.NetInfo {
 		RealName:   cmp.Or(n.Attrs["realname"], a.home.Attrs["realname"]),
 	}
 	if c := a.connFor(n); c != nil {
-		info.IP, info.ServerIP = addrHost(c.LocalAddr()), addrHost(c.RemoteAddr())
+		info.ServerIP = addrHost(c.RemoteAddr())
+	}
+	if li := a.localInfo[n]; li != nil {
+		info.Host, info.IP = li.host, li.ip
 	}
 	if a.opts.Demo {
 		info.Connected = true

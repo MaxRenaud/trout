@@ -236,8 +236,67 @@ func TestScriptNetIdents(t *testing.T) {
 	}
 	m, _ = ircmsg.ParseLine(":srv 005 max NETWORK=Libera.Chat CHANTYPES=# :are supported")
 	a.Update(ircLineMsg{n, m})
-	if got := ask("$network $ip $serverip $troutversion"); got != "Libera.Chat 127.0.0.1 127.0.0.1 0.5.0" {
+	if got := ask("$network $serverip $troutversion"); got != "Libera.Chat 127.0.0.1 0.5.0" {
 		t.Errorf("after 005: %q", got)
+	}
+}
+
+// TestLocalInfo: $host and $ip are what the server says our host is,
+// asked with USERHOST on 001 (not the end of trout's connection to the
+// bouncer), and on CONNECT waits for them, like mIRC's Local Info (checked).
+func TestLocalInfo(t *testing.T) {
+	a, sent := fakeSoju(t)
+	a.scripts = script.New(script.Options{})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	m, _ := ircmsg.ParseLine("BOUNCER NETWORK 7 name=irc.example.net;state=connected")
+	a.Update(ircLineMsg{a.home, m})
+	n := a.nets[1]
+	a.conns[n] = a.control
+	a.scripts.Load("c.mrc", "on *:CONNECT:echo -s connect ip= $+ $ip host= $+ $host")
+	feed := func(line string) tea.Cmd {
+		t.Helper()
+		m, err := ircmsg.ParseLine(line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, cmd := a.Update(ircLineMsg{n, m})
+		return cmd
+	}
+	ask := func() string {
+		acts, _ := a.scripts.Command(n.Name, "", "echo -s $ip / $host", true, a.scriptHost())
+		return acts[0].Echo.Text
+	}
+	if got := ask(); got != "/" {
+		t.Errorf("before connecting: %q", got)
+	}
+	feed(":srv 001 max :Welcome")
+	expectSent(t, sent, "USERHOST max")
+	feed(":srv 376 max :End of MOTD")
+	if got := lastLine(n.Status()); strings.HasPrefix(got, "connect") {
+		t.Errorf("on CONNECT didn't wait for the lookup: %q", got)
+	}
+	feed(":srv 302 max :max=+u@203.0.113.7")
+	if got := lastLine(n.Status()); got != "connect ip=203.0.113.7 host=" {
+		t.Errorf("on CONNECT after the lookup: %q", got)
+	}
+	if got := ask(); got != "203.0.113.7 /" {
+		t.Errorf("an address: %q", got)
+	}
+
+	// A cloak that doesn't resolve: $host is it, $ip empty.
+	feed(":srv 001 max :Welcome")
+	cmd := feed(":srv 302 max :max=+u@cloak.invalid")
+	if cmd == nil {
+		t.Fatal("no lookup for the host")
+	}
+	a.Update(localIPMsg{n, a.localInfo[n], ""}) // what resolving cloak.invalid gives
+	if got := ask(); got != "/ cloak.invalid" {
+		t.Errorf("a cloak: %q", got)
+	}
+	// Someone else's /userhost is still shown.
+	feed(":srv 302 max :bob=+b@example.org")
+	if got := lastLine(n.Status()); !strings.Contains(got, "bob") {
+		t.Errorf("someone else's USERHOST: %q", got)
 	}
 }
 
@@ -259,5 +318,15 @@ func TestScriptFullPaths(t *testing.T) {
 	want := "dir=" + dir + string(filepath.Separator) + " full=first line / first line / outside=nope"
 	if len(acts) == 0 || acts[0].Echo == nil || acts[0].Echo.Text != want {
 		t.Errorf("got %q, want %q", acts[0].Echo.Text, want)
+	}
+
+	// ~/ is the home folder, as in a terminal (mIRC has no ~).
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	os.WriteFile(filepath.Join(home, "readme.txt"), []byte("hello\r\n"), 0o644)
+	acts, _ = a.scripts.Command(a.home.Name, "", "echo -s $read(~/readme.txt,1) $exists(~/readme.txt) $exists(~/nope.txt)", true, a.scriptHost())
+	if got := acts[0].Echo.Text; got != "hello $true $false" {
+		t.Errorf("~/: %q", got)
 	}
 }

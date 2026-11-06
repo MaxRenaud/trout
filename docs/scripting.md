@@ -33,7 +33,8 @@ It holds mIRC's own files, in mIRC's format, so you can copy yours over:
 Other scripts (`.mrc` files) go there too, and anything a script reads or writes
 (`/write`, `$read`, `/hsave`, `/writeini`): names are relative to it, and `$mircdir` is
 its full path. Like mIRC, a full path reaches any file (`$read(/home/me/notes.txt)`), and
-so does a leading `..`: a script can read and write what you can, so load only scripts you
+so does a leading `..`; unlike mIRC, which has no `~`, so does `~/` for your home folder
+(`$read(~/notes.txt)`): a script can read and write what you can, so load only scripts you
 trust. A `..` after a folder's name (`logs\#x\..\..`) isn't allowed (see
 [Where trout differs](#where-trout-differs-from-mirc)).
 
@@ -168,8 +169,10 @@ error.
   `$mklogfn`, `$fullname`, `$mircexe`; `$insong`/`$inwave` are `$false` and `$anick`
   and `$emailaddr` empty, since trout has no sounds, alternate nick or email.
 - **The connection**: `$network` is the network's own name (the server's 005
-  `NETWORK=`, as in mIRC), `$ip` this computer's address and `$serverip` the server's
-  (with a bouncer, the bouncer's). `$version` is the mIRC version trout's scripting
+  `NETWORK=`, as in mIRC), `$host` and `$ip` your host and address as the network sees
+  them (asked with `USERHOST` when you connect, like mIRC's Local Info: with a bouncer
+  they're the bouncer's; with a cloak, `$ip` is empty), and `$serverip` the server's
+  (with a bouncer, the bouncer's). `on CONNECT` waits for `$host` and `$ip`. `$version` is the mIRC version trout's scripting
   follows (7.86), for scripts' checks; `$troutversion` is trout's.
 - **Uptime**: `$uptime(mirc)` is trout's, `$uptime(server)` the network connection's, and
   `$uptime(system)` (and `$ticks`) the computer's, in milliseconds or, with N, as
@@ -254,6 +257,8 @@ trout's own commands, and anything trout doesn't know goes to the server.
   file (`/write` and the rest give an error). A channel's name can have `\` and `..` in
   it, so `write logs\ $+ $chan $+ .log` could otherwise write anywhere. A leading `..`
   and full paths work as in mIRC.
+- A file name starting with `~/` is in your home folder, as in a terminal; mIRC has no
+  `~`, and would look for a folder named `~` in the scripts folder.
 - Timers run outside any script, so they can't call another script's `alias -l`.
 - `isop` counts owners and admins (`~`, `&`) as ops.
 - Custom windows are always full size, like trout's other windows: their positions,
