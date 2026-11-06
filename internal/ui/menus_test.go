@@ -54,6 +54,12 @@ func TestSafeName(t *testing.T) {
 		"evil\x1b[2Jname":  "evil[2Jname",
 		"..":               "download",
 		"":                 "download",
+		// What Windows would save: no trailing dots or spaces, no streams.
+		"evil.exe.":        "evil.exe",
+		"evil.exe. . .":    "evil.exe",
+		"evil.exe::$DATA":  "evil.exe__$DATA",
+		`a<b>c"d|e?f*.txt`: "a_b_c_d_e_f_.txt",
+		". . .":            "download",
 	} {
 		if got := safeName(in); got != want {
 			t.Errorf("safeName(%q) = %q, want %q", in, got, want)

@@ -576,19 +576,27 @@ func (a *App) downloads() (string, error) {
 }
 
 // safeName keeps a file name from going anywhere but where it's put: no
-// folders, no hidden files, no control characters.
+// folders, no hidden files, no control characters. It's also the name
+// Windows would really save, on every OS, so the file type ignore list
+// checks what lands on disk: Windows drops trailing dots and spaces
+// ("evil.exe. ." is evil.exe) and takes "evil.exe::$DATA" for a stream
+// of evil.exe, so the characters it can't have in a name become _.
 func safeName(name string) string {
 	name = filepath.Base(strings.ReplaceAll(name, `\`, "/"))
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || r == '/' {
+		switch {
+		case r < 0x20 || r == 0x7f || r == '/':
 			return -1
+		case strings.ContainsRune(`<>:"|?*`, r):
+			return '_'
 		}
 		return r
 	}, name)
 	name = strings.TrimLeft(strings.TrimSpace(name), ".")
 	if len(name) > 200 {
-		name = name[:200]
+		name = strings.ToValidUTF8(name[:200], "")
 	}
+	name = strings.TrimRight(name, ". ")
 	return cmp.Or(name, "download")
 }
 
