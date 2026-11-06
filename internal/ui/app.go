@@ -857,8 +857,11 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft {
+		// Under a dialog, a menu or the color palette, a thumb that isn't
+		// theirs is covered: their blank parts have no regions of their own.
 		r, ok := a.hit(m.X, m.Y)
-		if ok && r.S == "thumb" && (r.Kind == HitMsgScroll || r.Kind == HitNickScroll || r.Kind == HitDlg ||
+		covered := len(a.menus) > 0 || a.pal != nil || a.dlg != nil && r.Kind != HitDlg
+		if ok && !covered && r.S == "thumb" && (r.Kind == HitMsgScroll || r.Kind == HitNickScroll || r.Kind == HitDlg ||
 			r.Kind == HitCustomScroll || r.Kind == HitSideScroll) {
 			a.drag, a.thumbKind, a.thumbGrab = dragThumb, r.Kind, m.Y-r.Y
 			return nil
