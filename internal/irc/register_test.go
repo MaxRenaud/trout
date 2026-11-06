@@ -162,6 +162,14 @@ func TestSASLChunks(t *testing.T) {
 	}
 }
 
+func TestISupport(t *testing.T) {
+	m, _ := ircmsg.ParseLine(":srv 005 max CHANTYPES=# MONITOR=100 -EXCEPTS -MONITOR :are supported by this server")
+	set, unset := ISupport(m)
+	if set["CHANTYPES"] != "#" || len(set) != 1 || strings.Join(unset, " ") != "EXCEPTS MONITOR" {
+		t.Fatalf("set %v, unset %q", set, unset)
+	}
+}
+
 // A line far longer than IRC allows is dropped; the next one still comes.
 func TestLongLine(t *testing.T) {
 	addr, _ := scripted(t, func(line string) []string {

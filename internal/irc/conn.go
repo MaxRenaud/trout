@@ -454,17 +454,23 @@ func last(params []string) string {
 }
 
 // ISupport parses an RPL_ISUPPORT message's tokens, without the leading
-// nick and trailing "are supported" text.
-func ISupport(m ircmsg.Message) map[string]string {
-	out := map[string]string{}
+// nick and trailing "are supported" text: the ones it sets, and the ones
+// it takes back ("-TOKEN", for a server that no longer has it).
+func ISupport(m ircmsg.Message) (set map[string]string, unset []string) {
+	set = map[string]string{}
 	if len(m.Params) < 3 {
-		return out
+		return set, nil
 	}
 	for _, tok := range m.Params[1 : len(m.Params)-1] {
+		if k, ok := strings.CutPrefix(tok, "-"); ok {
+			unset = append(unset, k)
+			delete(set, k)
+			continue
+		}
 		k, v, _ := strings.Cut(tok, "=")
-		out[k] = v
+		set[k] = v
 	}
-	return out
+	return set, unset
 }
 
 // ParsePrefix splits an ISUPPORT PREFIX value like "(ov)@+" into its modes

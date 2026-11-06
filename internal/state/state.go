@@ -186,6 +186,9 @@ type Network struct {
 	// CaseMapping is RPL_ISUPPORT's CASEMAPPING: "ascii", or "rfc1459"
 	// (the default), where []\~ are the capitals of {}|^.
 	CaseMapping string
+	// ChanTypes is RPL_ISUPPORT's CHANTYPES, the characters a channel
+	// name starts with; "" means #&+!.
+	ChanTypes string
 }
 
 // Down reports whether soju says it isn't connected to the network.
@@ -292,7 +295,11 @@ func (n *Network) Same(a, b string) bool {
 
 // IsChannel reports whether target names a channel rather than a nick.
 func (n *Network) IsChannel(target string) bool {
-	return target != "" && strings.ContainsRune("#&+!", rune(target[0]))
+	types := "#&+!"
+	if n != nil && n.ChanTypes != "" {
+		types = n.ChanTypes
+	}
+	return target != "" && strings.IndexByte(types, target[0]) >= 0
 }
 
 // SplitPrefix splits a NAMES entry like "@+alice" into its prefixes (all of

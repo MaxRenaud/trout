@@ -193,6 +193,21 @@ func TestJoinList(t *testing.T) {
 	}
 }
 
+// TestISupportChanges: CHANTYPES decides what's a channel, and a -TOKEN
+// takes a feature back.
+func TestISupportChanges(t *testing.T) {
+	a, n, _ := realApp(t)
+	feed := func(l string) { m, _ := ircmsg.ParseLine(l); a.handleIRC(n, m) }
+	feed(":srv 005 max CHANTYPES=# MONITOR=100 :are supported by this server")
+	if n.IsChannel("&local") || !n.IsChannel("#go") || !n.Monitor {
+		t.Fatalf("CHANTYPES=#: &local a channel %v, #go %v; monitor %v", n.IsChannel("&local"), n.IsChannel("#go"), n.Monitor)
+	}
+	feed(":srv 005 max -CHANTYPES -MONITOR :are supported by this server")
+	if !n.IsChannel("&local") || n.Monitor || a.isupport[n]["MONITOR"] != "" {
+		t.Fatalf("after -CHANTYPES -MONITOR: &local a channel %v, monitor %v", n.IsChannel("&local"), n.Monitor)
+	}
+}
+
 // TestNoNetworksYet: a bouncer with no networks (a new one, This Computer
 // the first time) says how to add one and opens Select Server, once.
 func TestNoNetworksYet(t *testing.T) {

@@ -284,7 +284,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		n.Nick = arg(0)
 		line(status, state.RoleNormal, arg(1))
 	case "005":
-		is := irc.ISupport(m)
+		is, unset := irc.ISupport(m)
 		if a.isupport == nil {
 			a.isupport = map[*state.Network]map[string]string{}
 		}
@@ -292,6 +292,23 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 			a.isupport[n] = map[string]string{}
 		}
 		maps.Copy(a.isupport[n], is)
+		for _, k := range unset { // the server took it back: the default again
+			delete(a.isupport[n], k)
+			switch k {
+			case "PREFIX":
+				n.PrefixModes, n.Prefixes = "ov", "@+"
+			case "CHANMODES":
+				n.ChanModes = "beI,k,l,imnpst"
+			case "soju.im/FILEHOST":
+				n.FileHost = ""
+			case "CASEMAPPING":
+				n.CaseMapping = ""
+			case "MONITOR":
+				n.Monitor = false
+			case "CHANTYPES":
+				n.ChanTypes = ""
+			}
+		}
 		if modes, prefixes, ok := irc.ParsePrefix(is["PREFIX"]); ok {
 			n.PrefixModes, n.Prefixes = modes, prefixes
 		}
@@ -306,6 +323,9 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		}
 		if _, ok := is["MONITOR"]; ok {
 			n.Monitor = true
+		}
+		if v, ok := is["CHANTYPES"]; ok {
+			n.ChanTypes = v
 		}
 		line(status, state.RoleNormal, strings.Join(p[min(1, len(p)):], " "))
 	case "JOIN":
