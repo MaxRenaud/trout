@@ -236,13 +236,31 @@ type Installer struct {
 
 var accountRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
+// hostRe is a server's address: a name, an IPv4 or an IPv6 one. It goes
+// into the root script, soju's config and a systemd unit, so nothing a
+// shell or those would read differently (config.toml's address for
+// Existing isn't checked by ssh -G like a new server's).
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9_.:]([A-Za-z0-9_.:-]{0,252})$`)
+
+// safeRe is what shq leaves unquoted.
+var safeRe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
+
+// shq quotes s for sh when it needs it: a home folder with a space in it
+// mustn't turn rm -rf "/home/a b/.trout-install" into rm -rf /home/a.
+func shq(s string) string {
+	if safeRe.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // New makes the TLS key and the account's password. host is the address
 // people (trout) will connect to; account is the soju user name.
 func New(r Runner, f Facts, host, account string) (*Installer, error) {
 	if !accountRe.MatchString(account) {
 		return nil, fmt.Errorf("the account name %q should be letters, digits, '.', '_' or '-'", account)
 	}
-	if strings.ContainsAny(host, " \t\n'\"$`\\/") || host == "" {
+	if !hostRe.MatchString(host) {
 		return nil, fmt.Errorf("can't use %q as the server's address", host)
 	}
 	in := &Installer{R: r, Facts: f, Root: f.BestRoot(), Host: host, Account: account, Password: password()}
@@ -260,7 +278,7 @@ func Existing(r Runner, f Facts, host, account, password, pin, mode string) (*In
 	if !accountRe.MatchString(account) {
 		return nil, fmt.Errorf("the account name %q should be letters, digits, '.', '_' or '-'", account)
 	}
-	if strings.ContainsAny(host, " \t\n'\"$`\\/") || host == "" {
+	if !hostRe.MatchString(host) {
 		return nil, fmt.Errorf("can't use %q as the server's address", host)
 	}
 	switch mode {
@@ -345,12 +363,12 @@ func (in *Installer) Script() string {
 		password = "" // the account stays as it is
 	}
 	return fmt.Sprintf("#!/bin/sh\nTROUT_SOJU_VERSION=%s\nTROUT_HOST=%s\nTROUT_INGRESS=%s\nTROUT_ACCOUNT=%s\nTROUT_PASSWORD=%s\nTROUT_ACME=%s\n\n",
-		SojuVersion, in.Host, ingress, in.Account, password, ACMEDirectory) + setupScript
+		shq(SojuVersion), shq(in.Host), shq(ingress), shq(in.Account), shq(password), shq(ACMEDirectory)) + setupScript
 }
 
 // ManualCommand is what you run as root yourself when trout can't (ByHand).
 func (in *Installer) ManualCommand() string {
-	return strings.TrimSpace("sudo sh " + in.Stage() + "/setup.sh " + in.Mode)
+	return strings.TrimSpace("sudo sh " + shq(in.Stage()+"/setup.sh") + " " + in.Mode)
 }
 
 // StageFiles uploads the setup script and what it needs: soju and sojuctl
@@ -378,12 +396,13 @@ func (in *Installer) StageFiles(ctx context.Context) error {
 			return err
 		}
 	}
-	dir := in.Stage()
+	dir := shq(in.Stage())
 	if err := in.R.Run(ctx, Cmd{Line: "rm -rf " + dir + " && mkdir -m 700 " + dir}); err != nil {
 		return err
 	}
 	upload := func(name string, data io.Reader, mode string) error {
-		return in.R.Run(ctx, Cmd{Line: fmt.Sprintf("cat > %s/%s && chmod %s %s/%s", dir, name, mode, dir, name), Stdin: data})
+		path := shq(in.Stage() + "/" + name)
+		return in.R.Run(ctx, Cmd{Line: fmt.Sprintf("cat > %s && chmod %s %s", path, mode, path), Stdin: data})
 	}
 	for _, b := range []struct{ name, path, version string }{{"soju", soju, " " + SojuVersion}, {"sojuctl", sojuctl, " " + SojuVersion}, {"trout-cert", cert, ""}} {
 		if b.path == "" {
@@ -421,7 +440,7 @@ func (in *Installer) StageFiles(ctx context.Context) error {
 // Setup runs the setup script as root, the way in.Root says (not ByHand),
 // in in.Mode, reporting its steps.
 func (in *Installer) Setup(ctx context.Context) error {
-	script := "sh " + in.Stage() + "/setup.sh " + in.Mode
+	script := "sh " + shq(in.Stage()+"/setup.sh") + " " + in.Mode
 	c := Cmd{Line: script}
 	switch in.Root {
 	case WithSudo:
@@ -448,6 +467,7 @@ func (in *Installer) runSteps(ctx context.Context, c Cmd) error {
 	pr, pw := io.Pipe()
 	c.Stdout = pw
 	var failed string
+	var other []string // under -tt, sudo's complaints come here, not to stderr
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -458,6 +478,8 @@ func (in *Installer) runSteps(ctx context.Context, c Cmd) error {
 				in.progress(s)
 			} else if s, ok := strings.CutPrefix(line, "trout-fail: "); ok {
 				failed = s
+			} else if c.TTY && len(other) < 20 {
+				other = append(other, line)
 			}
 		}
 		io.Copy(io.Discard, pr)
@@ -470,7 +492,7 @@ func (in *Installer) runSteps(ctx context.Context, c Cmd) error {
 	case failed != "":
 		return errors.New(failed)
 	case errors.As(err, &re) && in.Root == WithPassword:
-		low := strings.ToLower(re.Stderr)
+		low := strings.ToLower(re.Stderr + "\n" + strings.Join(other, "\n"))
 		switch {
 		case strings.Contains(low, "not in the sudoers"), strings.Contains(low, "not allowed to"),
 			strings.Contains(low, "i'm afraid i can't do that"): // sudo-rs
@@ -486,7 +508,7 @@ func (in *Installer) runSteps(ctx context.Context, c Cmd) error {
 
 // Cleanup removes the uploaded files from the server.
 func (in *Installer) Cleanup(ctx context.Context) error {
-	return in.R.Run(ctx, Cmd{Line: "rm -rf " + in.Stage()})
+	return in.R.Run(ctx, Cmd{Line: "rm -rf " + shq(in.Stage())})
 }
 
 // Check makes sure soju is set up, without root: it logs in from here

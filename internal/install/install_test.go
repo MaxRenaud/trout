@@ -140,7 +140,7 @@ func TestNewAndScript(t *testing.T) {
 		t.Fatal(in.Address(), in.ManualCommand())
 	}
 	in.Host = "2001:db8::1"
-	if !strings.Contains(in.Script(), "TROUT_INGRESS=https://[2001:db8::1]:8443\n") || in.Address() != "ircs://[2001:db8::1]:6697" {
+	if !strings.Contains(in.Script(), "TROUT_INGRESS='https://[2001:db8::1]:8443'\n") || in.Address() != "ircs://[2001:db8::1]:6697" {
 		t.Fatal("an IPv6 address isn't bracketed")
 	}
 }
@@ -362,7 +362,7 @@ func TestModes(t *testing.T) {
 			t.Errorf("%s (trout-cert there: %v) uploads %q", c.mode, c.cert, got)
 		}
 		// The script leaves the account alone, and runs in the mode.
-		if !strings.Contains(in.Script(), "TROUT_PASSWORD=\n") || in.ManualCommand() != "sudo sh /home/max/.trout-install/setup.sh "+c.mode {
+		if !strings.Contains(in.Script(), "TROUT_PASSWORD=''\n") || in.ManualCommand() != "sudo sh /home/max/.trout-install/setup.sh "+c.mode {
 			t.Errorf("%s: %q", c.mode, in.ManualCommand())
 		}
 		in.Setup(context.Background())
@@ -398,5 +398,81 @@ func TestFindNextToTrout(t *testing.T) {
 func TestOlder(t *testing.T) {
 	if Older("") || Older(SojuVersion) || !Older("v0.1.0") || Older("v99.0.0") {
 		t.Error("Older: empty, the current version and a newer one aren't older; v0.1.0 is")
+	}
+}
+
+// TestQuoting: a home folder with a space in it is quoted everywhere it
+// goes into a command, so rm -rf takes it whole, and a host from
+// config.toml with shell in it is refused like a new server's.
+func TestQuoting(t *testing.T) {
+	srv := &fakeServer{}
+	in := testInstaller(t, srv)
+	in.Facts.Home = "/home/a b"
+	in.Root = WithSudo
+	if err := in.StageFiles(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	in.Setup(context.Background())
+	in.Cleanup(context.Background())
+	var lines []string
+	for _, c := range srv.ran {
+		lines = append(lines, c.Line)
+	}
+	for _, want := range []string{
+		"rm -rf '/home/a b/.trout-install' && mkdir -m 700 '/home/a b/.trout-install'",
+		"cat > '/home/a b/.trout-install/setup.sh' && chmod 600 '/home/a b/.trout-install/setup.sh'",
+		"sudo -n sh '/home/a b/.trout-install/setup.sh' ",
+		"rm -rf '/home/a b/.trout-install'",
+	} {
+		if !slices.Contains(lines, want) {
+			t.Errorf("no %q in:\n%s", want, strings.Join(lines, "\n"))
+		}
+	}
+	if in.ManualCommand() != "sudo sh '/home/a b/.trout-install/setup.sh'" {
+		t.Error(in.ManualCommand())
+	}
+	if shq("it's") != `'it'\''s'` {
+		t.Error(shq("it's"))
+	}
+	for _, host := range []string{"x;reboot", "x&y", "a|b", "-oProxyCommand=x", "a(b)", "a#b", "a<b", ""} {
+		if _, err := Existing(srv, in.Facts, host, "max", "pw", "pin", "update"); err == nil {
+			t.Errorf("Existing took the host %q", host)
+		}
+	}
+	for _, host := range []string{"bnc.example.org", "192.0.2.7", "2001:db8::1"} {
+		if _, err := Existing(srv, in.Facts, host, "max", "pw", "pin", "update"); err != nil {
+			t.Errorf("Existing refused %q: %v", host, err)
+		}
+	}
+}
+
+// ttyServer is an old sudoers with requiretty: without a terminal sudo
+// refuses, and with one its complaints come out on stdout, the terminal.
+type ttyServer struct{ ttyOut string }
+
+func (s ttyServer) Run(_ context.Context, c Cmd) error {
+	if !c.TTY {
+		return &RemoteError{Line: c.Line, Code: 1, Stderr: "sudo: sorry, you must have a tty to run sudo"}
+	}
+	io.WriteString(c.Stdout, s.ttyOut)
+	return &RemoteError{Line: c.Line, Code: 1}
+}
+
+// TestSetupTTYErrors: through the terminal, a wrong sudo password and
+// no sudo at all are told apart like without one, from stdout.
+func TestSetupTTYErrors(t *testing.T) {
+	for _, c := range []struct {
+		out  string
+		want error
+	}{
+		{"\r\nSorry, try again.\r\nsudo: 1 incorrect password attempt\r\n", ErrSudoPassword},
+		{"max is not in the sudoers file.\r\n", ErrNoSudo},
+	} {
+		in := testInstaller(t, &fakeServer{})
+		in.R = ttyServer{c.out}
+		in.Root, in.SudoPassword = WithPassword, "pw"
+		if err := in.Setup(context.Background()); !errors.Is(err, c.want) {
+			t.Errorf("%q: got %v, want %v", c.out, err, c.want)
+		}
 	}
 }
