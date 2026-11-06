@@ -134,11 +134,14 @@ func (a *App) ignoreCommand(w *state.Window, on bool, rest string) {
 	case known:
 		e.mask, _ = script.Mask(addr, kind)
 	default:
-		if a.sendNet(n, "USERHOST", arg) {
-			a.ignoreLookups = append(a.ignoreLookups, ignoreLookup{w, arg, e, on, kind})
+		// Asked for, like mIRC; not connected, it says so and ignores
+		// nobody (checked).
+		if a.connFor(n) == nil || !a.sendNet(n, "USERHOST", arg) {
+			a.addLine(w, state.RoleQuit, "* /ignore: not connected to server")
 			return
 		}
-		e.mask = ignoreMask(arg)
+		a.ignoreLookups = append(a.ignoreLookups, ignoreLookup{w, arg, e, on, kind})
+		return
 	}
 	a.setIgnoreEntry(w, e, on)
 }
@@ -174,9 +177,8 @@ func (a *App) ignoreUserhost(n *state.Network, m ircmsg.Message) bool {
 		return false
 	}
 	a.ignoreLookups = slices.Delete(a.ignoreLookups, i, i+1)
-	if l.e.mask == "" {
-		a.addLine(l.w, state.RoleInfo, "* "+l.nick+" isn't on "+n.Name+", so trout can't look up their address; using "+ignoreMask(l.nick))
-		l.e.mask = ignoreMask(l.nick)
+	if l.e.mask == "" { // not on: nobody is ignored, and nothing said, like mIRC (checked)
+		return true
 	}
 	a.setIgnoreEntry(l.w, l.e, l.on)
 	return true

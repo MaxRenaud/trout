@@ -100,8 +100,8 @@ func TestIgnoreMaskType(t *testing.T) {
 	}
 	a.ircCommand(w, "ignore zed 2")
 	feed(":srv 302 max :")
-	if got := list(); got != "*!*@erin.example|zed!*@*" || !strings.Contains(w.Lines[len(w.Lines)-2].Text, "zed isn't on") {
-		t.Fatalf("/ignore of someone not on: %q, %q", got, w.Lines[len(w.Lines)-2].Text)
+	if got := list(); got != "*!*@erin.example" || len(a.ignoreLookups) != 0 {
+		t.Fatalf("/ignore of someone not on ignored %q, like mIRC it should ignore nobody", got)
 	}
 }
 
