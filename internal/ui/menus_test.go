@@ -110,6 +110,34 @@ func TestDownload(t *testing.T) {
 	if got, _ := os.ReadFile(path); !bytes.Equal(got, content) {
 		t.Fatalf("resumed file is %d bytes and differs", len(got))
 	}
+	// Resumed before the end of what's there (the sender's ACCEPT said
+	// so): what's past it is replaced, not appended to.
+	os.Truncate(path, 1000)
+	from <- 500
+	if _, err := download(t.Context(), (&net.Dialer{}).DialContext, 30*time.Second, ln.Addr().String(), path, 500, int64(len(content)), func(int64) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, content) {
+		t.Fatalf("a file resumed at 500 of 1000 is %d bytes and differs", len(got))
+	}
+}
+
+// TestDCCAccept: a sender's DCC ACCEPT says where it resumes; trout
+// resumes there, or gives up if that's past what it has.
+func TestDCCAccept(t *testing.T) {
+	a, n, feed := realApp(t)
+	tr := &transfer{net: n, nick: "bot", file: "f.bin", path: filepath.Join(t.TempDir(), "f.bin"), addr: "127.0.0.1:1", port: "6800", size: 1000, from: 100, resuming: true}
+	a.transfers = append(a.transfers, tr)
+	feed(":bot!b@h PRIVMSG max :\x01DCC ACCEPT f.bin 6800 200\x01")
+	if !tr.done || tr.err == nil || tr.resuming {
+		t.Fatalf("an ACCEPT past what's here: done %v, err %v", tr.done, tr.err)
+	}
+	tr.done, tr.err, tr.resuming = false, nil, true
+	feed(":bot!b@h PRIVMSG max :\x01DCC ACCEPT f.bin 6800 50\x01")
+	if tr.resuming || tr.from != 50 || tr.cancel == nil {
+		t.Fatalf("an ACCEPT at 50: resuming %v, from %d", tr.resuming, tr.from)
+	}
+	tr.cancel()
 }
 
 func TestIgnoreAndCTCP(t *testing.T) {

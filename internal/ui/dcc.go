@@ -428,12 +428,22 @@ func (a *App) dccAccept(n *state.Network, nick, args string) {
 		return
 	}
 	port := f[len(f)-2]
+	pos, err := strconv.ParseInt(f[len(f)-1], 10, 64)
 	for _, tr := range a.transfers {
-		if tr.resuming && tr.net == n && strings.EqualFold(tr.nick, nick) && tr.port == port {
-			tr.resuming = false
-			a.later(a.dccGo(tr))
+		if !tr.resuming || tr.net != n || !strings.EqualFold(tr.nick, nick) || tr.port != port {
+			continue
+		}
+		tr.resuming = false
+		// The sender resumes where it says: what's here past that is cut
+		// off. Past what's here, the file would have a hole.
+		if err != nil || pos < 0 || pos > tr.from {
+			tr.done, tr.err, tr.ended = true, fmt.Errorf("%s would resume at byte %s, past what's here", nick, f[len(f)-1]), time.Now()
+			a.addLine(n.Status(), state.RoleQuit, "* DCC: "+tr.file+" from "+nick+" failed: "+tr.err.Error())
 			return
 		}
+		tr.from = pos
+		a.later(a.dccGo(tr))
+		return
 	}
 }
 
@@ -472,11 +482,27 @@ func download(ctx context.Context, dial func(context.Context, string, string) (n
 
 	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	if from > 0 {
-		flags = os.O_WRONLY | os.O_APPEND
+		flags = os.O_WRONLY
 	}
 	f, err := os.OpenFile(path, flags, 0o644)
 	if err != nil {
 		return from, err
+	}
+	if from > 0 { // resumed: keep the first from bytes, write after them
+		info, err := f.Stat()
+		if err == nil && info.Size() < from {
+			err = fmt.Errorf("the file is shorter than %s now", sizeText(from))
+		}
+		if err == nil {
+			err = f.Truncate(from)
+		}
+		if err == nil {
+			_, err = f.Seek(from, io.SeekStart)
+		}
+		if err != nil {
+			f.Close()
+			return from, err
+		}
 	}
 	got, buf, ack := from, make([]byte, 64<<10), make([]byte, 4)
 	last := time.Now()
