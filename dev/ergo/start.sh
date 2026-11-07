@@ -8,5 +8,7 @@ sed -e "s/^    name: ErgoTest$/    name: $NETWORK/" \
     -e 's|path: languages|path: /ircd-bin/languages|' \
     /ircd-bin/default.yaml > /ircd/ircd.yaml
 sed "s/NETWORK/$NETWORK/" /dev-ergo/motd.txt > /ircd/ergo.motd
-/ircd-bin/ergo mkcerts
+# /ircd is a volume, so the certs survive restarts; mkcerts refuses to
+# overwrite them and set -e would turn that into a crash loop.
+[ -f fullchain.pem ] && [ -f privkey.pem ] || /ircd-bin/ergo mkcerts
 exec /ircd-bin/ergo run
