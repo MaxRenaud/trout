@@ -585,6 +585,9 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		if a.who(n, m) || a.ignoreUserhost(n, m) {
 			return nil
 		}
+		if cmd, ok := a.dnsUserhost(n, m); ok {
+			return cmd
+		}
 		if who, text, ok := whoisLine(m); ok {
 			a.whoisReply(n, m, who, text, t)
 			return nil

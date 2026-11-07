@@ -532,7 +532,7 @@ func (a *App) scriptCommand(w *state.Window, cmd string) tea.Cmd {
 		a.addLine(w.Net.Status(), state.RoleInfo, "* /"+name+": "+what)
 		return nil
 	}
-	return a.command(w, line)
+	return a.commandAs(w, cmd, line)
 }
 
 // saveScriptState writes the scripts' variables (vars.ini) or Users list

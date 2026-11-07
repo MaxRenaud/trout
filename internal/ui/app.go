@@ -208,6 +208,9 @@ type App struct {
 	dccFlood       dccFlood                      // DCC offers lately, to keep a flood of them out
 	ignoreLookups  []ignoreLookup                // /ignore nick type, waiting for USERHOST
 	localInfo      map[*state.Network]*localInfo // $host and $ip, from USERHOST on connect
+	dnsLookups     []*dnsLookup                  // /dns not done yet, in the order asked
+	dnsSeq         int                           // the last lookup's id
+	quiet          bool                          // the command running had mIRC's . in front (/.dns)
 	waiting        []func(a *App) tea.Cmd        // dialogs to open once nothing is (whenFree)
 	installing     *installWizard                // the setup running, whose messages count
 	hooks          *installHooks                 // tests: no ssh, binaries or login for real
@@ -445,6 +448,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.chatUpdate(msg)
 	case localIPMsg, localInfoTimeoutMsg:
 		cmd = a.localInfoUpdate(msg)
+	case dnsMsg:
+		cmd = a.dnsDone(msg)
 	case uploadDoneMsg:
 		a.uploaded(msg)
 	case instStepMsg, instPhaseMsg:
@@ -1245,16 +1250,24 @@ func (a *App) typedCommand(w *state.Window, cmd string) tea.Cmd {
 				if actions, ok := a.scripts.Command(w.Net.Name, window, line, eval, a.scriptHost()); ok {
 					return a.runScript(actions)
 				}
-				return a.command(w, strings.TrimLeft(cmd, "/.!"))
+				return a.commandAs(w, cmd, strings.TrimLeft(cmd, "/.!"))
 			})
 		}
 		if actions, ok := a.scripts.Command(w.Net.Name, window, line, eval, a.scriptHost()); ok {
 			return a.runScript(actions)
 		}
 	}
-	// ! skips aliases and . is quiet, in a script's terms: trout's own
-	// commands take neither.
-	return a.command(w, strings.TrimLeft(cmd, "/.!"))
+	return a.commandAs(w, cmd, strings.TrimLeft(cmd, "/.!"))
+}
+
+// commandAs runs line, one of trout's own commands, as cmd asked for it:
+// in a script's terms, ! in front skips aliases and . is quiet. trout's
+// commands take neither, but /dns, which then says nothing, like mIRC's.
+func (a *App) commandAs(w *state.Window, cmd, line string) tea.Cmd {
+	prefix := cmd[:len(cmd)-len(strings.TrimLeft(cmd, "/.!"))]
+	a.quiet = strings.Contains(prefix, ".")
+	defer func() { a.quiet = false }()
+	return a.command(w, line)
 }
 
 func (a *App) say(w *state.Window, text string) {

@@ -155,8 +155,12 @@ error.
   gaining or losing focus, `$appactive`), `FILERCVD` and `GETFAIL` (DCC Get),
   `FILESENT` and `SENDFAIL` (Send File, trout's DCC send), `CHAT` (a DCC chat message),
   `NOTIFY`, `UNOTIFY`, `LOAD`, `START`,
-  `UNLOAD`, `EXIT`, `SIGNAL`, and the socket events `SOCKOPEN`, `SOCKREAD`, `SOCKWRITE` and `SOCKCLOSE`. `^` handlers run before trout shows a line and can hide it (`/haltdef`); a
-  CTCP handler's `/halt` stops trout's reply.
+  `UNLOAD`, `EXIT`, `SIGNAL`, the socket events `SOCKOPEN`, `SOCKREAD`, `SOCKWRITE` and
+  `SOCKCLOSE`, and `DNS` (a `/dns` done: `$dns(N)` with `.ip`, `.addr` and `.nick`,
+  `$iaddress`, `$naddress`, `$raddress`, and `$nick` and `$address` for a nick's; its
+  `/halt` keeps trout's line out, and `/.dns` shows nothing but the event). `^` handlers
+  run before trout shows a line and can hide it (`/haltdef`); a CTCP handler's `/halt`
+  stops trout's reply.
 - **Levels**: the Users list, with general, `=` exact and named levels, `+`, `*`, the
   `me`, `!`, `@` and `&` prefixes, and `/auser`, `/guser`, `/ruser`, `/iuser`,
   `/rlevel`, `/flush`, `/ulist`, `/dlevel`.
@@ -223,7 +227,7 @@ trout's own commands, and anything trout doesn't know goes to the server.
   the other drawing commands), popup files given to `/window`, `/filter -a`, and the mIRC
   identifiers trout doesn't have yet. `/load` and the ✓ button list them.
 - **Ignored**: sounds (`/splay`); `/beep` is the terminal's bell.
-- **`$?` in `^` events, `on INPUT` and CTCP handlers** is an error: they can't wait.
+- **`$?` in `^` events, `on INPUT`, `on DNS` and CTCP handlers** is an error: they can't wait.
 - **Regular expressions** are Go's (RE2): no lookarounds or backreferences. Using one is
   an error, not a wrong match.
 - **On Windows, Microsoft Defender deletes** a script that has both `on *:START` and

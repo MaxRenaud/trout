@@ -251,7 +251,7 @@ trout was checked against mIRC's help (https://www.mirc.com/help/html/, October 
   history of the session. Read-only for non-operators, like mIRC's greyed-out dialog.
 - **Commands:** /privmsg, /say, /describe, /omsg, /onotice, /qmsg, /qme, /amsg, /ame,
   /hop (keeps the window), /partall, /ctcpreply, /disconnect, /dcc send (Send File),
-  /channel, /findtext, /savebuf, /url, /abook, /markasread, /join -i; /topic and /kick
+  /channel, /findtext, /savebuf, /url, /abook, /markasread, /dns, /join -i; /topic and /kick
   take a channel; mIRC's -switches on /query, /msg and the like aren't sent along.
 - **Keys:** Ctrl+PgUp/PgDn a line, Ctrl+Home/End the scrollback's ends, Ctrl+E
   strikethrough, Alt+B/N Address Book, Alt+K Colors, Alt+U URLs List. A #channel in text is

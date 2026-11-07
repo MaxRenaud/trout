@@ -49,8 +49,9 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   up on history and syncs read markers with soju; `find.go` is Ctrl+F; `away.go` has away,
   WHO, WHOIS formatting and the bell; `prompts.go` has the Commands menu prompts, URLs List
   and Save to File; `chancentral.go` is Channel Central (modes, ban/exception/invite
-  lists, topics); `cmds.go` more of mIRC's commands (/describe, /hop, /dcc...); `lists.go`
-  the per-network favorites, ignore and notify lists; `abook.go` the Address Book and
+  lists, topics); `cmds.go` more of mIRC's commands (/describe, /hop, /dcc...), `dns.go`
+  /dns and on DNS; `lists.go` the per-network favorites, ignore and notify lists;
+  `abook.go` the Address Book and
   `rules.go` what its entries do (highlight, control, nick colors, typed ignores, notify
   notes, perform); `ctcp.go`, `dcc.go` (DCC Get and Chat), `dccopts.go` (its options) and
   `upload.go` (Send File through the bouncer's file host); `winopts.go` a window's own

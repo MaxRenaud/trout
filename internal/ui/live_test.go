@@ -779,3 +779,51 @@ func TestBouncerSettingsAdminLive(t *testing.T) {
 		}
 	}
 }
+
+// TestDNSLive looks up a nick on DevNet through soju with USERHOST (taken
+// out of the address list first, so it's asked for), and someone who
+// isn't on.
+//
+//	go test -tags integration ./internal/ui -run TestDNSLive -v
+func TestDNSLive(t *testing.T) {
+	a, pump := liveApp(t)
+	var ch *state.Window
+	pump("a DevNet channel with someone else in it", func() bool {
+		for _, n := range a.nets[1:] {
+			if n.Name != "DevNet" || a.conns[n] == nil {
+				continue
+			}
+			for _, w := range n.Wins {
+				if w.Kind == state.KChannel && w.Joined && len(w.Nicks) > 1 {
+					ch = w
+					return true
+				}
+			}
+		}
+		return false
+	})
+	n, st := ch.Net, ch.Net.Status()
+	nick := ""
+	for _, m := range ch.Nicks {
+		if !n.Same(m.Name, n.Nick) {
+			nick = m.Name
+		}
+	}
+	delete(a.ial[n], n.Fold(nick))
+	done := func(prefix string) func() bool {
+		return func() bool {
+			return slices.ContainsFunc(st.Lines, func(l state.Line) bool { return strings.HasPrefix(l.Text, prefix) })
+		}
+	}
+	a.later(a.dnsCommand(ch, nick))
+	if !a.dnsLookups[0].asking {
+		t.Fatalf("%s's address wasn't asked for", nick)
+	}
+	pump(nick+" looked up", func() bool { return len(a.dnsLookups) == 0 })
+	t.Logf("%s: %q", nick, lastText(st, 2)+" / "+lastLine(st))
+	if !done("* DNS resolving ")() || !done("* DNS resolved ")() && !done("* DNS unable to resolve address ")() {
+		t.Fatalf("no lookup for %s: %q", nick, lastLine(st))
+	}
+	a.dnsCommand(ch, "nobody"+strconv.Itoa(int(time.Now().Unix()%100000)))
+	pump("no such user", done("* /dns: no such user nobody"))
+}

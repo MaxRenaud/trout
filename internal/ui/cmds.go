@@ -247,6 +247,8 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 		a.openAddressBook()
 	case "markasread":
 		a.markWindowRead(w)
+	case "dns":
+		return a.dnsCommand(w, rest), true
 	default:
 		return nil, false
 	}

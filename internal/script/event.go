@@ -34,6 +34,8 @@ type Event struct {
 	// Transfer is the file or chat a DCC event is about: $get(-1),
 	// $send(-1), $filename.
 	Transfer *Transfer
+	// DNS is what a /dns found, for on DNS.
+	DNS *DNS
 
 	// A mode event's line, split up ($mode), and whether it's its first
 	// or last event ($modefirst, $modelast).
@@ -145,6 +147,7 @@ var eventFields = map[string]int{
 	// on FILERCVD:*.txt,*.ini: a file got or sent, or not; on CHAT:text: a
 	// DCC chat message.
 	"FILERCVD": 1, "GETFAIL": 1, "FILESENT": 1, "SENDFAIL": 1, "CHAT": 1,
+	"DNS": 0, // a /dns finishing
 }
 
 // matchOnly are the events whose one field is matchtext, not a location.
