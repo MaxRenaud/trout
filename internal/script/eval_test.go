@@ -132,6 +132,22 @@ var evalCases = []struct{ in, want string }{
 	{"$duration(0) $duration(1) $duration(3700) $duration(694861)", "0secs 1sec 1hr 1min 40secs 1wk 1day 1hr 1min 1sec"},
 	{"$duration(3700,2) $duration(3700,3)", "1hr 1min 01:01:40"},
 	{"$rand(5,5) $rand(b,b)", "5 b"},
+	// $regml and $regmlex (checked in mIRC 7.86): a group that took no
+	// part is left out (F keeps it), one that matched nothing isn't; .pos
+	// counts characters.
+	{`$regex(ab,/(x)?(a)(b)/) $regml(0) $regml(1) $regex(ab,/(x)?(a)(b)/F) $regml(0) $regml(2)`, "1 2 a 1 3 a"},
+	{`$regex(a,/(a)()/) $regml(0) $regml(2).pos $regex($+($chr(233),ab),/(b)/) $regml(1).pos`, "1 2 2 1 3"},
+	{`$regex(a1b22c333,/(\w)(\d+)/g) $regml(0) $regmlex(0,0) $regmlex(1,0) $regmlex(1,1) $regmlex(2,2) $regmlex(3,2)`, "3 6 3 2 a 22 333"},
+	{`$regex(a1b22c333,/(\w)(\d+)/g) < $+ $regmlex(4,1) $+ > $regmlex(4,0) < $+ $regmlex(1,3) $+ > $regmlex(0,1) $regmlex(-1,1) < $+ $regmlex(1,-1) $+ >`, "3 <> 0 <> 3 3 <>"},
+	{`$regex(a1b22c333,/(\w)(\d+)/g) $regmlex(1,1).pos $regmlex(2,2).pos $regmlex(3,1).pos $regmlex(2,0).pos`, "3 1 4 6 2"},
+	// With two parameters, the first is a name unless it's a number.
+	{`$regex(n1,xy9z8,/([a-z])(\d)/g) $regmlex(n1,0) $regmlex(n1,1) $regmlex(N1,2,2) $regmlex(n1,2,0)`, "2 2 y 8 2"},
+	{`$regex(5,ab,/(a)(b)/) < $+ $regmlex(5,1) $+ > $regmlex(5,1,2) < $+ $regmlex(5,2) $+ >`, "1 <> b <>"},
+	// M is the group's number; N = 0 counts up to the last match with a
+	// capture.
+	{`$regex(ab,/(x)?(a)(b)/) $regmlex(1,0) < $+ $regmlex(1,1) $+ > $regmlex(1,2) $regmlex(1,3) $regmlex(0,0)`, "1 2 <> a b 1"},
+	{`$regex(xbb,/(x)?b/g) $regmlex(0,0) $regmlex(1,1) $regmlex(2,0) $regex(bxb,/(x)?b/g) $regmlex(0,0) $regmlex(1,0) $regmlex(2,1)`, "2 1 x 0 2 2 0 x"},
+	{`$regex(abcb,/b/g) $regmlex(0,0) $regmlex(1,0) < $+ $regmlex(1,1) $+ >`, "2 0 0 <>"},
 }
 
 func TestEval(t *testing.T) {

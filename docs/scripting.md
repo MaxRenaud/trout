@@ -99,7 +99,9 @@ aren't there: the terminal has those.
 | `/ctcps on\|off`, `/events on\|off`, `/raw on\|off` | ctcp events, named events, raw events (Listen) |
 
 A file name is in the scripts folder unless it's a full path. Typed in the editbox, `//`
-evaluates a line (`//echo -a $me`), and aliases come before trout's own commands, like
+runs a line like a line of an alias: it's evaluated (`//echo -a $me`), `|` separates its
+commands (`//var %x = 5 | echo -a %x`), and `if` and `while` work. With a single `/`,
+nothing is evaluated and `|` is text. Aliases come before trout's own commands, like
 mIRC.
 
 ## Popups
@@ -183,7 +185,7 @@ error.
   `$duration` does it.
 - **Identifiers**: about 200, among them the text, token, number, time and `$calc`
   families, `$nick`, `$chan`, `$address`, `$ial`, `$comchan`, `$chan(N)`, `$nick(#,N)`,
-  `$hget`, `$hfind`, `$read`, `$readini`, `$ini`, `$regex`, `$regsubex`, `$timer`,
+  `$hget`, `$hfind`, `$read`, `$readini`, `$ini`, `$regex`, `$regml`, `$regmlex`, `$regsubex`, `$timer`,
   hashes and encodings. Help > Identifiers in the editor lists them all.
 - **Timers** (`/timer`, `-m`, `-e`, `-p`, `-r`, time of day), **hash tables** (kept in
   memory until `/hsave`, like mIRC's), **files** (`/write`, INI files, file handles,

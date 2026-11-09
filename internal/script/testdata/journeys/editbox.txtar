@@ -1,0 +1,77 @@
+Lines typed in the editbox. With //, a line runs like a line of an alias:
+| separates commands, each is evaluated as it runs, and if and while
+work. With one /, nothing is evaluated and | is text. All checked in mIRC
+7.86, typing with /editbox -n.
+
+-- t.mrc --
+alias t echo -a $1-
+alias pa echo -a PA $1-
+; A | at the end of a line is text, in a script too.
+alias tq t TQ1 |
+-- transcript --
+me trout
+chan #trout @trout bob
+active #trout
+//t A1 | t A2
+= #trout: A1
+= #trout: A2
+# One /: the alias gets the whole line, | and all, as it was typed.
+/pa B1 | t B2
+= #trout: PA B1 | t B2
+/t B3 $calc(1+1) | t x
+= #trout: B3 $calc(1+1) | t x
+# A | that comes from evaluating separates nothing, nor one without spaces.
+//t C1 $chr(124) t C2
+= #trout: C1 | t C2
+//t D1|t D2
+= #trout: D1|t D2
+# Each command is evaluated when it runs, in the line's own variables.
+//var %x = 5 | t F %x
+= #trout: F 5
+//var %z = a | t Z %z | var %z = b | t Z %z
+= #trout: Z a
+= #trout: Z b
+//if (1) t G1 | t G2
+= #trout: G1
+= #trout: G2
+//if (0) t H1 | t H2
+= #trout: H2
+//if (0) { t I1 } | t I2
+= #trout: I2
+//if (1) { t I3 | t I4 } | t I5
+= #trout: I3
+= #trout: I4
+= #trout: I5
+//var %i = 1 | while (%i <= 2) { t W %i | inc %i }
+= #trout: W 1
+= #trout: W 2
+# Slashes in front of the next commands change nothing: the line is evaluated.
+//t M1 | //t M2 $calc(1+1) | /t M3 $calc(2+2)
+= #trout: M1
+= #trout: M2 2
+= #trout: M3 4
+//t R1 | return | t R2
+= #trout: R1
+//t U1 | halt | t U2
+= #trout: U1
+# A line has no parameters.
+//t V1 $1- | t V2
+= #trout: V1
+= #trout: V2
+# A client's command runs in its turn.
+//t S1 | msg bob hi $calc(1+1) | t S2
+= #trout: S1
+> /msg bob hi 2
+= #trout: S2
+# A | at the end is text, and in | | the second | is the next command.
+//t J1 |
+= #trout: J1 |
+/tq
+= #trout: TQ1 |
+//t K1 | | t K2
+= #trout: K1
+> /| t K2
+# A { after a command's first word is dropped, as in a script.
+//t Z1 { | t Z2
+= #trout: Z1
+= #trout: Z2

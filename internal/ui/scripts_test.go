@@ -121,6 +121,11 @@ func TestScriptsHooks(t *testing.T) {
 	if got := lastLine(w); got != "I am max" {
 		t.Errorf("//echo: %q", got)
 	}
+	// | separates a // line's commands, like mIRC's.
+	typed(w, "//echo -a Test | echo -a Test2")
+	if n := len(w.Lines); n < 2 || w.Lines[n-2].Text != "Test" || w.Lines[n-1].Text != "Test2" {
+		t.Errorf("//echo | echo: %q, %q", lastLine(w), w.Lines[max(0, n-2)].Text)
+	}
 	typed(w, "!nope")
 	expect("on INPUT halts")
 	typed(w, "fine")

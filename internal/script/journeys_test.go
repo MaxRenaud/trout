@@ -29,6 +29,7 @@ import (
 //	event OPEN bob bob :hi    an event only the client makes: kind, nick, target, text
 //	< :bob!b@h PRIVMSG #c :hi a raw IRC line (\x01 for CTCP); our nicklists follow it
 //	/j #help                  typed in the editbox (after on INPUT)
+//	//echo -a $me             typed with //: evaluated, | separating commands
 //	type hello there          text typed in the editbox: on INPUT, then > /say
 //	* hidden                  a ^ handler halted the client's text for the line
 //	* input stopped           on INPUT halted what was typed
@@ -269,6 +270,11 @@ func (j *journey) step(l string) {
 		}
 		if !strings.HasPrefix(text, "/") {
 			j.out = append(j.out, "> /say "+text)
+			return
+		}
+		if line, ok := strings.CutPrefix(text, "//"); ok {
+			actions, _ := j.e.Command(j.host.net, j.host.active, line, true, j.host)
+			j.record(actions, false)
 			return
 		}
 		l = text

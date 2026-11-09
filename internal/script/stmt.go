@@ -48,7 +48,10 @@ type token struct {
 // tokens splits body lines into commands and braces. Like mIRC, | only
 // separates commands and { } only open and close blocks when they're
 // words of their own, surrounded by spaces, and not inside an
-// identifier's brackets; and runs of spaces count as one.
+// identifier's brackets; and runs of spaces count as one. A | that ends
+// a line is text (echo -a hi | echoes "hi |"), and so is one right after
+// another, which is the next command's name: echo -a a | | echo -a b
+// echoes a, then stops at the command | (both checked).
 //
 // A word ending in :{ is text, but mIRC's loader counts it as a { when it
 // matches braces (braceDelta), so the } that matches it is dropped rather
@@ -70,9 +73,14 @@ func tokens(lines []srcLine) []token {
 				cmd = nil
 			}
 		}
-		for _, w := range splitWords(l.text) {
+		words := splitWords(l.text)
+		for i, w := range words {
 			switch w {
 			case "|":
+				if i == len(words)-1 || len(cmd) == 0 && i > 0 && words[i-1] == "|" {
+					cmd = append(cmd, w)
+					continue
+				}
 				flush()
 			case "}":
 				if dropped > 0 {

@@ -3,20 +3,31 @@ package script
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Regular expressions, from mIRC's Regular Expressions section. mIRC uses
 // PCRE; trout uses Go's RE2, which has no backreferences or lookarounds,
 // so a pattern needing those is an error, not a wrong match.
 
-// regexMatches are the results $regml reads, by lower-case name; "" is the
-// default name, which every unnamed call overwrites.
-type regexMatches map[string][]string
+// regexMatches are the captures $regml and $regmlex read, by lower-case
+// name; "" is the default name, which every unnamed call overwrites.
+type regexMatches map[string][]regexCapture
+
+// regexCapture is one capture: its text, where it starts (in characters,
+// from 1: .pos), which match it's in (from 1) and its group's number.
+type regexCapture struct {
+	text              string
+	pos, match, group int
+}
+
+// regexFlags are the modifiers after a pattern's closing / that change
+// more than the pattern: g (global), S (strip control codes from the
+// text) and F (keep groups that didn't take part, as $null).
+type regexFlags struct{ global, strip, fill bool }
 
 // compileRegex reads a pattern: /re/flags, m/re/flags, or a bare pattern.
-// It reports whether g (global) was given and whether S (strip control
-// codes from the text) was.
-func compileRegex(pattern string) (re *regexp.Regexp, global, strip bool, err error) {
+func compileRegex(pattern string) (re *regexp.Regexp, fl regexFlags, err error) {
 	p, flags := pattern, ""
 	if strings.HasPrefix(p, "m/") {
 		p = p[1:]
@@ -30,18 +41,19 @@ func compileRegex(pattern string) (re *regexp.Regexp, global, strip bool, err er
 	for _, f := range flags {
 		switch f {
 		case 'g':
-			global = true
+			fl.global = true
 		case 'S':
-			strip = true
+			fl.strip = true
+		case 'F':
+			fl.fill = true
 		case 'i', 'm', 's', 'U':
 			mods = append(mods, f)
 		case 'x':
 			// RE2 has no extended mode: take out the whitespace and comments
 			// it would ignore.
 			p = unextend(p)
-		case 'u', 'F', 'X', 'A', 'E', 'D':
-			// UTF-8 is RE2's anyway, and F's numbering of groups is how RE2
-			// numbers them. A anchors at the start.
+		case 'u', 'X', 'A', 'E', 'D':
+			// UTF-8 is RE2's anyway. A anchors at the start.
 			if f == 'A' {
 				p = `\A(?:` + p + `)`
 			}
@@ -52,9 +64,9 @@ func compileRegex(pattern string) (re *regexp.Regexp, global, strip bool, err er
 	}
 	re, err = regexp.Compile(p)
 	if err != nil {
-		return nil, false, false, errorf("regular expression ", pattern, " isn't supported: ", err.Error())
+		return nil, fl, errorf("regular expression ", pattern, " isn't supported: ", err.Error())
 	}
-	return re, global, strip, nil
+	return re, fl, nil
 }
 
 // unextend drops what the x flag ignores: unescaped whitespace, and #
@@ -112,9 +124,9 @@ func (r *run) regexMatch(pattern, text string) (bool, error) {
 // compiledRegex is a pattern compileRegex has read, kept so the same
 // pattern isn't compiled again for every message or line.
 type compiledRegex struct {
-	re            *regexp.Regexp
-	global, strip bool
-	err           error
+	re *regexp.Regexp
+	regexFlags
+	err error
 }
 
 // compile is compileRegex, through the Engine's cache.
@@ -122,18 +134,19 @@ func (e *Engine) compile(pattern string) (*compiledRegex, error) {
 	if c, ok := e.regexes[pattern]; ok {
 		return c, c.err
 	}
-	re, global, strip, err := compileRegex(pattern)
+	re, fl, err := compileRegex(pattern)
 	if len(e.regexes) >= 256 {
 		clear(e.regexes)
 	}
-	c := &compiledRegex{re: re, global: global, strip: strip, err: err}
+	c := &compiledRegex{re: re, regexFlags: fl, err: err}
 	e.regexes[pattern] = c
 	return c, err
 }
 
-// regex runs a match and keeps its captures for $regml: in order, without
-// empty ones, like mIRC without its F modifier. It returns how many
-// matches there were (at most one without g).
+// regex runs a match and keeps its captures for $regml and $regmlex: in
+// order, without the groups that took no part (a group that matched
+// nothing is kept), unless F asks for those too, like mIRC's (checked).
+// It returns how many matches there were (at most one without g).
 func (r *run) regex(name, text, pattern string) (int, error) {
 	c, err := r.e.compile(pattern)
 	if err != nil {
@@ -146,12 +159,25 @@ func (r *run) regex(name, text, pattern string) (int, error) {
 	if c.global {
 		n = -1
 	}
-	matches := c.re.FindAllStringSubmatch(text, n)
-	var caps []string
-	for _, m := range matches {
-		for _, c := range m[1:] {
-			if c != "" {
-				caps = append(caps, c)
+	matches := c.re.FindAllStringSubmatchIndex(text, n)
+	var caps []regexCapture
+	var at, atChars int // a byte offset and how many characters come before it
+	pos := func(b int) int {
+		if b < at {
+			at, atChars = 0, 0
+		}
+		atChars += utf8.RuneCountInString(text[at:b])
+		at = b
+		return atChars + 1
+	}
+	for i, loc := range matches {
+		for g := 1; g < len(loc)/2; g++ {
+			start, end := loc[2*g], loc[2*g+1]
+			switch {
+			case start >= 0:
+				caps = append(caps, regexCapture{text[start:end], pos(start), i + 1, g})
+			case c.fill:
+				caps = append(caps, regexCapture{"", 0, i + 1, g})
 			}
 		}
 	}
@@ -160,6 +186,18 @@ func (r *run) regex(name, text, pattern string) (int, error) {
 	}
 	r.e.regml[strings.ToLower(name)] = caps
 	return len(matches), nil
+}
+
+// value is $regml's and $regmlex's value for a capture: its text, or
+// with .pos where it starts.
+func (c *regexCapture) value(prop string) string {
+	if prop == "pos" {
+		if c.pos == 0 {
+			return ""
+		}
+		return itoa(c.pos)
+	}
+	return c.text
 }
 
 // regexArgs splits the optional name off a regex identifier's arguments:
@@ -182,7 +220,7 @@ var regexIdents = map[string]builtin{
 		return itoa(n), err
 	},
 	// $regml([name], N) is the Nth capture, or with N = 0 how many there
-	// are.
+	// are; .pos is where it starts.
 	"regml": func(r *run, fr *frame, c *call) (string, error) {
 		name, a := regexArgs(c, 1)
 		if len(a) < 1 {
@@ -194,7 +232,49 @@ var regexIdents = map[string]builtin{
 		case n == 0:
 			return itoa(len(caps)), nil
 		case n > 0 && n <= len(caps):
-			return caps[n-1], nil
+			return caps[n-1].value(c.prop), nil
+		}
+		return "", nil
+	},
+	// $regmlex([name], N, M) is group M of the Nth match; with M = 0, how
+	// many captures that match has, and with N = 0, how many matches
+	// there are, up to the last with a capture. Given two parameters, the
+	// first is a name unless it's a number, and M is then 1; .pos is where
+	// it starts. All checked in mIRC.
+	"regmlex": func(r *run, fr *frame, c *call) (string, error) {
+		var name string
+		var n, m int
+		_, numFirst := parseNum(c.arg(0))
+		switch {
+		case len(c.vals) == 3:
+			name, n, m = c.vals[0], int(c.num(1)), int(c.num(2))
+		case len(c.vals) != 2:
+			return "", errorf("$regmlex: invalid parameters")
+		case numFirst:
+			n, m = int(c.num(0)), int(c.num(1))
+		default:
+			name, n, m = c.vals[0], int(c.num(1)), 1
+		}
+		caps := r.e.regml[strings.ToLower(name)]
+		switch {
+		case n <= 0:
+			if len(caps) == 0 {
+				return "0", nil
+			}
+			return itoa(caps[len(caps)-1].match), nil
+		case m == 0:
+			count := 0
+			for _, cp := range caps {
+				if cp.match == n {
+					count++
+				}
+			}
+			return itoa(count), nil
+		}
+		for _, cp := range caps {
+			if cp.match == n && cp.group == m {
+				return cp.value(c.prop), nil
+			}
 		}
 		return "", nil
 	},

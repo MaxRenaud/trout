@@ -400,40 +400,37 @@ func (e *Engine) Alias(network, window, name, args string, h Host) (actions []Ac
 }
 
 // Command runs a line typed in the editbox, without its slashes, if the
-// engine does it: an alias (aliases come before built-in commands, like
-// mIRC's; a ! in front skips them), or one of the engine's own commands
-// (/set, /hadd, /timer, /auser...). With eval (typed with //), the line's
-// identifiers and variables are evaluated first, like mIRC's, and any
-// command works: one that's the client's comes back as an Action. Without
-// it, nothing is evaluated. ok is false if the client should run the line
-// itself.
+// engine does it. With eval (typed with //), the line is run like a line
+// of an alias, like mIRC's: | separates commands, if and while work, and
+// each command's identifiers and variables are evaluated as it runs (so
+// //var %x = 5 | echo -a %x echoes 5); any command works, and one that's
+// the client's comes back as an Action. Without it, nothing is evaluated
+// and | is text (both checked): the line is an alias (aliases come before
+// built-in commands, like mIRC's; a ! in front skips them) or one of the
+// engine's own commands (/set, /hadd, /timer, /auser...), or ok is false
+// and the client runs it itself.
 func (e *Engine) Command(network, window, line string, eval bool, h Host) (actions []Action, ok bool) {
 	defer e.Answer(nil)
 	word, args, _ := strings.Cut(strings.TrimSpace(line), " ")
 	name := strings.TrimLeft(word, ".!")
 	r := e.newRun(h)
-	fr := &frame{network: network, window: window, params: fields(args), typed: true, editbox: true}
+	fr := &frame{network: network, window: window, typed: true, editbox: true}
 	if isChannel(window) {
 		fr.channel = window
 	}
+	if eval {
+		r.report(fr, r.block(fr, (&parser{}).stmts([]srcLine{{0, line}})))
+		return r.finish(), true
+	}
 	if a := e.alias(nil, name); a != nil && !strings.Contains(word, "!") {
-		if eval {
-			v, err := r.evalTop(fr, args)
-			if err != nil {
-				r.report(fr, err)
-				return r.finish(), true
-			}
-			fr.params = fields(v)
-		}
+		fr.params = fields(args)
 		r.runAlias(fr, a)
 		return r.finish(), true
 	}
-	if !eval && !engineCommand(name) {
+	if !engineCommand(name) {
 		return nil, false
 	}
-	if !eval {
-		r.literal++
-	}
+	r.literal++
 	r.report(fr, r.command(fr, line))
 	return r.finish(), true
 }

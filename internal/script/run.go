@@ -195,7 +195,7 @@ func recovered(err *error) {
 }
 
 // evalTop is eval where a script starts outside block and command (a
-// menu's labels, an editbox line's //), recovering like them.
+// menu's labels and $submenu), recovering like them.
 func (r *run) evalTop(fr *frame, text string) (v string, err error) {
 	defer recovered(&err)
 	return r.eval(fr, text)
