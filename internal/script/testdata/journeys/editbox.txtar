@@ -71,6 +71,23 @@ active #trout
 //t K1 | | t K2
 = #trout: K1
 > /| t K2
+# An identifier that doesn't exist is $null, as in a script; $true and
+# $false are identifiers.
+//echo Test $me $NonExistentIdentifier $network
+= #trout: Test trout TestNet
+//t W2 $nope(1,2) $nope(x).len $nope.len C
+= #trout: W2 C
+//t W3 $+(a,$nope,b) $len($nope) $upper($nope) D
+= #trout: W3 ab 0 D
+//var %q = $nope | t W5 %q F
+= #trout: W5 F
+//if ($nope) t W6 yes | else t W6 no
+= #trout: W6 no
+//t W7 $true $false G
+= #trout: W7 $true $false G
+# With one /, nothing is evaluated.
+/t W8 $nope H
+= #trout: W8 $nope H
 # A { after a command's first word is dropped, as in a script.
 //t Z1 { | t Z2
 = #trout: Z1

@@ -414,7 +414,7 @@ func (e *Engine) Command(network, window, line string, eval bool, h Host) (actio
 	word, args, _ := strings.Cut(strings.TrimSpace(line), " ")
 	name := strings.TrimLeft(word, ".!")
 	r := e.newRun(h)
-	fr := &frame{network: network, window: window, typed: true, editbox: true}
+	fr := &frame{network: network, window: window, typed: true}
 	if isChannel(window) {
 		fr.channel = window
 	}

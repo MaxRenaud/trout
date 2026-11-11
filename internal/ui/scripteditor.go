@@ -20,7 +20,7 @@ import (
 	"github.com/MaxRenaud/trout/internal/state"
 )
 
-// The Scripts Editor (Tools > Scripts, Alt+R, Alt+P), like mIRC's: tabs
+// The Scripts Editor (Tools > Scripts, Alt+R, Alt+D, Alt+P), like mIRC's: tabs
 // for Aliases, Popups, Remote, Users and Variables, each editing its own
 // file in the scripts folder (aliases.ini, popups.ini, remote.ini,
 // users.ini, vars.ini, in mIRC's format) and the files loaded on it. OK

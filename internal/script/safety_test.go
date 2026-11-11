@@ -492,14 +492,23 @@ func TestIdentifierWarning(t *testing.T) {
 	if got := echo(); !strings.Contains(got, "No such identifier: $nosuch") {
 		t.Errorf("on: %q", got)
 	}
-	// Typed in the editbox, it stays as typed, warning or not (checked in
-	// mIRC 7.86); the aliases the line calls are scripts.
-	for _, warn := range []bool{true, false} {
-		e.IdentifierWarning(warn)
-		actions, _ := e.Command("TestNet", "", "echo -a x $nosuch y $nosuch(1,2) $len(ab)", true, evalHost())
-		if got := actions[0].Echo.Text; got != "x $nosuch y $nosuch(1,2) 2" {
-			t.Errorf("typed, warning %v: %q", warn, got)
+	// Typed with //, the same (checked in mIRC 7.86): $null, or with the
+	// warning, the message (without a file and line) and the rest of the
+	// line doesn't run.
+	typed := func() []string {
+		actions, _ := e.Command("TestNet", "", "echo -a x $nosuch y $nosuch(1,2) $len(ab) | echo -a after", true, evalHost())
+		var out []string
+		for _, a := range actions {
+			out = append(out, a.Echo.Text)
 		}
+		return out
+	}
+	if got, want := typed(), []string{"* No such identifier: $nosuch"}; !slices.Equal(got, want) {
+		t.Errorf("typed, on: %q", got)
+	}
+	e.IdentifierWarning(false)
+	if got, want := typed(), []string{"x y 2", "after"}; !slices.Equal(got, want) {
+		t.Errorf("typed, off: %q", got)
 	}
 }
 

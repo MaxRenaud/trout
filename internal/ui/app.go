@@ -590,8 +590,11 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		case ch == 'u':
 			a.openURLsList()
 			return nil
-		case ch == 'r': // the Scripts Editor's tabs, like mIRC (its Alt+A is Favorites here)
+		case ch == 'r': // the Scripts Editor's tabs, like mIRC: Alt+R Remote, Alt+D Aliases, Alt+P Popups
 			a.openScriptsTab(edRemote)
+			return nil
+		case ch == 'd':
+			a.openScriptsTab(edAliases)
 			return nil
 		case ch == 'p':
 			a.openScriptsTab(edPopups)

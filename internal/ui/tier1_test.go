@@ -101,6 +101,18 @@ func TestTier1Keys(t *testing.T) {
 	if _, ok := a.dlg.(*colorsBox); !ok {
 		t.Fatalf("Alt+K opened %T", a.dlg)
 	}
+	a.dlg = nil
+	// The Scripts Editor at Aliases, Remote or Popups, like mIRC's.
+	for _, c := range []struct {
+		r   rune
+		tab edTab
+	}{{'d', edAliases}, {'r', edRemote}, {'p', edPopups}} {
+		a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{c.r}, Alt: true})
+		if ed, ok := a.dlg.(*scriptEditor); !ok || ed.tab != c.tab {
+			t.Fatalf("Alt+%c opened %T", c.r, a.dlg)
+		}
+		a.dlg = nil
+	}
 }
 
 func TestFormatting(t *testing.T) {

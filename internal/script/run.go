@@ -47,7 +47,6 @@ type frame struct {
 	params  []string
 	locals  map[string]string
 	typed   bool   // run from the editbox or a popup, not an event: /echo's default window
-	editbox bool   // the line typed in the editbox itself (not the aliases it calls)
 	ulevel  string // $ulevel: the user's level that let them trigger the event
 	clevel  string // $clevel: the event's level
 	menu    string // the popup being built or run: $menu

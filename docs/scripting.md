@@ -47,7 +47,8 @@ someone else in it, like `$1-` of their message, would run as script code. Pass 
 
 ## The Scripts Editor
 
-Tools > Scripts Editor, the toolbar's Scripts button, Alt+R (Remote) or Alt+P (Popups).
+Tools > Scripts Editor, the toolbar's Scripts button, Alt+R (Remote), Alt+D (Aliases) or
+Alt+P (Popups).
 Like mIRC's, it has five tabs:
 
 - **Aliases**: one alias a line, `/name commands` (`/j /join #$$1`), in `aliases.ini`
@@ -256,9 +257,6 @@ trout's own commands, and anything trout doesn't know goes to the server.
 - A binary variable holds up to 64 MB (`/bset` and `/bcopy` past that are errors), so a
   position from someone's text can't make trout allocate gigabytes.
 - Hash table items come out in the order they were added; mIRC's order is its hash's.
-- Typed in the editbox, an identifier that doesn't exist stays as typed (as in mIRC); in a
-  script it's `$null`, or with Options > Identifier Warning an error that stops the
-  script, with mIRC's "No such identifier" message.
 - A file name with a `..` after a folder's name, like `logs\#x\..\..\foo.log`, isn't a
   file (`/write` and the rest give an error). A channel's name can have `\` and `..` in
   it, so `write logs\ $+ $chan $+ .log` could otherwise write anywhere. A leading `..`

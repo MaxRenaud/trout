@@ -298,16 +298,12 @@ func (r *run) evalIdentBody(fr *frame, s string) (string, error) {
 	if err != errNoIdent {
 		return v, err
 	}
-	switch {
-	case fr.editbox:
-		// Typed in the editbox, an identifier that doesn't exist stays as
-		// it was typed (checked in mIRC 7.86, with and without Identifier
-		// Warning).
-		return "$" + s, nil
-	case r.e.identWarn:
+	if r.e.identWarn {
 		return "", errorf("No such identifier: $", name)
 	}
-	// Like mIRC, in a script an identifier that doesn't exist is $null.
+	// Like mIRC, an identifier that doesn't exist is $null, in a script or
+	// typed with // (checked in mIRC 7.86: $true and $false, which stay as
+	// typed, are identifiers).
 	return "", nil
 }
 
