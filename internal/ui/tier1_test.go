@@ -88,6 +88,20 @@ func TestTier1Keys(t *testing.T) {
 	if w.Scroll != 1 {
 		t.Fatalf("Ctrl+PgUp scrolled %d lines", w.Scroll)
 	}
+	// With the editbox empty, Ctrl+Home and Ctrl+End go to the top and
+	// bottom of the scrollback, like mIRC's.
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlHome})
+	a.View()
+	top := w.Scroll
+	a.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	if a.View(); top <= 1 || w.Scroll != top {
+		t.Fatalf("Ctrl+Home scrolled to %d, but the top is %d", top, w.Scroll)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	if w.Scroll != 0 {
+		t.Fatalf("Ctrl+End left the scroll at %d", w.Scroll)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlPgUp})
 	a.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	if string(w.Edit.Buf) != "\x1e" {
 		t.Fatalf("Ctrl+E typed %q, want strikethrough", string(w.Edit.Buf))
@@ -248,5 +262,29 @@ func TestOnlineTimer(t *testing.T) {
 	a.upAt[n] = time.Now().Add(-(90 * time.Minute))
 	if title := a.winTitle(n.Status()); !strings.Contains(title, "[online 1:30]") {
 		t.Fatalf("title %q", title)
+	}
+}
+
+// TestIdleMotion moves the pointer over every cell: a motion that keeps
+// the last frame (idleMotion) must leave the screen as a fresh one would
+// draw it, hover highlights and all, and most motions keep it.
+func TestIdleMotion(t *testing.T) {
+	a := New(Options{Demo: true})
+	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	a.View()
+	kept := 0
+	for y := range a.h {
+		for x := range a.w {
+			a.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionMotion, Button: tea.MouseButtonNone})
+			if a.sameFrame {
+				kept++
+			}
+			if got, want := a.View(), a.render(); got != want {
+				t.Fatalf("at %d,%d the kept frame isn't what it would draw", x, y)
+			}
+		}
+	}
+	if kept < a.w*a.h/2 {
+		t.Errorf("only %d of %d motions kept the frame", kept, a.w*a.h)
 	}
 }

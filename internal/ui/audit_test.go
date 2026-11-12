@@ -275,3 +275,27 @@ func TestChatOffer(t *testing.T) {
 		t.Fatal("Ignore all chat offers still asked")
 	}
 }
+
+// TestNoTLSHint: a network whose port doesn't take TLS gets told how to
+// connect without it, once, however often soju retries.
+func TestNoTLSHint(t *testing.T) {
+	a, _ := fakeSoju(t)
+	for _, l := range []string{
+		"BOUNCER NETWORK 7 name=Old;host=irc.example.org;port=6667;tls=1;state=connecting",
+		`BOUNCER NETWORK 7 state=disconnected;error=failed\sto\sconnect:\stls:\sfirst\srecord\sdoes\snot\slook\slike\sa\sTLS\shandshake`,
+		`BOUNCER NETWORK 7 state=disconnected;error=failed\sto\sconnect:\stls:\sfirst\srecord\sdoes\snot\slook\slike\sa\sTLS\shandshake`,
+	} {
+		m, _ := ircmsg.ParseLine(l)
+		a.Update(ircLineMsg{a.home, m})
+	}
+	var hints []string
+	for _, l := range a.nets[1].Status().Lines {
+		if strings.Contains(l.Text, "irc+insecure://") {
+			hints = append(hints, l.Text)
+		}
+	}
+	want := "* Old doesn't use TLS on port 6667. To connect without it, edit its address in Bouncer > Networks to irc+insecure://irc.example.org:6667"
+	if len(hints) != 1 || hints[0] != want {
+		t.Fatalf("hints: %q", hints)
+	}
+}

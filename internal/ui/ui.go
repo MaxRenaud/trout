@@ -109,6 +109,16 @@ func (a *App) tooSmall() bool { return a.w < 60 || a.h < 16 }
 func (a *App) clicksOff() bool { return a.w > 0 && a.h > 0 && a.tooSmall() }
 
 func (a *App) View() string {
+	if a.sameFrame && a.frame != "" {
+		a.sameFrame = false
+		return a.frame
+	}
+	a.sameFrame = false
+	a.frame = a.render()
+	return a.frame
+}
+
+func (a *App) render() string {
 	t := a.theme()
 	c := NewCanvas(max(a.w, 0), max(a.h, 0), Style{FG: t.TextFG, BG: t.TextBG})
 	c.Colors = a.termColors

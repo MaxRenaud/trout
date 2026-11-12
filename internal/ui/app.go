@@ -122,11 +122,16 @@ type App struct {
 	readSent time.Time // when trout last told soju what's been read
 	readTick bool      // a readTickMsg is on its way
 
-	beep      bool               // ring the bell for highlights and private messages
-	colors    map[state.Role]int // the Colors dialog\'s palette choices; role -1 is the background
-	hoverTab  *state.Window      // the switchbar button under the mouse, showing its ×
-	lastHover *state.Window      // last frame\'s hoverTab, so a button stays hovered over its ×
-	bellOut   io.Writer          // the terminal, for the bell and iTerm2's profile switch; nil in tests
+	beep     bool               // ring the bell for highlights and private messages
+	colors   map[state.Role]int // the Colors dialog\'s palette choices; role -1 is the background
+	hoverTab *state.Window      // the switchbar button under the mouse, showing its ×
+	// frame is the last View; sameFrame says nothing changed since, so the
+	// next View is it again (idleMotion).
+	frame     string
+	sameFrame bool
+	tlsHinted map[*state.Network]bool // told a network's port has no TLS
+	lastHover *state.Window           // last frame\'s hoverTab, so a button stays hovered over its ×
+	bellOut   io.Writer               // the terminal, for the bell and iTerm2's profile switch; nil in tests
 	// The terminal and its Option key (optionkey.go): optionKey is ""
 	// until asked, "fix" for iTerm2's profile switch, "never" to stop
 	// asking; itermRestore switches the tab back when trout quits.
@@ -353,6 +358,7 @@ func New(opts Options) *App {
 		hopping:     map[string]bool{},
 		namesOnJoin: map[*state.Window]bool{},
 		upAt:        map[*state.Network]time.Time{},
+		tlsHinted:   map[*state.Network]bool{},
 		started:     time.Now(),
 		listFetch:   map[string][]state.ListEntry{},
 		invitedTo:   map[*state.Network]string{},
@@ -412,6 +418,11 @@ func tick() tea.Cmd {
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m, ok := msg.(tea.MouseMsg); ok && a.idleMotion(m) {
+		a.mx, a.my = m.X, m.Y
+		a.sameFrame = true
+		return a, nil
+	}
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -841,6 +852,23 @@ func (a *App) nickKey(s string) (tea.Cmd, bool) {
 		return nil, false
 	}
 	return nil, true
+}
+
+// idleMotion reports whether m is the pointer moving with no button down
+// and nothing being dragged, over what it was already over: it changes
+// nothing on screen. With every motion reported, a slow computer (a
+// Raspberry Pi 1) would otherwise draw a frame for each one and fall
+// seconds behind the mouse.
+func (a *App) idleMotion(m tea.MouseMsg) bool {
+	if m.Action != tea.MouseActionMotion || m.Button != tea.MouseButtonNone || a.drag != dragNone || a.clicksOff() {
+		return false
+	}
+	if ed, ok := a.dlg.(*scriptEditor); ok && ed.drag {
+		return false
+	}
+	was, wasOK := a.hit(a.mx, a.my)
+	now, nowOK := a.hit(m.X, m.Y)
+	return wasOK == nowOK && was == now
 }
 
 func (a *App) mouse(m tea.MouseMsg) tea.Cmd {

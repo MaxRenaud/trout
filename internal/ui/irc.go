@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -908,6 +909,15 @@ func (a *App) networkAttrs(n *state.Network, attrs map[string]string) {
 			why = " (" + e + ")"
 		}
 		a.addLine(status, state.RoleQuit, "* Bouncer: disconnected from "+n.Name+why)
+		// Go's TLS error when the server's first words are plain IRC: a
+		// port without TLS, like mIRC's /server host 6667 means. soju
+		// keeps retrying, so this says it once.
+		if strings.Contains(n.Attrs["error"], "does not look like a TLS handshake") && !a.tlsHinted[n] {
+			a.tlsHinted[n] = true
+			a.addLine(status, state.RoleInfo, "* "+n.Name+" doesn't use TLS on port "+fmt.Sprint(n.Port)+
+				". To connect without it, edit its address in Bouncer > Networks to irc+insecure://"+
+				net.JoinHostPort(n.Server, fmt.Sprint(n.Port)))
+		}
 	}
 }
 
