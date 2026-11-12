@@ -102,6 +102,16 @@ func TestTier1Keys(t *testing.T) {
 		t.Fatalf("Ctrl+End left the scroll at %d", w.Scroll)
 	}
 	a.Update(tea.KeyMsg{Type: tea.KeyCtrlPgUp})
+	// Shift+Up/Down too, for keyboards without PgUp, while the editbox
+	// has one line.
+	a.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
+	if w.Scroll != 2 {
+		t.Fatalf("Shift+Up scrolled to %d", w.Scroll)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyShiftDown})
+	if w.Scroll != 1 {
+		t.Fatalf("Shift+Down scrolled to %d", w.Scroll)
+	}
 	a.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	if string(w.Edit.Buf) != "\x1e" {
 		t.Fatalf("Ctrl+E typed %q, want strikethrough", string(w.Edit.Buf))

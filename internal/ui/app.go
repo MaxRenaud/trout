@@ -709,6 +709,14 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	case "shift+end":
 		e.Extend(func() { _, e.Pos = e.Line() })
 	case "shift+up", "shift+down":
+		// A line of scrollback when the editbox has one line, where
+		// there's nothing to select up or down: Ctrl+PgUp/PgDn's job,
+		// which laptops without PgUp keys and terminals that keep those
+		// for their own tabs can't send. mIRC has no such key.
+		if !e.Multi() {
+			w.Scroll += map[bool]int{true: 1, false: -1}[s == "shift+up"]
+			break
+		}
 		anchor, sel := e.Anchor, e.Sel
 		if !sel {
 			anchor = e.Pos

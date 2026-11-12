@@ -481,6 +481,8 @@ func shortcutsBox() *msgBox {
 		"Alt+Left / Right     Previous / next window",
 		"Ctrl+W               Close window (or its × on the switchbar, Shift+click)",
 		"PgUp / PgDn          Scroll        Ctrl+L  Jump to line marker",
+		"Ctrl+PgUp / PgDn     Scroll a line (Shift+Up / Down with a one-line editbox)",
+		"Ctrl+Home / End      Top / bottom of the scrollback (empty editbox)",
 		"Tab                  Complete nick (*wild*); empty line: /msg last query",
 		"Up / Down            Editbox history (Ctrl+Up / Down in several lines)",
 		"Alt+Enter, Ctrl+J    New line in the editbox; Enter sends every line",

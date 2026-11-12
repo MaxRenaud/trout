@@ -253,7 +253,7 @@ trout was checked against mIRC's help (https://www.mirc.com/help/html/, October 
   /hop (keeps the window), /partall, /ctcpreply, /disconnect, /dcc send (Send File),
   /channel, /findtext, /savebuf, /url, /abook, /markasread, /dns, /join -i; /topic and /kick
   take a channel; mIRC's -switches on /query, /msg and the like aren't sent along.
-- **Keys:** Ctrl+PgUp/PgDn a line, Ctrl+Home/End the scrollback's ends, Ctrl+E
+- **Keys:** Ctrl+PgUp/PgDn a line (and Shift+Up/Down with a one-line editbox), Ctrl+Home/End the scrollback's ends, Ctrl+E
   strikethrough, Alt+B/N Address Book, Alt+K Colors, Alt+U URLs List. A #channel in text is
   a hotlink (double-click joins). Colors 16-98 are mIRC's fixed extended palette.
 - **Messages options:** strip codes, prefix own messages, keep windows open on part, CTCPs
