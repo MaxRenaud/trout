@@ -162,9 +162,9 @@ func (r *run) report(fr *frame, err error) bool {
 	case err == errHalt:
 		return true
 	case errors.As(err, &se):
-		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: se.text()}})
+		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: se.text(), Stamp: true}})
 	case errors.As(err, &ge):
-		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: "* /goto: '" + ge.label + "' not found"}})
+		r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Color: -1, Text: "* /goto: '" + ge.label + "' not found", Stamp: true}})
 	}
 	return false
 }
@@ -784,7 +784,8 @@ func (r *run) cmdInc(fr *frame, rest string, dec bool) error {
 	return nil
 }
 
-// cmdEcho is /echo [color] [-switches] [window] text. With -a it
+// cmdEcho is /echo [color] [-switches] [window] text. With -t the line
+// gets a timestamp; without it, none, like mIRC's. With -a it
 // prints in the active window, with -s in status. Without either or a
 // window, mIRC (though its help doesn't say) prints in the window it was
 // typed in, or from an event, in the network's status window.
@@ -825,7 +826,7 @@ func (r *run) cmdEcho(fr *frame, rest string) error {
 		return errorf("/echo: insufficient parameters")
 	}
 	r.actions = append(r.actions, Action{Echo: &Echo{Network: net, Window: win, Color: color, Text: strings.Join(words, " "),
-		Message: strings.Contains(sw, "m")}})
+		Message: strings.Contains(sw, "m"), Stamp: strings.Contains(sw, "t")}})
 	return nil
 }
 

@@ -370,7 +370,7 @@ func (r *run) listUsers(fr *frame, spec string) {
 			ok = g == atoi(spec) || u.has(spec)
 		}
 		if ok {
-			r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Window: fr.window, Color: -1, Text: u.String()}})
+			r.actions = append(r.actions, Action{Echo: &Echo{Network: fr.network, Window: fr.window, Color: -1, Text: u.String(), Stamp: true}})
 		}
 	}
 }

@@ -76,6 +76,8 @@ type Line struct {
 	// Event is a script's echo without -m: it marks its window like an
 	// event, not a message, like mIRC's.
 	Event bool
+	// NoStamp is a script's echo without -t: no timestamp, like mIRC's.
+	NoStamp bool
 }
 
 // ListEntry is one entry of a channel's ban, exception or invite list.

@@ -143,7 +143,7 @@ func (a *App) selectedLines(rows []textRow) string {
 		last = r.line
 		l := a.sel.win.Lines[r.line]
 		text := l.Text
-		if a.stampsFor(a.sel.win) {
+		if a.stampsFor(a.sel.win) && !l.NoStamp {
 			text = l.Time.Format(stampLayout(a.stampFormat)) + " " + text
 		}
 		lines = append(lines, text)

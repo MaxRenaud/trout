@@ -640,7 +640,7 @@ func (a *App) lineRows(win *state.Window, l state.Line, w int, shade bool) []tex
 		}
 	}
 	indent := 0
-	if a.stampsFor(win) { // the window's own Timestamp, or Options
+	if a.stampsFor(win) && !l.NoStamp { // the window's own Timestamp, or Options; an echo needs -t
 		stamp := l.Time.Format(stampLayout(a.stampFormat)) + " "
 		add(stamp, Style{FG: t.Roles[state.RoleTimestamp], BG: bg})
 		indent = runewidth.StringWidth(stamp)

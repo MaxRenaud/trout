@@ -277,6 +277,13 @@ func TestSojuNetworks(t *testing.T) {
 	if got := <-sent; got != "PRIVMSG BouncerServ :network create -addr ircs://irc.rizon.net:6667 -name irc.rizon.net" {
 		t.Fatalf("/server for a new host sent %q", got)
 	}
+	// mIRC's +port is SSL, after a space or a colon.
+	for _, c := range []string{"server -m irc.example.org +6697", "server -m irc.example.org:+6697"} {
+		a.ircCommand(a.home.Status(), c)
+		if got := <-sent; got != "PRIVMSG BouncerServ :network create -addr ircs://irc.example.org:6697 -name irc.example.org" {
+			t.Fatalf("/%s sent %q", c, got)
+		}
+	}
 }
 
 // fakeSoju is an App connected to a pretend soju: whatever trout sends on

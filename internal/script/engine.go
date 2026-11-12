@@ -104,6 +104,10 @@ type Echo struct {
 	Color   int    // mIRC color 0-99, or -1 for the default
 	Text    string
 	Message bool // -m: "treated as a user message, not an event" (mIRC's help), for the window's activity
+	// Stamp is -t: the line gets a timestamp if its window shows them.
+	// Without it an echo has none, like mIRC's. The engine's own error
+	// messages set it.
+	Stamp bool
 }
 
 // Save is what to keep after a script changed it: the global variables,

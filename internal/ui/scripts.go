@@ -502,7 +502,7 @@ func (a *App) runScript(actions []script.Action) tea.Cmd {
 			// line should be treated as a user message, not an event". The
 			// line keeps that, so syncing a read marker doesn't make it a
 			// message.
-			l := state.Line{Time: time.Now(), Role: state.RoleNormal, Text: act.Echo.Text, Event: !act.Echo.Message}
+			l := state.Line{Time: time.Now(), Role: state.RoleNormal, Text: act.Echo.Text, Event: !act.Echo.Message, NoStamp: !act.Echo.Stamp}
 			if act.Echo.Color >= 0 && act.Echo.Color < 16 {
 				l.Color = act.Echo.Color + 1
 			}

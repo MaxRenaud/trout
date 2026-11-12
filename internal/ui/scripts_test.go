@@ -126,6 +126,14 @@ func TestScriptsHooks(t *testing.T) {
 	if n := len(w.Lines); n < 2 || w.Lines[n-2].Text != "Test" || w.Lines[n-1].Text != "Test2" {
 		t.Errorf("//echo | echo: %q, %q", lastLine(w), w.Lines[max(0, n-2)].Text)
 	}
+	// Only -t gives an echo a timestamp, like mIRC's.
+	if l := w.Lines[len(w.Lines)-1]; !l.NoStamp {
+		t.Error("/echo without -t has a timestamp")
+	}
+	typed(w, "//echo -at stamped")
+	if l := w.Lines[len(w.Lines)-1]; l.Text != "stamped" || l.NoStamp {
+		t.Errorf("/echo -t: %+v", l)
+	}
 	typed(w, "!nope")
 	expect("on INPUT halts")
 	typed(w, "fine")

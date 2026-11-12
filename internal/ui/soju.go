@@ -297,8 +297,21 @@ func (a *App) serverCommand(w *state.Window, rest string) tea.Cmd {
 		return a.connectNet(w.Net)
 	}
 	addr := words[0]
-	if len(words) > 1 && !strings.Contains(addr, "://") && !strings.Contains(addr, ":") {
-		addr = net.JoinHostPort(addr, words[1]) // /server host port, like mIRC
+	if !strings.Contains(addr, "://") {
+		// mIRC's /server host [+]port or host:[+]port, where + is SSL. The
+		// bouncer uses TLS unless told irc+insecure://, so + changes nothing.
+		host, port := addr, ""
+		if i := strings.LastIndexByte(addr, ':'); i >= 0 && strings.Count(addr, ":") == 1 {
+			host, port = addr[:i], addr[i+1:]
+		} else if len(words) > 1 && mircPort(words[1]) != "" {
+			port = words[1]
+		}
+		if p := mircPort(port); p != "" {
+			addr = net.JoinHostPort(host, p)
+		} else if port != "" {
+			a.addLine(w, state.RoleInfo, "* /server: "+port+" isn't a port")
+			return nil
+		}
 	}
 	hp, _, err := irc.ParseAddress(addr)
 	if err != nil {
@@ -321,6 +334,19 @@ func (a *App) serverCommand(w *state.Window, rest string) tea.Cmd {
 	}
 	a.addLine(w, state.RoleInfo, "* Asking the bouncer to add "+host+"...")
 	return nil
+}
+
+// mircPort is the port in mIRC's way of writing one: "+6697" (SSL), and
+// lists or ranges like "6665-6669,7000", whose first port is the one
+// tried first. It's "" if p isn't one.
+func mircPort(p string) string {
+	p = strings.TrimPrefix(p, "+")
+	p, _, _ = strings.Cut(p, ",")
+	p, _, _ = strings.Cut(p, "-")
+	if p == "" || strings.Trim(p, "0123456789") != "" {
+		return ""
+	}
+	return p
 }
 
 // networkForm adds a network to soju (n is nil) or edits one. back is the
