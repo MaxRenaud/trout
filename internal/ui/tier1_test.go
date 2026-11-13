@@ -112,6 +112,42 @@ func TestTier1Keys(t *testing.T) {
 	if w.Scroll != 1 {
 		t.Fatalf("Shift+Down scrolled to %d", w.Scroll)
 	}
+	// Alt+PgUp/PgDn and Alt+Home/End, for terminals that keep the Ctrl
+	// ones (KiTTY); Alt+Home/End scroll with text in the editbox too.
+	a.Update(tea.KeyMsg{Type: tea.KeyPgUp, Alt: true})
+	if w.Scroll != 2 {
+		t.Fatalf("Alt+PgUp scrolled to %d", w.Scroll)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyPgDown, Alt: true})
+	if w.Scroll != 1 {
+		t.Fatalf("Alt+PgDn scrolled to %d", w.Scroll)
+	}
+	w.Edit.Buf, w.Edit.Pos = []rune("hello there  world"), 18
+	a.Update(tea.KeyMsg{Type: tea.KeyHome, Alt: true})
+	if a.View(); w.Scroll != top {
+		t.Fatalf("Alt+Home scrolled to %d, want %d", w.Scroll, top)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEnd, Alt: true})
+	if w.Scroll != 0 || w.Edit.Pos != 18 {
+		t.Fatalf("Alt+End: scroll %d, cursor %d", w.Scroll, w.Edit.Pos)
+	}
+	// Ctrl+Left/Right move a word, like mIRC's editbox; with Shift they
+	// select.
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlLeft})
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlLeft})
+	if w.Edit.Pos != 6 {
+		t.Fatalf("Ctrl+Left twice: cursor %d", w.Edit.Pos)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlShiftRight})
+	if got := w.Edit.SelText(); got != "there  " {
+		t.Fatalf("Ctrl+Shift+Right selected %q", got)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlRight})
+	if w.Edit.Pos != 18 || w.Edit.Sel {
+		t.Fatalf("Ctrl+Right: cursor %d", w.Edit.Pos)
+	}
+	w.Edit.Buf, w.Edit.Pos = nil, 0
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlPgUp})
 	a.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
 	if string(w.Edit.Buf) != "\x1e" {
 		t.Fatalf("Ctrl+E typed %q, want strikethrough", string(w.Edit.Buf))

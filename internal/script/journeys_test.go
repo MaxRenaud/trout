@@ -557,6 +557,20 @@ func (h *fakeHost) ActivateWindow(name string) {
 	}
 }
 
+func (h *fakeHost) ClientWindow(_, name string, activate, closeIt bool, _ int) bool {
+	status := strings.EqualFold(name, "Status Window")
+	if _, ok := h.chans[strings.ToLower(name)]; !ok && !status {
+		return false
+	}
+	if activate {
+		h.active = iff(status, "", name)
+	}
+	if closeIt && !status {
+		delete(h.chans, strings.ToLower(name))
+	}
+	return true
+}
+
 func (h *fakeHost) RenameWindow(old, name string) {
 	if i := h.findWin(old); i >= 0 {
 		if strings.EqualFold(h.active, old) {

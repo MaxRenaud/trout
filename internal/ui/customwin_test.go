@@ -38,7 +38,8 @@ alias secret window -h @secret
 // TestCustomWindows drives scripts' @windows in the client: a listbox
 // clicked, double-clicked and keyed through, its popup without the mouse
 // events, an editbox with a default command and on INPUT, a log a script
-// fills while it's minimized, a hidden one, and closing (on CLOSE).
+// fills while it's minimized, a hidden one, closing (on CLOSE), and
+// /window on channels, queries and the status window.
 func TestCustomWindows(t *testing.T) {
 	a, _ := fakeSoju(t)
 	a.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
@@ -150,6 +151,30 @@ func TestCustomWindows(t *testing.T) {
 	typed(ch, "//window -c @chat")
 	if got := status(); got == "closed @chat" || a.customWin("@chat") != nil {
 		t.Errorf("/window -c: %q", got)
+	}
+
+	// /window on the client's own windows, by name (typed, like Jinx's
+	// /window -a #trout).
+	typed(ch, `/window -a "Status Window"`)
+	if a.active != n.Status() {
+		t.Errorf("/window -a \"Status Window\": active %q", a.active.Name)
+	}
+	q := n.Add(&state.Window{Kind: state.KQuery, Name: "bob"})
+	typed(ch, "/window -g2 BOB")
+	if a.active != ch || q.Act != state.ActHighlight {
+		t.Errorf("/window -g2: active %q, act %v", a.active.Name, q.Act)
+	}
+	typed(ch, "/window -a bob")
+	if a.active != q || q.Act != state.ActNone {
+		t.Errorf("/window -a bob: active %q", a.active.Name)
+	}
+	typed(ch, "/window -c bob")
+	if slices.Contains(n.Wins, q) {
+		t.Error("/window -c bob: still open")
+	}
+	typed(ch, "/window -a #nope")
+	if got := status(); !strings.Contains(got, "/window: invalid parameters") || a.active != ch {
+		t.Errorf("/window -a #nope: %q", got)
 	}
 }
 

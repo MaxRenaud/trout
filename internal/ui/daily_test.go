@@ -226,6 +226,48 @@ func TestFind(t *testing.T) {
 	}
 }
 
+// TestFindText: /findtext goes straight to the match above, then the
+// next one up, with no dialog; -n goes down, like mIRC's.
+func TestFindText(t *testing.T) {
+	a, n, feed := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	feed(":bob!b@h PRIVMSG #go :the trout is here", ":bob!b@h PRIVMSG #go :nothing",
+		":bob!b@h PRIVMSG #go :another TROUT")
+	a.View()
+	typed := func(text string) {
+		t.Helper()
+		a.edit(ch).Buf = []rune(text)
+		a.submit(ch)
+	}
+	at := func() string {
+		if a.find == nil {
+			return ""
+		}
+		return ch.Lines[a.find.line].Text
+	}
+	typed("/findtext trout")
+	if a.dlg != nil || at() != "<bob> another TROUT" {
+		t.Fatalf("/findtext: dialog %T, at %q", a.dlg, at())
+	}
+	typed("/findtext trout")
+	if at() != "<bob> the trout is here" {
+		t.Fatalf("again: at %q", at())
+	}
+	typed("/findtext -n trout")
+	if at() != "<bob> another TROUT" {
+		t.Fatalf("-n: at %q", at())
+	}
+	typed("/findtext salmon")
+	if a.find != nil || !strings.Contains(ch.Lines[len(ch.Lines)-1].Text, `can't find "salmon" above`) {
+		t.Fatalf("not found: %q", ch.Lines[len(ch.Lines)-1].Text)
+	}
+	typed("/findtext")
+	if _, ok := a.dlg.(*formBox); !ok {
+		t.Fatalf("/findtext alone opened %T", a.dlg)
+	}
+}
+
 func TestFavorites(t *testing.T) {
 	cfg, _ := config.Load(filepath.Join(t.TempDir(), "config.toml"))
 	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://x:1", User: "max"}})

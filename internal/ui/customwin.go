@@ -192,6 +192,36 @@ func (h scriptHost) ActivateWindow(name string) {
 	}
 }
 
+// ClientWindow is /window on a channel, query, chat or "Status Window"
+// of the script's network: -a, -c and -g, as on a custom window.
+func (h scriptHost) ClientWindow(network, name string, activate, closeIt bool, highlight int) bool {
+	n := h.net(network)
+	if n == nil {
+		n = h.a.active.Net
+	}
+	var w *state.Window
+	if strings.EqualFold(name, "Status Window") {
+		w = n.Status()
+	} else if i := slices.IndexFunc(n.Wins, func(x *state.Window) bool {
+		return x.Kind != state.KStatus && x.Kind != state.KCustom && n.Same(x.Name, name)
+	}); i >= 0 {
+		w = n.Wins[i]
+	}
+	if w == nil {
+		return false
+	}
+	if highlight >= 0 { // -g0 none, -g1 a message's color, -g2 a highlight's
+		w.Act = [...]state.Activity{state.ActNone, state.ActMsg, state.ActHighlight}[min(highlight, 2)]
+	}
+	if activate {
+		h.a.activate(w)
+	}
+	if closeIt {
+		h.a.closeWindow(w)
+	}
+	return true
+}
+
 func (h scriptHost) RenameWindow(old, name string) {
 	if w := h.a.customWin(old); w != nil {
 		w.Name = name

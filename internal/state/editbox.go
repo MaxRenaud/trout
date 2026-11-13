@@ -3,6 +3,7 @@ package state
 import (
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // EditBox is a window's input with history and Tab completion. It's one
@@ -56,6 +57,30 @@ func (e *EditBox) Delete() {
 func (e *EditBox) Move(d int) {
 	e.Sel = false
 	e.Pos = Step(e.Buf, clamp(e.Pos, 0, len(e.Buf)), d)
+}
+
+// WordStep is where Ctrl+Left (d < 0) or Ctrl+Right (d > 0) takes the
+// cursor from pos: the start of the word before it, or of the next one.
+// Words are what's between spaces, like a Windows editbox's (mIRC's).
+func WordStep(buf []rune, pos, d int) int {
+	pos = clamp(pos, 0, len(buf))
+	space := func(i int) bool { return unicode.IsSpace(buf[i]) }
+	if d < 0 {
+		for pos > 0 && space(pos-1) {
+			pos--
+		}
+		for pos > 0 && !space(pos-1) {
+			pos--
+		}
+		return pos
+	}
+	for pos < len(buf) && !space(pos) {
+		pos++
+	}
+	for pos < len(buf) && space(pos) {
+		pos++
+	}
+	return pos
 }
 
 // Selection is the selected runes' range, if any.

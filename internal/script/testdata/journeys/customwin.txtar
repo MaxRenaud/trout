@@ -2,6 +2,8 @@ Custom windows: a highlights log (and on INPUT for windows by name), a listbox w
 7.86 did where its help is silent (tmp/win-oracle.mrc): new windows come to
 the front unless minimized, -n duplicates, sorting, selection, /filter,
 /savebuf and /loadbuf, $window, $line, $fline and $sline, and the errors.
+/window -a, -c and -g also work on channels, queries and "Status Window"
+(checked).
 
 -- log.mrc --
 on *:TEXT:*trout*:#:{
@@ -67,6 +69,13 @@ alias names {
   echo -s active= $+ $active
   window -c @b
   echo -s closed= $+ $window(@b)
+}
+alias clientwins {
+  window -a "Status Window"
+  echo -s active= $+ $active
+  window -ag1 #trout
+  echo -s active= $+ $active
+  window -a #nochan
 }
 -- transcript --
 me trout
@@ -141,3 +150,7 @@ show @g
 = status: renamed=@b old= title=new topic here
 = status: active=@b
 = status: closed=
+/clientwins
+= status: active=Status Window
+= status: active=#trout
+= status: * /window: invalid parameters (line 48, edge.mrc)

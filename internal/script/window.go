@@ -33,6 +33,16 @@ type Windows interface {
 	RenameWindow(old, name string)
 }
 
+// ClientWindows is the client's own windows for /window, which works on
+// them by name as well as on custom windows, like mIRC's (checked).
+type ClientWindows interface {
+	// ClientWindow does /window's -a (bring it to the front), -c (close
+	// it) and -gN (its button's color: 0 none, 1 message, 2 highlight;
+	// -1 leaves it) to network's channel, query or chat called name, or
+	// its "Status Window". False if there's none.
+	ClientWindow(network, name string, activate, close bool, highlight int) bool
+}
+
 // Window is one custom window: its lines and options. side picks the
 // side listbox's lines instead of the main ones.
 type Window interface {
@@ -116,8 +126,11 @@ func (r *run) cmdWindow(fr *frame, line string) error {
 		}
 		words = words[1:]
 	}
-	if len(words) == 0 || len(words[0]) < 2 || words[0][0] != '@' {
-		return errorf("/window: invalid parameters") // checked: a name without @
+	if len(words) > 0 && words[0][0] != '@' {
+		return r.clientWindow(fr, sw.String(), line, words)
+	}
+	if len(words) == 0 || len(words[0]) < 2 {
+		return errorf("/window: invalid parameters")
 	}
 	name := words[0]
 	words = words[1:]
@@ -206,6 +219,33 @@ func (r *run) cmdWindow(fr *frame, line string) error {
 		return nil
 	}
 	w.SetOpts(o)
+	return nil
+}
+
+// clientWindow is /window on one of the client's own windows: a
+// channel, query or chat, or "Status Window" in quotes. Only -a, -c and
+// -g mean anything there; the rest are the terminal's. A window that
+// isn't open is an error, like mIRC's (checked).
+func (r *run) clientWindow(fr *frame, sw, line string, words []string) error {
+	name := words[0]
+	if strings.HasPrefix(name, `"`) {
+		_, after, _ := strings.Cut(line, `"`)
+		name, _, _ = strings.Cut(after, `"`)
+	}
+	ch, _ := r.h.(ClientWindows)
+	if ch == nil {
+		return errorf("/window: invalid parameters")
+	}
+	s := winSwitches(sw)
+	_, activate := s['a']
+	_, closeIt := s['c']
+	hl := -1
+	if n, ok := s['g']; ok {
+		hl = max(n, 0)
+	}
+	if !ch.ClientWindow(fr.network, name, activate, closeIt, hl) {
+		return errorf("/window: invalid parameters")
+	}
 	return nil
 }
 

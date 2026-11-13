@@ -45,3 +45,15 @@ func TestMerge(t *testing.T) {
 		t.Errorf("LinesUpTo(7) = %d, want 3", n)
 	}
 }
+
+func TestWordStep(t *testing.T) {
+	buf := []rune("hi  there /msg\nbob")
+	for _, c := range []struct{ pos, d, want int }{
+		{0, 1, 4}, {4, 1, 10}, {2, 1, 4}, {10, 1, 15}, {15, 1, 18}, {18, 1, 18},
+		{18, -1, 15}, {15, -1, 10}, {12, -1, 10}, {4, -1, 0}, {3, -1, 0}, {0, -1, 0},
+	} {
+		if got := WordStep(buf, c.pos, c.d); got != c.want {
+			t.Errorf("WordStep(%d, %d) = %d, want %d", c.pos, c.d, got, c.want)
+		}
+	}
+}

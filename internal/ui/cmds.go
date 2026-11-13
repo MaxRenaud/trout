@@ -235,10 +235,7 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 		}
 		a.openChannelModes(ch)
 	case "findtext":
-		if rest != "" {
-			a.findText = rest
-		}
-		a.openFind()
+		a.findTextCmd(w, rest)
 	case "savebuf":
 		a.saveWindow(w)
 	case "url":

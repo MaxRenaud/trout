@@ -50,6 +50,65 @@ func (a *App) openFind() {
 	a.openDialog(f)
 }
 
+// findTextCmd is /findtext [-hcn] [text]: like mIRC's, it goes straight
+// to the next match above the last line you see (-n: below), with no
+// dialog; it carries on from the last match of the same text. -c clears
+// the highlighted line; -h is how trout always shows a match. Without
+// text, it's Ctrl+F's dialog.
+func (a *App) findTextCmd(w *state.Window, rest string) {
+	d := -1
+	for {
+		sw, after, _ := strings.Cut(rest, " ")
+		if len(sw) < 2 || sw[0] != '-' || strings.Trim(sw[1:], "hcn") != "" {
+			break
+		}
+		if strings.Contains(sw, "n") {
+			d = 1
+		}
+		if strings.Contains(sw, "c") {
+			a.find = nil
+		}
+		rest = strings.TrimSpace(after)
+	}
+	if rest == "" {
+		if a.find == nil || a.find.win != w {
+			a.openFind()
+		}
+		return
+	}
+	a.findText = rest
+	text := strings.ToLower(rest)
+	if f := a.find; f == nil || f.win != w || f.text != text {
+		start := a.lastVisibleLine(w) // searching up starts at it
+		if d > 0 {
+			start-- // and down, after it
+		}
+		a.find = &finder{win: w, text: text, line: start + 1}
+	}
+	if !a.findNext(d) {
+		where := "above"
+		if d > 0 {
+			where = "below"
+		}
+		a.addLine(w, state.RoleInfo, "* /findtext: can't find \""+rest+"\" "+where)
+		a.find = nil
+	}
+}
+
+// lastVisibleLine is the index of the bottom line in w's message pane.
+func (a *App) lastVisibleLine(w *state.Window) int {
+	if a.msgW <= 0 || w.Scroll <= 0 {
+		return len(w.Lines) - 1
+	}
+	rows, _ := a.windowRows(w, a.msgW)
+	for r := len(rows) - 1 - w.Scroll; r >= 0; r-- {
+		if !rows[r].marker {
+			return rows[r].line
+		}
+	}
+	return len(w.Lines) - 1
+}
+
 // winName is how a window is named in prompts.
 func (a *App) winName(w *state.Window) string {
 	if w.Kind == state.KStatus {

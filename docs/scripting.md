@@ -211,7 +211,8 @@ error.
   minimized (`-n`), hidden (`-h`) or without a button (`-w0`, `-k0` for one without its
   `@`); `/aline`, `/iline`, `/rline`, `/dline`, `/cline`, `/sline` (with `-s`, `-a`,
   `-n`, `-h`, `-l`), `/echo @name`, `/clear`, `/renwin`, `/loadbuf`, `/savebuf` and
-  `/filter`; `$window`, `$line`, `$fline`, `$sline` and `$filtered`. A `menu @name`
+  `/filter`; `$window`, `$line`, `$fline`, `$sline` and `$filtered`. `/window -a`, `-c`
+  and `-g` also work on channels, queries and `"Status Window"` by name. A `menu @name`
   section is its popup, and its `sclick`, `dclick`, `lbclick` and `rclick` items run on
   clicks (`$1` is the line), Up, Down and Enter in a listbox; `on INPUT:@name:` and
   `on CLOSE:@:` work too. Checked against mIRC 7.86 where its help is silent.

@@ -700,6 +700,11 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	case "end":
 		e.Sel = false
 		_, e.Pos = e.Line()
+	case "ctrl+left", "ctrl+right": // a word at a time, like mIRC's editbox
+		e.Sel = false
+		e.Pos = state.WordStep(e.Buf, e.Pos, map[bool]int{true: -1, false: 1}[s == "ctrl+left"])
+	case "ctrl+shift+left", "ctrl+shift+right":
+		e.Extend(func() { e.Pos = state.WordStep(e.Buf, e.Pos, map[bool]int{true: -1, false: 1}[s == "ctrl+shift+left"]) })
 	case "shift+left":
 		e.Extend(func() { e.Pos = state.Step(e.Buf, e.Pos, -1) })
 	case "shift+right":
@@ -737,6 +742,18 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		w.Scroll++
 	case "ctrl+pgdown":
 		w.Scroll--
+	// Alt with PgUp/PgDn and Home/End: the scrollback's Ctrl keys, for
+	// terminals that keep those for themselves (PuTTY and KiTTY scroll
+	// their own window with Ctrl+PgUp). mIRC has no such keys. Alt+Home
+	// and End scroll even with text in the editbox.
+	case "alt+pgup":
+		w.Scroll++
+	case "alt+pgdown":
+		w.Scroll--
+	case "alt+home":
+		w.Scroll = 1 << 30
+	case "alt+end":
+		w.Scroll = 0
 	case "ctrl+home": // the top of the scrollback, or the editbox's start
 		if len(e.Buf) == 0 {
 			w.Scroll = 1 << 30
