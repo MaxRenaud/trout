@@ -168,6 +168,8 @@ error.
   `me`, `!`, `@` and `&` prefixes, and `/auser`, `/guser`, `/ruser`, `/iuser`,
   `/rlevel`, `/flush`, `/ulist`, `/dlevel`.
 - **Colors and files**: `$color` (the Colors dialog's kinds of text, from your scheme),
+  `/color` (a color number's look, 0-98, in your copy of the theme: see
+  [themes](themes.md); or a kind of text's color number; `-r` puts it back),
   `$rgb`, `$findfile` (in the scripts folder, with a command or a `@window`),
   `$findfilen`, `$isdir`, and `$mircini` (a `mirc.ini` there, which trout doesn't read).
 - **DCC and more**: `$get`, `$send` and `$chat` (with `-1` for the event's), `$filename`,

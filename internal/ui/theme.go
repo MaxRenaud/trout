@@ -9,7 +9,11 @@ import (
 )
 
 type Theme struct {
-	Pal   [16]RGB // what mIRC color codes 00-15 render as
+	Pal [16]RGB // what mIRC color codes 00-15 render as
+	// Ext is colors 16-98 when a custom theme changed them (a script's
+	// /color); nil is mIRC's fixed ones. Copied themes share it: change a
+	// copy's own.
+	Ext   *[83]RGB
 	Roles [state.RoleCount]RGB
 
 	Face, FaceText, Light, Shadow  RGB // window chrome and its 3D edges
@@ -33,22 +37,24 @@ type Theme struct {
 type namedTheme struct {
 	name, label string
 	t           *Theme
+	fork        string // for a custom theme ("Classic*"), the theme it's a copy of
+	base        string // for a theme file, the built-in theme it starts from
 }
 
 // builtinThemes are Classic and Dark, which F2 switches between, then the
 // rest (themes.go), oldest look first. Theme files add more (themefile.go).
 var builtinThemes = []namedTheme{
-	{"classic", "Classic", &classicTheme},
-	{"dark", "Dark", &darkTheme},
-	{"phosphor", "Green Phosphor", &phosphorTheme},
-	{"amber", "Amber", &amberTheme},
-	{"dos", "DOS Blue", &dosTheme},
-	{"bbs", "BBS", &bbsTheme},
-	{"contrast", "High Contrast", &contrastTheme},
-	{"solarized", "Solarized", &solarizedTheme},
-	{"gruvbox", "Gruvbox", &gruvboxTheme},
-	{"nord", "Nord", &nordTheme},
-	{"black", "Black", &blackTheme},
+	{"classic", "Classic", &classicTheme, "", ""},
+	{"dark", "Dark", &darkTheme, "", ""},
+	{"phosphor", "Green Phosphor", &phosphorTheme, "", ""},
+	{"amber", "Amber", &amberTheme, "", ""},
+	{"dos", "DOS Blue", &dosTheme, "", ""},
+	{"bbs", "BBS", &bbsTheme, "", ""},
+	{"contrast", "High Contrast", &contrastTheme, "", ""},
+	{"solarized", "Solarized", &solarizedTheme, "", ""},
+	{"gruvbox", "Gruvbox", &gruvboxTheme, "", ""},
+	{"nord", "Nord", &nordTheme, "", ""},
+	{"black", "Black", &blackTheme, "", ""},
 }
 
 // themeList is the built-in themes and the theme files'.

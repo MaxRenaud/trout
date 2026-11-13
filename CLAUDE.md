@@ -65,8 +65,8 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   (Alt+R: the Aliases, Popups, Remote, Users and Variables tabs, in mIRC's ini files);
   `popups.go` the right-click menus and Commands, from popups.ini like mIRC's, and the
   `$?` input boxes; `theme.go` the theme list with Classic and Dark, `themes.go` the
-  other nine, `themefile.go` users' theme files (`docs/themes.md`), and `colors.go` the
-  Colors dialog. `canvas.go` is the cell buffer frames are drawn into, `select.go`
+  other nine, `themefile.go` users' theme files (`docs/themes.md`), `customtheme.go` the "Classic*"
+  copies Edit Color and `/color` change, and `colors.go` the Colors dialog. `canvas.go` is the cell buffer frames are drawn into, `select.go`
   drag-selecting text, `palette.go` Ctrl+K's color picker, `chanlist.go` the Channels
   List, `search.go` searching the bouncer's history from Find; per OS, `clipboard_*`,
   `ttyin_*` (reading the terminal, and how long a lone Esc waits) and `uptime_*`

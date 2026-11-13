@@ -1022,7 +1022,7 @@ func (h scriptHost) Colors() script.Colors {
 	for i, v := range t.Pal {
 		c.Pal[i] = uint32(v)
 	}
-	for i, v := range extendedColors {
+	for i, v := range t.ext() {
 		c.Pal[16+i] = uint32(v)
 	}
 	c.Index = map[string]int{}

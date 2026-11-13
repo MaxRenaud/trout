@@ -176,7 +176,7 @@ func TestTier1Keys(t *testing.T) {
 }
 
 func TestFormatting(t *testing.T) {
-	rs := parseMIRC("\x1ecrossed\x1e \x0352x", Style{}, &classicTheme.Pal)
+	rs := parseMIRC("\x1ecrossed\x1e \x0352x", Style{}, &classicTheme)
 	if !rs[0].St.Strike || rs[len(rs)-1].St.FG != 0xff0000 {
 		t.Fatal("strikethrough or extended color 52 (red) not applied")
 	}
@@ -185,7 +185,7 @@ func TestFormatting(t *testing.T) {
 		// WHOIS's channels: the status prefix isn't part of the link.
 		"alice on @#go +#rust #vim ~&#local x@#not": "#go #rust #vim #local",
 	} {
-		rs = parseMIRC(text, Style{}, &classicTheme.Pal)
+		rs = parseMIRC(text, Style{}, &classicTheme)
 		markURLs(rs)
 		var links []string
 		for i := 0; i < len(rs); i++ {

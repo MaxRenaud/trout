@@ -337,6 +337,12 @@ func (r *run) command(fr *frame, text string) (err error) {
 		default:
 			return r.cmdLine(fr, cmd, line)
 		}
+	case "color":
+		line, err := r.eval(fr, rest)
+		if err != nil {
+			return err
+		}
+		return r.cmdColor(line)
 	case "set":
 		return r.cmdSet(fr, rest)
 	case "var":
@@ -906,7 +912,7 @@ var engineCommands = []string{"set", "var", "unset", "unsetall", "inc", "dec", "
 	"auser", "guser", "ruser", "iuser", "rlevel", "flush", "ulist", "dlevel",
 	"sockopen", "sockwrite", "sockread", "sockclose", "sockmark", "sockrename",
 	"bset", "bunset", "bcopy", "breplace", "bread", "bwrite", "btrunc",
-	"window", "aline", "iline", "rline", "dline", "cline", "sline", "renwin", "loadbuf", "savebuf", "filter", "clear"}
+	"window", "aline", "iline", "rline", "dline", "cline", "sline", "renwin", "loadbuf", "savebuf", "filter", "clear", "color"}
 
 // Commands is the scripting commands the engine runs itself, sorted, for
 // the Scripts Editor's Help. (The client's own commands work in scripts

@@ -22,6 +22,23 @@ name, as `theme = "nord"`.
 The Colors dialog works on top of the theme, like mIRC's: it gives any kind of text (or
 the background) one of the theme's 16 mIRC colors, and Reset goes back to the theme's.
 
+## Changing a color
+
+Edit Color in the Colors dialog (or E, or right-click a color) changes what one of the 16
+colors looks like, typed as `#RRGGBB`. The first change makes your own copy of the theme,
+"Classic*" for Classic, and switches to it, so the theme itself stays as it was; later
+changes go into the copy. If you go back to Classic and change a color while you have
+Classic*, trout asks whether to change Classic* instead or replace it with a new copy of
+Classic. Delete Theme, in the Colors dialog on Classic*, deletes the copy and goes back to
+Classic.
+
+A script's `/color 4 $rgb(255,128,0)` does the same without asking (it changes Classic*
+if you have it), and can change colors 16-98 too; `/color -r 4` puts a color back as the
+theme has it. `/color action text 6` is the Colors dialog's choice for a kind of text.
+
+The copy is a theme file like the ones below, `classic-custom.toml`, with `fork =
+"classic"` saying which theme it copies.
+
 ## Your own themes
 
 A theme file is a `.toml` file in the `themes` folder next to `config.toml`:
@@ -53,6 +70,10 @@ text-bg = "#F7F3E8"
 text-fg = "#222222"
 normal = "#222222"
 shade-bg = "#EFEADC"
+
+# mIRC colors 16-98, any of them; leave it out for mIRC's.
+[extended]
+52 = "#FF2020"
 ```
 
 ### The colors

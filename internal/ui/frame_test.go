@@ -101,7 +101,18 @@ func TestFrames(t *testing.T) {
 	a.dlg.key(a, "s")
 	frame("Colors, the Scheme list down")
 	a.closeMenus()
+	a.dlg.key(a, "e")
+	frame("Edit Color")
 	a.dlg = nil
+	a.setColor(4, 0x123456, true)
+	a.openColors()
+	frame("Colors on a custom theme")
+	a.themeIdx = 0
+	a.setColor(2, 0x654321, true)
+	frame("Custom Theme question")
+	a.dlg = nil
+	a.themeIdx = a.forkIndex("classic")
+	a.deleteFork()
 
 	a.openDialog(aboutBox(true, "v0.1.0"))
 	frame("about box")

@@ -25,12 +25,19 @@ import (
 //	[colors]
 //	text-bg = "#F7F3E8"
 //	normal = "#222222"
+//	[extended] # mIRC colors 16-98, any of them
+//	52 = "#FF0000"
+//
+// A custom theme ("Classic*", customtheme.go) is one trout writes, with
+// fork naming the theme it's a copy of.
 
 type themeFile struct {
-	Label   string            `toml:"label"`
-	Base    string            `toml:"base"`
-	Palette []string          `toml:"palette"`
-	Colors  map[string]string `toml:"colors"`
+	Label    string            `toml:"label"`
+	Base     string            `toml:"base"`
+	Fork     string            `toml:"fork"`
+	Palette  []string          `toml:"palette"`
+	Colors   map[string]string `toml:"colors"`
+	Extended map[string]string `toml:"extended"`
 }
 
 // themeColors are the [colors] keys, each a color of t.
@@ -68,10 +75,15 @@ func parseHex(s string) (RGB, bool) {
 // parseThemeFile makes a theme from a theme file's text; problems are
 // what's wrong with it, by line where TOML says.
 func parseThemeFile(data string) (label string, t *Theme, problems []string) {
-	var f themeFile
+	f, t, problems := readThemeFile(data)
+	return f.Label, t, problems
+}
+
+// readThemeFile is parseThemeFile with the whole file.
+func readThemeFile(data string) (f themeFile, t *Theme, problems []string) {
 	md, err := toml.Decode(data, &f)
 	if err != nil {
-		return "", nil, []string{err.Error()}
+		return f, nil, []string{err.Error()}
 	}
 	for _, k := range md.Undecoded() {
 		problems = append(problems, "unknown setting "+k.String())
@@ -79,7 +91,7 @@ func parseThemeFile(data string) (label string, t *Theme, problems []string) {
 	base := cmp.Or(f.Base, "classic")
 	i := slices.IndexFunc(builtinThemes, func(b namedTheme) bool { return b.name == base })
 	if i < 0 {
-		return "", nil, append(problems, fmt.Sprintf("base %q isn't a built-in theme", f.Base))
+		return f, nil, append(problems, fmt.Sprintf("base %q isn't a built-in theme", f.Base))
 	}
 	th := *builtinThemes[i].t
 	if f.Palette != nil {
@@ -112,7 +124,22 @@ func parseThemeFile(data string) (label string, t *Theme, problems []string) {
 			th.ThinSplits = true
 		}
 	}
-	return f.Label, &th, problems
+	for _, k := range slices.Sorted(maps.Keys(f.Extended)) {
+		n, err := strconv.Atoi(k)
+		c, ok := parseHex(f.Extended[k])
+		switch {
+		case err != nil || n < 16 || n > 98:
+			problems = append(problems, fmt.Sprintf("extended color %s isn't 16-98", k))
+		case !ok:
+			problems = append(problems, fmt.Sprintf("extended color %s: %q isn't #RRGGBB", k, f.Extended[k]))
+		default:
+			if th.Ext == nil {
+				th.Ext = new(extendedColors)
+			}
+			th.Ext[n-16] = c
+		}
+	}
+	return f, &th, problems
 }
 
 // loadThemeFiles reads the themes folder: a theme file with problems is
@@ -142,12 +169,12 @@ func (a *App) loadThemeFiles() (problems []string) {
 			problems = append(problems, "Theme file "+e.Name()+": "+err.Error())
 			continue
 		}
-		label, t, ps := parseThemeFile(string(data))
+		f, t, ps := readThemeFile(string(data))
 		for _, p := range ps {
 			problems = append(problems, "Theme file "+e.Name()+": "+p)
 		}
 		if t != nil {
-			a.userThemes = append(a.userThemes, namedTheme{name, cmp.Or(label, name), t})
+			a.userThemes = append(a.userThemes, namedTheme{name, cmp.Or(f.Label, name), t, f.Fork, cmp.Or(f.Base, "classic")})
 		}
 	}
 	return problems

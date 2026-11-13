@@ -311,7 +311,7 @@ func (a *App) drawCustomList(c *Canvas, win *state.Window, side bool, x, y, w, h
 			base.FG = t.Pal[(l.Color-1)%16]
 		}
 		cx := x + 1
-		for _, sr := range parseMIRC(l.Text, base, &t.Pal) {
+		for _, sr := range parseMIRC(l.Text, base, t) {
 			if cx >= x+lw {
 				break
 			}

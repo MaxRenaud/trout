@@ -688,7 +688,7 @@ func (a *App) lineRows(win *state.Window, l state.Line, w int, shade bool) []tex
 		add("<"+prefix+nick+">", st)
 		text = after
 	}
-	rs = append(rs, parseMIRC(text, base, &t.Pal)...)
+	rs = append(rs, parseMIRC(text, base, t)...)
 	markURLs(rs)
 	parts := wrap(rs, w, indent)
 	out := make([]textRow, len(parts))

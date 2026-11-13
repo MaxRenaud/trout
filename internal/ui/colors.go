@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -120,7 +121,7 @@ func (a *App) openColors() { a.openDialog(&colorsBox{sel: 1}) }
 
 func (d *colorsBox) title() string { return "Colors" }
 
-func (d *colorsBox) size(a *App) (int, int) { return 58, len(colorItems) + 9 }
+func (d *colorsBox) size(a *App) (int, int) { return 68, len(colorItems) + 9 }
 
 func (d *colorsBox) draw(a *App, c *Canvas, x, y, w, h int) {
 	t := a.theme()
@@ -170,7 +171,8 @@ func (d *colorsBox) draw(a *App, c *Canvas, x, y, w, h int) {
 		note = "Using the scheme's color"
 	}
 	c.Text(px, ly+8, 28, note, face)
-	a.dlgButtons(c, x, y+h-3, w, colorsButtons, 0)
+	c.Text(px, ly+9, 28, "E or right-click: change one", face)
+	a.dlgButtons(c, x, y+h-3, w, d.buttonLabels(a), 0)
 }
 
 // current is the palette color the selected item uses: its own choice, or
@@ -205,6 +207,12 @@ func (d *colorsBox) key(a *App, k string) tea.Cmd {
 		d.pick(a, max(0, d.current(a))+step)
 	case "r":
 		clear(a.colors)
+	case "e", "alt+e":
+		d.editColor(a, max(0, d.current(a)))
+	case "d", "alt+d":
+		if a.themeList()[a.themeIdx].fork != "" {
+			d.confirmDelete(a)
+		}
 	case "s", "alt+s":
 		d.openScheme(a)
 	case "enter", "esc", "o":
@@ -214,6 +222,10 @@ func (d *colorsBox) key(a *App, k string) tea.Cmd {
 }
 
 func (d *colorsBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
+	if m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonRight && r.S == "swatch" {
+		d.editColor(a, r.I)
+		return nil
+	}
 	if m.Action != tea.MouseActionPress || m.Button != tea.MouseButtonLeft {
 		return nil
 	}
@@ -225,11 +237,7 @@ func (d *colorsBox) mouse(a *App, m tea.MouseMsg, r Region, _ bool) tea.Cmd {
 	case "scheme":
 		d.openScheme(a)
 	case "button":
-		if r.I == 1 {
-			clear(a.colors)
-			return nil
-		}
-		a.dlg = nil
+		return d.pressButton(a, r.I)
 	case "close":
 		a.dlg = nil
 	}
@@ -246,10 +254,66 @@ func (d *colorsBox) openScheme(a *App) {
 
 func (d *colorsBox) takenMnemonics() string { return "s" } // Scheme
 
-var colorsButtons = []string{"OK", "Reset"}
+// The buttons: Delete Theme only on a custom theme ("Classic*").
+func (d *colorsBox) buttonLabels(a *App) []string {
+	if a.themeList()[a.themeIdx].fork != "" {
+		return []string{"OK", "Reset", "Edit Color...", "Delete Theme"}
+	}
+	return []string{"OK", "Reset", "Edit Color..."}
+}
 
-func (d *colorsBox) buttonLabels(*App) []string { return colorsButtons }
-func (d *colorsBox) typing() bool               { return false }
+func (d *colorsBox) typing() bool { return false }
 func (d *colorsBox) pressButton(a *App, i int) tea.Cmd {
-	return d.key(a, map[int]string{0: "enter", 1: "r"}[i])
+	return d.key(a, [...]string{"enter", "r", "e", "d"}[min(i, 3)])
+}
+
+// editColor asks for what color n (0-15) should look like, as #RRGGBB,
+// then changes it in the theme's custom copy (customtheme.go). mIRC
+// opens Windows' color picker; a terminal types the color.
+func (d *colorsBox) editColor(a *App, n int) {
+	sel := d.sel
+	t := a.baseTheme()
+	f := &formBox{Title: "Edit Color", Lines: []string{
+		"What a color number looks like in " + a.themeList()[a.themeIdx].label + ".",
+		"Changing one makes your own copy of the theme to change."},
+		Fields:  []*formField{newField("Color number (0-15):", fmt.Sprintf("%02d", n), false), newField("Color (#RRGGBB):", fmt.Sprintf("#%06X", uint32(t.Pal[n])), false)},
+		Buttons: []string{"OK", "Cancel"}}
+	f.OnOK = func(a *App, vals []string) (tea.Cmd, error) {
+		n, err := strconv.Atoi(strings.TrimSpace(vals[0]))
+		if err != nil || n < 0 || n > 15 {
+			return nil, errors.New("the color number is 0-15")
+		}
+		c, ok := parseHex(vals[1])
+		if !ok {
+			return nil, errors.New("type the color as #RRGGBB, like #FF8000")
+		}
+		a.setColor(n, c, true)
+		if a.dlg == f { // not asking about the custom copy
+			a.dlg = &colorsBox{sel: sel}
+		}
+		return nil, nil
+	}
+	f.OnCancel = func(a *App) tea.Cmd { a.dlg = &colorsBox{sel: sel}; return nil }
+	a.openDialog(f)
+}
+
+// confirmDelete asks before deleting the custom theme in use.
+func (d *colorsBox) confirmDelete(a *App) {
+	cur := a.themeList()[a.themeIdx]
+	orig := cur.fork
+	if i := slices.IndexFunc(a.themeList(), func(t namedTheme) bool { return t.name == cur.fork }); i >= 0 {
+		orig = a.themeList()[i].label
+	}
+	m := message("Delete "+cur.label+", your copy of "+orig+"?", "", "You'll be back on "+orig+", and its colors you changed are gone.")
+	m.Title = "Delete Theme"
+	m.Buttons, m.Sel, m.Cancel = []string{"Delete", "Cancel"}, 1, 1
+	sel := d.sel
+	m.OnClose = func(a *App, button int) tea.Cmd {
+		if button == 0 {
+			a.deleteFork()
+		}
+		a.openDialog(&colorsBox{sel: sel})
+		return nil
+	}
+	a.openDialog(m)
 }

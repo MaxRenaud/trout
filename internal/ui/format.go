@@ -15,7 +15,7 @@ type SRune struct {
 // parseMIRC applies mIRC formatting codes on top of base: ^B bold,
 // ^Cfg[,bg] color, ^] italic, ^_ underline, ^^ strikethrough (typed as
 // Ctrl+E, like mIRC), ^V reverse and ^O reset.
-func parseMIRC(s string, base Style, pal *[16]RGB) []SRune {
+func parseMIRC(s string, base Style, t *Theme) []SRune {
 	rs := []rune(s)
 	out := make([]SRune, 0, len(rs))
 	st, rev := base, false
@@ -40,10 +40,10 @@ func parseMIRC(s string, base Style, pal *[16]RGB) []SRune {
 				continue
 			}
 			i += n
-			st.FG = palColor(pal, fg, base.FG)
+			st.FG = palColor(t, fg, base.FG)
 			if i+1 < len(rs) && rs[i+1] == ',' {
 				if bg, m := readColor(rs, i+2); m > 0 {
-					st.BG = palColor(pal, bg, base.BG)
+					st.BG = palColor(t, bg, base.BG)
 					i += 1 + m
 				}
 			}
@@ -69,18 +69,27 @@ func readColor(rs []rune, i int) (v, n int) {
 	return v, n
 }
 
-func palColor(pal *[16]RGB, i int, def RGB) RGB {
+func palColor(t *Theme, i int, def RGB) RGB {
 	switch {
-	case i < len(pal):
-		return pal[i]
+	case i < len(t.Pal):
+		return t.Pal[i]
 	case i < 99:
-		return extendedColors[i-16]
+		return t.ext()[i-16]
 	}
 	return def // 99 is "default"
 }
 
+// ext is t's colors 16-98.
+func (t *Theme) ext() *[83]RGB {
+	if t.Ext != nil {
+		return t.Ext
+	}
+	return &extendedColors
+}
+
 // extendedColors are mIRC's colors 16-98, which are fixed: they look the
-// same in every scheme, unlike 0-15.
+// same in every scheme, unlike 0-15 (but a script's /color can change
+// them in a custom theme, like mIRC's, checked).
 var extendedColors = [83]RGB{
 	0x470000, 0x472100, 0x474700, 0x324700, 0x004700, 0x00472c, 0x004747, 0x002747, 0x000047, 0x2e0047, 0x470047, 0x47002a,
 	0x740000, 0x743a00, 0x747400, 0x517400, 0x007400, 0x007449, 0x007474, 0x004074, 0x000074, 0x4b0074, 0x740074, 0x740045,
@@ -179,7 +188,7 @@ func nickColor(nick string) int {
 
 func stripCodes(s string) string {
 	var b strings.Builder
-	for _, r := range parseMIRC(s, Style{}, &classicTheme.Pal) {
+	for _, r := range parseMIRC(s, Style{}, &classicTheme) {
 		b.WriteRune(r.R)
 	}
 	return b.String()

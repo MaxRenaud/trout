@@ -53,7 +53,7 @@ func TestCanvasClusters(t *testing.T) {
 
 // TestWrapKeepsClusters doesn't split an emoji from its skin tone.
 func TestWrapKeepsClusters(t *testing.T) {
-	line := parseMIRC("ab👍🏽cd", Style{}, &classicTheme.Pal)
+	line := parseMIRC("ab👍🏽cd", Style{}, &classicTheme)
 	rows := wrap(line, 4, 0)
 	var got []string
 	for _, r := range rows {
