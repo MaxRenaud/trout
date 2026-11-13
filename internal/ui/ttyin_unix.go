@@ -41,6 +41,19 @@ func (t *ttyIn) Read(p []byte) (int, error) {
 		m, err = t.File.Read(p[n:])
 		n += m
 	}
+	// An Esc key with a mouse report right behind it (moving the mouse
+	// while the lone Esc waited, or both in one read over a slow ssh)
+	// would be ESC ESC [<..., which Bubble Tea reads as Alt+[ and typed
+	// "<35;103;31M", losing the Esc (Jinx's Channel Central). No
+	// terminal sends a mouse report with Alt's ESC before it, so that
+	// ESC is the Esc key: it goes on its own.
+	for _, seq := range [][]byte{[]byte("\x1b\x1b[<"), []byte("\x1b\x1b[M")} {
+		if i := bytes.Index(p[:n], seq); i >= 0 {
+			cut := max(i, 1)
+			t.held = append(append([]byte(nil), p[cut:n]...), t.held...)
+			n = cut
+		}
+	}
 	if n == len(p) && partialEsc(p[:n]) {
 		if i := bytes.LastIndexByte(p[:n], 0x1b); i > 0 {
 			t.held = append([]byte(nil), p[i:n]...)

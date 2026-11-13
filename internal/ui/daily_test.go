@@ -268,6 +268,42 @@ func TestFindText(t *testing.T) {
 	}
 }
 
+// TestQueryN: /query -n opens a query without bringing it to the front,
+// and /queryrn renames one, with mIRC's errors (checked).
+func TestQueryN(t *testing.T) {
+	a, n, _ := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	typed := func(text string) {
+		t.Helper()
+		a.edit(a.active).Buf = []rune(text)
+		a.submit(a.active)
+	}
+	typed("/query -n bob")
+	q := n.Find(state.KQuery, "bob")
+	if q == nil || a.active != ch {
+		t.Fatalf("/query -n: query %v, active %q", q, a.active.Name)
+	}
+	typed("/query bob")
+	if a.active != q {
+		t.Fatalf("/query: active %q", a.active.Name)
+	}
+	a.activate(ch)
+	typed("/queryrn BOB robert")
+	if q.Name != "robert" || n.Find(state.KQuery, "bob") != nil {
+		t.Fatalf("/queryrn: %q", q.Name)
+	}
+	typed("/queryrn bob x")
+	if got := lastLine(ch); got != "* /queryrn: invalid window" {
+		t.Fatalf("/queryrn of none: %q", got)
+	}
+	n.Add(&state.Window{Kind: state.KQuery, Name: "ann"})
+	typed("/queryrn robert ann")
+	if got := lastLine(ch); got != "* /queryrn: invalid parameters" || q.Name != "robert" {
+		t.Fatalf("/queryrn onto another: %q", got)
+	}
+}
+
 func TestFavorites(t *testing.T) {
 	cfg, _ := config.Load(filepath.Join(t.TempDir(), "config.toml"))
 	a := New(Options{Config: cfg, Bouncer: config.Bouncer{Address: "irc+insecure://x:1", User: "max"}})

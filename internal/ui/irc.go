@@ -1138,7 +1138,13 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			need()
 			break
 		}
-		if q := a.openQuery(n, arg); tail != "" {
+		// -n opens it without bringing it to the front (mIRC's minimized,
+		// checked), for an open one too.
+		q := a.query(n, arg, "")
+		if !strings.Contains(switches, "n") {
+			a.activate(q)
+		}
+		if tail != "" {
 			a.privmsg(q, arg, tail)
 		}
 	case "msg":

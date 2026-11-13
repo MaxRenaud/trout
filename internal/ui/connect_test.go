@@ -538,11 +538,29 @@ func TestNetworkCertificate(t *testing.T) {
 	}
 	feed("BOUNCER NETWORK 9 error=" + failed) // soju without the placeholder again
 	nothingSent("a failure while asking")
+	// Trust pins it, and trout looks at the network's servers itself: one
+	// server here.
+	run := func(c tea.Cmd) {
+		if c != nil {
+			a.Update(c())
+		}
+	}
+	var looked []string
+	servers, server := 1, ""
+	a.certServers = func(host, port, fp string) (string, int) {
+		looked = []string{host, port, fp}
+		return server, servers
+	}
 	d.Sel = 0
-	a.dlg.key(a, "enter")
+	trust := a.dlg.key(a, "enter")
 	if got := toServ(); got != "PRIVMSG BouncerServ :network update Prison -certfp "+fp {
 		t.Fatalf("Trust sent %q", got)
 	}
+	run(trust)
+	if !slices.Equal(looked, []string{"irc.prison.net", "6697", fp}) || a.netCerts[n] != nil {
+		t.Fatalf("looked at %q, then %+v", looked, a.netCerts[n])
+	}
+	nothingSent("a network of one server")
 
 	// Later the network's certificate changes: a warning, Cancel focused.
 	feed("BOUNCER NETWORK 9 state=connected", "BOUNCER NETWORK 9 state=disconnected;error="+mismatch(other))
@@ -569,6 +587,36 @@ func TestNetworkCertificate(t *testing.T) {
 	feed("BOUNCER NETWORK 9 error=" + failed)
 	if got := toServ(); !strings.HasSuffix(got, "-certfp "+strings.Repeat("0", 64)) {
 		t.Fatalf("after editing the network, a failure sent %q", got)
+	}
+
+	// A round robin of servers with their own certificates (EFnet's): the
+	// pin can't hold, so trout points the network at the trusted one, and
+	// soju's mismatches meanwhile don't ask again (Jinx's endless
+	// Certificate Changed).
+	feed("BOUNCER NETWORK 9 error=" + mismatch(fp))
+	toServ()
+	servers, server = 3, "irc2.prison.net"
+	d = a.dlg.(*msgBox)
+	d.Sel = 0
+	trust = a.dlg.key(a, "enter")
+	toServ()
+	feed("BOUNCER NETWORK 9 error=" + mismatch(other))
+	if a.dlg != nil {
+		t.Fatalf("asked about another of the servers while looking: %#v", a.dlg)
+	}
+	run(trust)
+	if got := toServ(); got != "PRIVMSG BouncerServ :network update Prison -addr ircs://irc2.prison.net:6697 -certfp "+fp {
+		t.Fatalf("the round robin's server: sent %q", got)
+	}
+	if got := lastLine(n.Status()); !strings.Contains(got, "irc.prison.net is several servers") {
+		t.Errorf("status: %q", got)
+	}
+	// One trout can't find: it says why, and doesn't ask about each.
+	a.netCerts[n] = &netCert{stage: certPinning}
+	a.Update(certServerMsg{n: n, fp: fp, port: "6697", servers: 3})
+	feed("BOUNCER NETWORK 9 error=" + mismatch(other))
+	if a.dlg != nil || !strings.Contains(lastLine(n.Status()), "Pick one of Prison's servers") {
+		t.Fatalf("not found: dialog %#v, status %q", a.dlg, lastLine(n.Status()))
 	}
 }
 

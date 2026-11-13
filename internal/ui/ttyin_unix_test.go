@@ -61,6 +61,35 @@ func TestSplitMouse(t *testing.T) {
 	}
 }
 
+// TestEscThenMouse: Esc with a mouse report right behind it, in the same
+// read or while the lone Esc waits, is Esc and motion, not Alt+[ and
+// "<35;103;31M" typed in a dialog; Alt+Left as ESC ESC [ D (PuTTY's)
+// stays Alt+Left.
+func TestEscThenMouse(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	m := &msgLog{seen: make(chan int, 64)}
+	go func() {
+		for _, chunk := range []string{"\x1b", "\x1b[<35;103;31M", "\x1b\x1b[<35;10;5M", "x\x1b\x1b[<35;10;6M",
+			"\x1b\x1b[D"} {
+			w.WriteString(chunk)
+			time.Sleep(20 * time.Millisecond)
+		}
+		m.waitSeen(t, 7)
+		w.WriteString("\x03")
+		w.Close()
+	}()
+	p := tea.NewProgram(m, tea.WithInput(&ttyIn{File: r}), tea.WithOutput(io.Discard), tea.WithMouseAllMotion())
+	runLog(t, p)
+	want := []string{"esc", "motion", "esc", "motion", "x", "esc", "motion", "alt+left", "ctrl+c"}
+	if fmt.Sprint(m.got) != fmt.Sprint(want) {
+		t.Fatalf("got %q, want %q", m.got, want)
+	}
+}
+
 // TestSplitX10Mouse: GNU screen 4 reports the mouse the old X10 way, ESC
 // [ M and three bytes (button, x, y, each plus 32), and sends them in
 // pieces; split ones are mouse events, not "C|E" typed in the editbox.

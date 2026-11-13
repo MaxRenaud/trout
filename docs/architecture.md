@@ -131,6 +131,11 @@ only says a server's fingerprint when a pinned one doesn't match, so trout pins 
 placeholder, reads the SHA-512 from the mismatch error, clears the placeholder at once,
 and asks with soju as it was. Trust pins it with `-certfp`; a mismatch trout didn't cause
 is a Certificate Changed warning; Cancel stops asking until the network is edited.
+soju keeps one fingerprint, so a round robin whose servers each have their own
+certificate (irc.efnet.net) can't be pinned: after Trust, trout dials the name's
+addresses itself (`certServers`), and if their certificates differ, points the network at
+the trusted one (`-addr`, by a name in its certificate that resolves to it), ignoring
+soju's mismatches meanwhile.
 
 BouncerServ commands trout sends itself (`serv` in `internal/ui/soju.go`) are sent as
 shell-quoted PRIVMSGs; their echo-message copy is dropped (it can hold a password) and
@@ -251,7 +256,7 @@ trout was checked against mIRC's help (https://www.mirc.com/help/html/, October 
   history of the session. Read-only for non-operators, like mIRC's greyed-out dialog.
 - **Commands:** /privmsg, /say, /describe, /omsg, /onotice, /qmsg, /qme, /amsg, /ame,
   /hop (keeps the window), /partall, /ctcpreply, /disconnect, /dcc send (Send File),
-  /channel, /findtext (straight to the match, -n down, like mIRC's), /savebuf, /url, /abook, /markasread, /dns, /join -i; /topic and /kick
+  /queryrn, /query -n (not brought to the front), /channel, /findtext (straight to the match, -n down, like mIRC's), /savebuf, /url, /abook, /markasread, /dns, /join -i; /topic and /kick
   take a channel; mIRC's -switches on /query, /msg and the like aren't sent along.
 - **Keys:** Ctrl+PgUp/PgDn a line (and Alt+PgUp/PgDn, and Shift+Up/Down with a one-line editbox), Ctrl+Home/End the scrollback's ends (Alt+Home/End even with text typed), Ctrl+Left/Right a word in the editbox, Ctrl+E
   strikethrough, Alt+B/N Address Book, Alt+K Colors, Alt+U URLs List. A #channel in text is

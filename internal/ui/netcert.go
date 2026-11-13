@@ -1,8 +1,17 @@
 package ui
 
 import (
+	"cmp"
+	"context"
+	"crypto/sha512"
+	"crypto/tls"
+	"encoding/hex"
+	"net"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -35,6 +44,7 @@ const (
 	certProbing  certStage = iota + 1 // the placeholder's pinned; the fingerprint's coming
 	certAsking                        // the question is open, or waiting to open
 	certDeclined                      // Cancel: not asked again until the network's edited or trout restarts
+	certPinning                       // trusted; trout's looking for which of the network's servers it was
 )
 
 type netCert struct {
@@ -46,6 +56,9 @@ type netCert struct {
 // certificate it couldn't check or one that doesn't match the pin.
 func (a *App) networkError(n *state.Network, e string) {
 	c := a.netCerts[n]
+	if c != nil && c.stage == certPinning {
+		return // soju reconnecting to another of a round robin's servers meanwhile
+	}
 	if m := certMismatchRe.FindStringSubmatch(e); m != nil {
 		switch {
 		case c != nil && c.stage == certProbing:
@@ -122,7 +135,109 @@ func (a *App) trustNetCert(n *state.Network, trust bool, fp string) tea.Cmd {
 			"Select Server to be asked again, or to connect with irc+insecure://")
 		return nil
 	}
-	delete(a.netCerts, n)
+	a.netCerts[n] = &netCert{stage: certPinning}
 	a.serv(a.home, n.Status(), false, "network", "update", n.Name, "-certfp", fp)
-	return nil
+	host, port := n.Attrs["host"], cmp.Or(n.Attrs["port"], "6697")
+	find := a.certServers
+	return func() tea.Msg {
+		server, servers := find(host, port, fp)
+		return certServerMsg{n, fp, port, server, servers}
+	}
+}
+
+// A round robin (irc.efnet.net is 18 servers) whose servers each have
+// their own certificate can't be pinned: soju keeps one fingerprint, and
+// its next connection lands on another server. So once you trust one,
+// trout looks at the name's servers itself, and if their certificates
+// differ, points the network at the one you trusted.
+
+// certServerMsg is what trout found: the server with the trusted
+// certificate ("" if none), and how many different certificates the
+// name's servers that answered had.
+type certServerMsg struct {
+	n       *state.Network
+	fp      string
+	port    string
+	server  string
+	servers int
+}
+
+// certServers dials each of host's addresses and returns the one whose
+// certificate has fingerprint fp, by a name in that certificate that
+// leads to it if there is one, and how many different certificates
+// there were.
+func certServers(host, port, fp string) (string, int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupHost(ctx, host)
+	if err != nil || len(ips) < 2 {
+		return "", len(ips)
+	}
+	var (
+		mu    sync.Mutex
+		fps   = map[string]bool{}
+		found string
+		names []string
+		wg    sync.WaitGroup
+	)
+	d := tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true, ServerName: host}, NetDialer: &net.Dialer{}}
+	for _, ip := range ips {
+		wg.Go(func() {
+			c, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip, port))
+			if err != nil {
+				return
+			}
+			defer c.Close()
+			certs := c.(*tls.Conn).ConnectionState().PeerCertificates
+			if len(certs) == 0 {
+				return
+			}
+			sum := sha512.Sum512(certs[0].Raw)
+			mu.Lock()
+			defer mu.Unlock()
+			fps[hex.EncodeToString(sum[:])] = true
+			if hex.EncodeToString(sum[:]) == fp {
+				found, names = ip, append(slices.Clone(certs[0].DNSNames), certs[0].Subject.CommonName)
+			}
+		})
+	}
+	wg.Wait()
+	if found == "" || len(fps) < 2 {
+		return "", len(fps)
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second) // the dials' may be spent
+	defer cancel()
+	for _, name := range names {
+		if addrs, err := net.DefaultResolver.LookupHost(ctx, name); err == nil && slices.Contains(addrs, found) {
+			return name, len(fps)
+		}
+	}
+	return found, len(fps)
+}
+
+// certServerFound points n at the server with the certificate you
+// trusted, when its name is a round robin of servers with different
+// ones.
+func (a *App) certServerFound(m certServerMsg) {
+	n := m.n
+	if c := a.netCerts[n]; c == nil || c.stage != certPinning {
+		return // edited or asked about again meanwhile
+	}
+	delete(a.netCerts, n)
+	if m.servers < 2 {
+		return
+	}
+	host := n.Attrs["host"]
+	if m.server == "" {
+		// The bouncer reached a server trout can't (or its DNS answers
+		// differently): say so rather than asking about each in turn.
+		a.netCerts[n] = &netCert{stage: certDeclined}
+		a.addLine(n.Status(), state.RoleInfo, "* "+host+" is several servers, each with its own certificate, and "+
+			"the bouncer can trust only one. Pick one of "+n.Name+"'s servers in File > Select Server.")
+		return
+	}
+	a.addLine(n.Status(), state.RoleInfo, "* "+host+" is several servers, each with its own certificate, and "+
+		"the bouncer can trust only one: "+n.Name+" now connects to "+m.server+", the one you trusted.")
+	a.serv(a.home, n.Status(), false, "network", "update", n.Name,
+		"-addr", "ircs://"+net.JoinHostPort(m.server, m.port), "-certfp", m.fp)
 }

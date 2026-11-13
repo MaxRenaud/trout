@@ -107,9 +107,10 @@ type App struct {
 	joining     map[string]bool // channels we asked to join, to focus them
 	listing     map[*state.Network]*listBox
 	listRows    map[*state.Network][]demo.ChanInfo
-	chanLists   map[*state.Network]*chanList // the Channels List's last download, per network
-	netCerts    map[*state.Network]*netCert  // networks whose certificate the bouncer can't check
-	listWaiting map[*state.Network]int       // a LIST trout sent, by its listSeq
+	chanLists   map[*state.Network]*chanList                             // the Channels List's last download, per network
+	netCerts    map[*state.Network]*netCert                              // networks whose certificate the bouncer can't check
+	certServers func(host, port, fp string) (server string, servers int) // certServers, or a test's
+	listWaiting map[*state.Network]int                                   // a LIST trout sent, by its listSeq
 	listFilter  map[*state.Network]listFilter
 	listSeq     int
 	history     map[*state.Window]bool                  // chathistory already fetched
@@ -343,6 +344,7 @@ func New(opts Options) *App {
 		sbars:       map[HitKind]scrollGeom{},
 		conns:       map[*state.Network]*irc.Conn{},
 		netCerts:    map[*state.Network]*netCert{},
+		certServers: certServers,
 		batches:     map[string]*histBatch{},
 		joining:     map[string]bool{},
 		listing:     map[*state.Network]*listBox{},
@@ -461,6 +463,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.localInfoUpdate(msg)
 	case dnsMsg:
 		cmd = a.dnsDone(msg)
+	case certServerMsg:
+		a.certServerFound(msg)
 	case uploadDoneMsg:
 		a.uploaded(msg)
 	case instStepMsg, instPhaseMsg:

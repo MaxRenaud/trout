@@ -46,6 +46,20 @@ func (a *App) mircCommand(w *state.Window, name, rest string) (tea.Cmd, bool) {
 		}
 		a.openNickInfo(n, nick)
 		return nil, true
+	case "queryrn": // renames a query window, like mIRC's (checked)
+		newName, _, _ := strings.Cut(strings.TrimSpace(tail), " ")
+		q := n.Find(state.KQuery, arg)
+		switch {
+		case arg == "" || newName == "":
+			need()
+		case q == nil:
+			a.addLine(w, state.RoleInfo, "* /queryrn: invalid window")
+		case !n.Same(arg, newName) && n.Find(state.KQuery, newName) != nil:
+			a.addLine(w, state.RoleInfo, "* /queryrn: invalid parameters")
+		default:
+			q.Name = newName
+		}
+		return nil, true
 	case "closemsg": // closes a query
 		if q := n.Find(state.KQuery, arg); q != nil {
 			a.closeWindow(q)
