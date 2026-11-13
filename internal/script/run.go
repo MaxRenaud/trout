@@ -171,7 +171,10 @@ func (r *run) report(fr *frame, err error) bool {
 
 func (r *run) step() error {
 	r.steps++
-	if r.steps > r.e.opts.MaxSteps {
+	if r.steps%1024 == 0 && r.e.opts.Interrupted != nil && r.e.opts.Interrupted() {
+		return errorf("Break: command halted") // like mIRC's Ctrl+Break (checked)
+	}
+	if lim := r.e.opts.MaxSteps; lim > 0 && r.steps > lim {
 		return errorf("script stopped: it ran more than ", itoa(r.e.opts.MaxSteps), " steps")
 	}
 	return nil

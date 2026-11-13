@@ -245,8 +245,10 @@ trout's own commands, and anything trout doesn't know goes to the server.
 
 ## Where trout differs from mIRC
 
-- A handler that runs too long (100,000 steps) is stopped with an error, where mIRC
-  freezes.
+- A handler that runs too long (1,000,000 steps, Scripts Editor > Options > Step Limit)
+  is stopped with an error, where mIRC freezes until Ctrl+Break. A Step Limit of 0 never
+  stops one, like mIRC. Ctrl+Break halts a script, like mIRC's ("* Break: command
+  halted"), on Windows; most terminals elsewhere don't send it, so there it's Ctrl+\.
 - `/alias` writes its aliases file straight away; mIRC keeps the change until `/saveini`
   or it closes.
 - A line, a variable's value or what an identifier returns can be up to 64 KB, where

@@ -495,6 +495,7 @@ func shortcutsBox() *msgBox {
 		"Alt+O Alt+L Alt+J    Options, Channels List, Favorites",
 		"Alt+B Alt+N Alt+U    Address Book, Notify, URLs List   Alt+K  Colors",
 		"Alt+R Alt+D Alt+P    Scripts Editor: Remote, Aliases, Popups",
+		"Ctrl+Break, Ctrl+\\   Halt a script that never ends",
 		"Ctrl+F  F3 Shift+F3  Find text: newest first, older, newer",
 		"F2                   Classic / Dark      /exit   Quit",
 		"",

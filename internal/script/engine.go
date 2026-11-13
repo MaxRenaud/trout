@@ -136,10 +136,15 @@ func (p Problem) String() string {
 // Options are the engine's settings. The zero value is fine.
 type Options struct {
 	// MaxSteps is how many statements one event or alias call may run
-	// before it's stopped (default 100000). mIRC freezes on a script that
-	// never ends and offers Ctrl+Break; a terminal has no Ctrl+Break, so
-	// trout stops it instead.
+	// before it's stopped: 0 is the default, 1000000, and less than 0 is
+	// never, like mIRC, which freezes on a script that never ends until
+	// Ctrl+Break. Not every terminal can send a break key (Interrupted),
+	// so trout stops a runaway script by itself too.
 	MaxSteps int
+	// Interrupted says if the user has pressed the break key since the
+	// script started (Ctrl+Break, or Ctrl+\ in a terminal); the script is
+	// then halted, like mIRC's. It's asked every 1024 steps; nil is never.
+	Interrupted func() bool
 	// Rand is the source for $rand; nil uses a random seed.
 	Rand *rand.Rand
 	// Exe is the client's program file, for $mircexe.
@@ -241,14 +246,26 @@ type variable struct {
 }
 
 func New(opts Options) *Engine {
-	if opts.MaxSteps <= 0 {
-		opts.MaxSteps = 100000
+	if opts.MaxSteps == 0 {
+		opts.MaxSteps = DefaultMaxSteps
 	}
 	if opts.Rand == nil {
 		opts.Rand = rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
 	}
 	return &Engine{opts: opts, dlevel: 1, vars: map[string]*variable{}, groups: map[string]bool{},
 		tables: map[string]*table{}, regexes: map[string]*compiledRegex{}, handles: map[string]*handle{}}
+}
+
+// DefaultMaxSteps is Options.MaxSteps' default: a few seconds on a
+// Raspberry Pi, far more than a script that ends needs.
+const DefaultMaxSteps = 1000000
+
+// SetMaxSteps changes Options.MaxSteps (0 the default, less than 0 never).
+func (e *Engine) SetMaxSteps(n int) {
+	if n == 0 {
+		n = DefaultMaxSteps
+	}
+	e.opts.MaxSteps = n
 }
 
 // Load parses a script and loads it, replacing a script of the same name.

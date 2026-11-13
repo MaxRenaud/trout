@@ -227,6 +227,10 @@ type ScriptOpts struct {
 	NoFindSel     bool `toml:"no-find-selection,omitempty"`
 	NoLineNumbers bool `toml:"no-line-numbers,omitempty"`
 	IdentWarning  bool `toml:"identifier-warning,omitempty"`
+	// StepLimit is Options > Step Limit: how many statements a script may
+	// run before it's stopped; nil is the default (script.DefaultMaxSteps),
+	// 0 never, like mIRC.
+	StepLimit *int `toml:"step-limit,omitempty"`
 }
 
 // Settings are the View menu and Options dialog choices.

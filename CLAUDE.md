@@ -69,7 +69,7 @@ go vet ./... && go fix -diff ./...                 # must both be clean
   copies Edit Color and `/color` change, and `colors.go` the Colors dialog. `canvas.go` is the cell buffer frames are drawn into, `select.go`
   drag-selecting text, `palette.go` Ctrl+K's color picker, `chanlist.go` the Channels
   List, `search.go` searching the bouncer's history from Find; per OS, `clipboard_*`,
-  `ttyin_*` (reading the terminal, and how long a lone Esc waits) and `uptime_*`
+  `ttyin_*` (reading the terminal, how long a lone Esc waits, and the break key that halts a script, `scriptbreak.go`) and `uptime_*`
   (`$uptime(system)`).
 - `internal/proxy`: dialing through SOCKS4, SOCKS5 or an HTTP proxy.
 - `internal/update`: trout updating itself: GitHub's latest release, how this trout was

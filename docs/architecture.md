@@ -280,7 +280,8 @@ trout was checked against mIRC's help (https://www.mirc.com/help/html/, October 
 - **Message pane:** nicks in a channel's text are hotlinks (double-click for a query,
   right-click or hold for the nick popup). Ctrl+drag copies whole lines with their codes,
   Shift+drag keeps line breaks as shown (many terminals keep Shift+drag for their own
-  selection).
+  selection). Copying uses the system clipboard and, over SSH or where there's none
+  (a Raspberry Pi without a desktop), OSC 52, the terminal's (`select.go`'s `copyText`).
 - **Window > Order** moves a network's windows up and down the switchbar.
 - **Proxy** (Options > Connect, `proxy.go` and `internal/proxy`): SOCKS4/4a, SOCKS5 (with
   a login) or HTTP CONNECT, for the bouncer and its file host, for DCC Gets and Chats, or

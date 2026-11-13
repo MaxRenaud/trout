@@ -801,11 +801,11 @@ func (ed *scriptEditor) key(a *App, k string) tea.Cmd {
 	case "ctrl+x":
 		if s := d.selText(); s != "" {
 			d.edit("", d.deleteSel)
-			return copyText(s)
+			return a.copyText(s)
 		}
 	case "ctrl+c":
 		if s := d.selText(); s != "" {
-			return copyText(s)
+			return a.copyText(s)
 		}
 	case "ctrl+v":
 		return pasteClipboard()
@@ -1375,6 +1375,7 @@ func (ed *scriptEditor) stripMenu(a *App, i int) ([]MenuItem, int, int) {
 			opt("Identifier Warning", &o.IdentWarning, true),
 			sep,
 			{Label: "Default Level: " + strconv.Itoa(max(1, a.book().ScriptLevel)), Action: do(ed.levelPrompt)},
+			{Label: "Step Limit: " + stepLimitText(o.StepLimit), Action: do(ed.stepsPrompt)},
 		}
 	case "Help":
 		topic := func(name string) MenuItem {
@@ -1579,6 +1580,46 @@ func (ed *scriptEditor) levelPrompt(a *App) {
 		}
 		actions, _ := a.scripts.Command(a.active.Net.Name, "", "dlevel "+v, false, a.scriptHost())
 		a.queueScript(a.runScript(actions))
+		return nil
+	})
+}
+
+// stepLimitText is a Step Limit as Options shows it.
+func stepLimitText(limit *int) string {
+	switch n := engineSteps(limit); {
+	case n < 0:
+		return "Never"
+	case n == 0:
+		return strconv.Itoa(script.DefaultMaxSteps)
+	default:
+		return strconv.Itoa(n)
+	}
+}
+
+// stepsPrompt is Options > Step Limit: how many statements a script may
+// run before trout stops it. mIRC has no limit: a script that never ends
+// freezes it until Ctrl+Break. Not every terminal can send a break key
+// (scriptbreak.go), so trout has one; 0 is mIRC's way.
+func (ed *scriptEditor) stepsPrompt(a *App) {
+	o := &a.book().ScriptOpts
+	value := strconv.Itoa(script.DefaultMaxSteps)
+	if o.StepLimit != nil {
+		value = strconv.Itoa(max(0, *o.StepLimit))
+	}
+	lines := []string{"A script that runs more statements than this is stopped;",
+		"0 never stops one. Ctrl+Break, or Ctrl+\\ outside Windows,", "stops one any time."}
+	ed.prompt(a, "Step Limit", "Steps:", value, lines, func(v string) error {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return errors.New("give a number of steps, like " + strconv.Itoa(script.DefaultMaxSteps) + ", or 0")
+		}
+		if n == script.DefaultMaxSteps {
+			o.StepLimit = nil
+		} else {
+			o.StepLimit = new(n)
+		}
+		a.saveConfig()
+		a.applyScriptOpts()
 		return nil
 	})
 }

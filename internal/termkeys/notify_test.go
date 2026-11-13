@@ -54,3 +54,12 @@ func TestNotifySequence(t *testing.T) {
 		t.Errorf("not cut at 240: %d runes", len([]rune(got)))
 	}
 }
+
+func TestClipboardSequence(t *testing.T) {
+	if got := ClipboardSequence("hi \x03"+"4red", false); got != "\x1b]52;c;aGkgAzRyZWQ=\a" {
+		t.Errorf("got %q", got)
+	}
+	if got := ClipboardSequence("hi", true); got != "\x1b]52;c;aGk=\a\x1bPtmux;\x1b\x1b]52;c;aGk=\a\x1b\\" {
+		t.Errorf("tmux: got %q", got)
+	}
+}

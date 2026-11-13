@@ -258,12 +258,25 @@ func (a *App) startScripts() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// applyScriptOpts tells the engine the Scripts Editor's Listen menu and
-// Identifier Warning.
+// applyScriptOpts tells the engine the Scripts Editor's Listen menu,
+// Identifier Warning and Step Limit.
 func (a *App) applyScriptOpts() {
 	o := a.book().ScriptOpts
 	a.scripts.Listen(!o.CTCPsOff, !o.EventsOff, !o.RawOff)
 	a.scripts.IdentifierWarning(o.IdentWarning)
+	a.scripts.SetMaxSteps(engineSteps(o.StepLimit))
+}
+
+// engineSteps is a Step Limit as the engine has it: 0 its default, less
+// than 0 never.
+func engineSteps(limit *int) int {
+	switch {
+	case limit == nil:
+		return 0
+	case *limit <= 0:
+		return -1
+	}
+	return *limit
 }
 
 // readIniList reads an ini section's n0=, n1=... lines (vars.ini,

@@ -1,5 +1,6 @@
-A loop that never ends is stopped, and the scripts keep working after it: a
-terminal has no Ctrl+Break, mIRC's way out. Typed ones too (Jinx's).
+A loop that never ends is stopped, and the scripts keep working after it: not
+every terminal can send a break key, mIRC's way out (Ctrl+Break, or Ctrl+\ in
+trout). Typed ones too (Jinx's).
 
 -- loop.mrc --
 alias spin {
@@ -13,12 +14,12 @@ me trout
 chan #trout trout bob
 active #trout
 /spin
-= status: * script stopped: it ran more than 100000 steps (line 3, loop.mrc)
+= status: * script stopped: it ran more than 1000000 steps (line 3, loop.mrc)
 < :bob!b@h PRIVMSG #trout :!spin
-= status: * script stopped: it ran more than 100000 steps (line 3, loop.mrc)
+= status: * script stopped: it ran more than 1000000 steps (line 3, loop.mrc)
 < :bob!b@h PRIVMSG #trout :!ping
 > /msg #trout pong
 //while (2 > 1) { noop }
-= status: * script stopped: it ran more than 100000 steps
+= status: * script stopped: it ran more than 1000000 steps
 //while (1) { }
-= status: * script stopped: it ran more than 100000 steps
+= status: * script stopped: it ran more than 1000000 steps

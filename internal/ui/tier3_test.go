@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -134,7 +135,7 @@ func TestEditboxSelection(t *testing.T) {
 
 	var copied string
 	write := writeClipboard
-	writeClipboard = func(text string) { copied = text }
+	writeClipboard = func(text string) error { copied = text; return nil }
 	t.Cleanup(func() { writeClipboard = write })
 	press(a, "h", "i", "shift+left", "shift+left")
 	if cmd := a.key(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd != nil {
@@ -143,6 +144,30 @@ func TestEditboxSelection(t *testing.T) {
 	if copied != "hi" || e.Sel {
 		t.Fatalf("Ctrl+C copied %q, selection left %v", copied, e.Sel)
 	}
+	// Over ssh, or with no system clipboard (xclip missing on a Pi with
+	// no desktop), it goes to the terminal's too, through OSC 52; where
+	// the system's works on your own computer, it doesn't.
+	var term strings.Builder
+	a.bellOut = &term
+	for _, c := range []struct {
+		ssh   bool
+		fail  bool
+		osc52 bool
+	}{{false, false, false}, {true, false, true}, {false, true, true}} {
+		term.Reset()
+		a.overSSH = c.ssh
+		writeClipboard = func(string) error {
+			if c.fail {
+				return errors.New("xclip: not found")
+			}
+			return nil
+		}
+		a.copyText("hi")()
+		if got := term.String() == "\x1b]52;c;aGk=\a"; got != c.osc52 {
+			t.Errorf("ssh %v, system clipboard failing %v: wrote %q", c.ssh, c.fail, term.String())
+		}
+	}
+	a.bellOut, a.overSSH = nil, false
 	// With nothing selected it doesn't quit, like mIRC.
 	if cmd := a.key(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd != nil || !strings.Contains(lastLine(a.active), "/exit quits") {
 		t.Fatalf("Ctrl+C with nothing selected: %q", lastLine(a.active))

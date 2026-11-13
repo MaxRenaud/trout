@@ -718,3 +718,23 @@ func TestHashBulkDelete(t *testing.T) {
 		t.Errorf("took %v", d)
 	}
 }
+
+// TestBreak: the break key halts a script that never ends, like mIRC's
+// Ctrl+Break (checked: "* Break: command halted (line 7, oracle.mrc)"),
+// and with no step limit, like mIRC's, the break is the only way out.
+func TestBreak(t *testing.T) {
+	var asked int
+	e := New(Options{MaxSteps: -1, Interrupted: func() bool { asked++; return asked == 5 }})
+	load(t, e, "a.mrc", `on *:TEXT:*:#:while (1) noop`)
+	load(t, e, "b.mrc", `on *:TEXT:*:#:msg # still here`)
+	got := dispatchText(e, evalHost(), "hi")
+	want := []string{": * Break: command halted (line 1, a.mrc)", "/msg #trout still here"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	e.SetMaxSteps(2000)
+	asked = 100
+	if got := dispatchText(e, evalHost(), "hi"); got[0] != ": * script stopped: it ran more than 2000 steps (line 1, a.mrc)" {
+		t.Errorf("SetMaxSteps: got %q", got)
+	}
+}

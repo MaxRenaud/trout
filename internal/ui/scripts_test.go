@@ -910,7 +910,7 @@ func TestScriptsEditorMenus(t *testing.T) {
 	ed = a.dlg.(*scriptEditor)
 	opts := menu("Options")
 	if got := labels(opts); !slices.Equal(got, []string{"Initialization Warning", "Ask to Save Files", "Monitor File Changes",
-		"Backup File on Save", "Find Selection", "Line Numbers", "", "Identifier Warning", "", "Default Level: 1"}) {
+		"Backup File on Save", "Find Selection", "Line Numbers", "", "Identifier Warning", "", "Default Level: 1", "Step Limit: 1000000"}) {
 		t.Errorf("Options = %q", got)
 	}
 	opts[5].Action(a)
@@ -926,6 +926,31 @@ func TestScriptsEditorMenus(t *testing.T) {
 		t.Errorf("Identifier Warning: %q", st.Lines[len(st.Lines)-1].Text) // errors go to status, like mIRC's
 	}
 	typed("/unload -rs w.mrc")
+
+	// Step Limit: 0 is never, like mIRC; a lower one stops a loop sooner.
+	stepLimit := func(v string) {
+		t.Helper()
+		a.openScriptsTab(edRemote)
+		menu("Options")[10].Action(a)
+		f := a.dlg.(*formBox)
+		f.Fields[0].Edit = state.EditBox{Buf: []rune(v)}
+		a.dlg.key(a, "enter")
+		a.dlg = nil
+	}
+	stepLimit("0")
+	if l := a.book().ScriptOpts.StepLimit; l == nil || *l != 0 || labels(menu("Options"))[10] != "Step Limit: Never" {
+		t.Errorf("Step Limit 0: %v", l)
+	}
+	a.dlg = nil
+	stepLimit("5000")
+	typed("//while (1) { }")
+	if st := a.firstStatus(); st.Lines[len(st.Lines)-1].Text != "* script stopped: it ran more than 5000 steps" {
+		t.Errorf("Step Limit 5000: %q", st.Lines[len(st.Lines)-1].Text)
+	}
+	stepLimit("1000000")
+	if a.book().ScriptOpts.StepLimit != nil {
+		t.Error("the default Step Limit is kept in the config")
+	}
 
 	// Rename: the file and the loaded script, now; Order puts it first.
 	a.openScriptsTab(edRemote)

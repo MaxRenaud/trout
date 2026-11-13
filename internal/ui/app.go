@@ -133,6 +133,7 @@ type App struct {
 	tlsHinted map[*state.Network]bool // told a network's port has no TLS
 	lastHover *state.Window           // last frame\'s hoverTab, so a button stays hovered over its ×
 	bellOut   io.Writer               // the terminal, for the bell and iTerm2's profile switch; nil in tests
+	overSSH   bool                    // trout runs over ssh: the clipboard is the terminal's (copyText)
 	// The terminal and its Option key (optionkey.go): optionKey is ""
 	// until asked, "fix" for iTerm2's profile switch, "never" to stop
 	// asking; itermRestore switches the tab back when trout quits.
@@ -313,22 +314,26 @@ type App struct {
 	hideLines      bool
 	ctcpHalted     bool
 	lastTyped      time.Time
-	scriptTab      edTab // the Scripts Editor's, when it was last open
+	scriptTab      edTab     // the Scripts Editor's, when it was last open
+	brk            *breakKey // Ctrl+Break (scriptbreak.go); nil in tests
 }
 
 // Run starts the UI and blocks until the user quits.
 func Run(opts Options) error {
 	a := New(opts)
-	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus(), inputOption())
+	a.brk = &breakKey{}
+	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseAllMotion(), tea.WithReportFocus(), inputOption(a.brk))
 	a.send = p.Send
 	a.bellOut = os.Stdout
 	env := termkeys.SystemEnv()
 	a.term, a.termHome = termkeys.Detect(env), env.Home
 	a.termColors = termkeys.Colors(env.Getenv)
 	a.notify, a.inTmux = termkeys.NotifyFor(env.Getenv), env.Getenv("TMUX") != ""
-	stopHup := quitOnHangup(p.Quit)
+	a.overSSH = env.Getenv("SSH_TTY") != "" || env.Getenv("SSH_CONNECTION") != ""
+	stopHup, stopBreak := quitOnHangup(p.Quit), watchBreak(a.brk, p.Quit)
 	_, err := p.Run()
 	stopHup()
+	stopBreak()
 	a.stopITermProfile() // back to the tab's own profile
 	a.local.Stop()       // trout's own soju, if it started one
 	a.closeSockets()     // scripts' sockets
@@ -377,7 +382,8 @@ func New(opts Options) *App {
 	}
 	a.saved = a.settings()
 	exe, _ := os.Executable()
-	a.scripts, a.scriptProblems = script.New(script.Options{Exe: exe, Version: a.opts.Version, Dir: a.scriptsDir()}), map[string][]script.Problem{}
+	a.scripts, a.scriptProblems = script.New(script.Options{Exe: exe, Version: a.opts.Version, Dir: a.scriptsDir(),
+		Interrupted: func() bool { return a.brk.interrupted() }}), map[string][]script.Problem{}
 	a.loadPopups()           // the menus, before anything else loads
 	a.lastTyped = time.Now() // $idle counts from the start
 	a.scriptTab = edRemote
@@ -420,6 +426,7 @@ func tick() tea.Cmd {
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	a.brk.reset()
 	if m, ok := msg.(tea.MouseMsg); ok && a.idleMotion(m) {
 		a.mx, a.my = m.X, m.Y
 		a.sameFrame = true
@@ -548,7 +555,7 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 		if e := a.edit(a.active); e.SelText() != "" {
 			text := e.SelText()
 			e.Sel = false
-			return copyText(text)
+			return a.copyText(text)
 		}
 		a.addLine(a.active, state.RoleInfo, "* Ctrl+C copies what's selected; File > Exit or /exit quits")
 		return nil
@@ -736,7 +743,7 @@ func (a *App) key(k tea.KeyMsg) tea.Cmd {
 	case "ctrl+x":
 		if t := e.SelText(); t != "" {
 			e.DeleteSel()
-			return copyText(t)
+			return a.copyText(t)
 		}
 	case "ctrl+v":
 		return pasteClipboard()

@@ -209,3 +209,66 @@ func TestBurstMouse(t *testing.T) {
 		}
 	}
 }
+
+// spinLog is msgLog whose "s" key is a script that never ends, on the
+// Update goroutine like a real one, until the break key.
+type spinLog struct {
+	msgLog
+	brk    *breakKey
+	broken chan bool
+}
+
+func (m *spinLog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.brk.reset() // as App.Update does
+	if k, ok := msg.(tea.KeyMsg); ok && k.String() == "s" {
+		start := time.Now()
+		for !m.brk.interrupted() && time.Since(start) < 5*time.Second {
+			time.Sleep(50 * time.Microsecond) // 1024 steps' worth, give or take
+		}
+		m.broken <- time.Since(start) < 5*time.Second
+	}
+	_, cmd := m.msgLog.Update(msg)
+	return m, cmd
+}
+
+// TestBreakKey: Ctrl+\ halts a script that never ends even when Bubble
+// Tea's reader is stuck with a mouse report Update hasn't taken, and what
+// was typed meanwhile still comes, in order, once more input does.
+func TestBreakKey(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	m := &spinLog{msgLog: msgLog{seen: make(chan int, 64)}, brk: &breakKey{}, broken: make(chan bool, 1)}
+	tty := &ttyIn{File: r, brk: m.brk}
+	m.brk.poll = tty.poll
+	go func() {
+		w.WriteString("s")
+		time.Sleep(20 * time.Millisecond)
+		w.WriteString("\x1b[<35;10;5M") // the reader takes it, and waits on Update
+		time.Sleep(20 * time.Millisecond)
+		w.WriteString("ab\x1c")
+		if !<-m.broken {
+			t.Error("Ctrl+\\ didn't halt the script")
+		}
+		m.waitSeen(t, 2)
+		w.WriteString("x")
+		m.waitSeen(t, 5)
+		w.WriteString("\x03")
+		w.Close()
+	}()
+	p := tea.NewProgram(m, tea.WithInput(tty), tea.WithOutput(io.Discard), tea.WithMouseAllMotion())
+	runLog(t, p)
+	want := []string{"s", "motion", "ab", `ctrl+\`, "x", "ctrl+c"} // typed text comes as one key
+	if fmt.Sprint(m.got) != fmt.Sprint(want) {
+		t.Fatalf("got %q, want %q", m.got, want)
+	}
+	// With no script running, Ctrl+\ is a key like any other: the next
+	// Update forgets it.
+	m.brk.pressed.Store(true)
+	m.brk.reset()
+	if m.brk.interrupted() {
+		t.Error("a Ctrl+\\ from before halts the next script")
+	}
+}

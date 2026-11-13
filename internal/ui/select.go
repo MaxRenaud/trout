@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"io"
 	"strings"
 
 	"github.com/MaxRenaud/trout/internal/state"
+	"github.com/MaxRenaud/trout/internal/termkeys"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -48,7 +50,7 @@ func (a *App) finishSelection() tea.Cmd {
 	if text == "" {
 		return nil
 	}
-	return copyText(text)
+	return a.copyText(text)
 }
 
 // span returns the selected columns [from, to) of row.
@@ -118,18 +120,25 @@ func (a *App) selectedText() string {
 	return text
 }
 
-// copyText puts text on the system clipboard. This only reaches your own
-// clipboard when running locally; over SSH a real client would use the
-// terminal's OSC 52 clipboard sequence instead.
-func copyText(text string) tea.Cmd {
+// copyText puts text on the clipboard: the system's (pbcopy, xclip,
+// Windows'), which is yours only when trout runs on your computer, and
+// over ssh, or where the system has none (a Raspberry Pi with no
+// desktop), the terminal's too, through OSC 52. Where trout runs on your
+// computer and the system's works, OSC 52 isn't sent, so nothing changes
+// there.
+func (a *App) copyText(text string) tea.Cmd {
+	out, ssh, tmux := a.bellOut, a.overSSH, a.inTmux
 	return func() tea.Msg {
-		writeClipboard(text)
+		if err := writeClipboard(text); (err != nil || ssh) && out != nil {
+			io.WriteString(out, termkeys.ClipboardSequence(text, tmux))
+		}
 		return nil
 	}
 }
 
-// writeClipboard is copyText's clipboard (clipboard_*.go); tests replace it.
-var writeClipboard = func(text string) { _ = systemCopy(text) }
+// writeClipboard is copyText's system clipboard (clipboard_*.go); tests
+// replace it.
+var writeClipboard = systemCopy
 
 // selectedLines is every line the selection touches, as received: color
 // and format codes and all.
