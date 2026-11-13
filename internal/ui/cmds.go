@@ -300,3 +300,56 @@ func (a *App) lastInvited(n *state.Network) string { return cmp.Or(a.invitedTo[n
 
 // slapText is mIRC's slap, for the nick popup and /slap.
 func slapText(nick string) string { return "slaps " + nick + " around a bit with a large trout" }
+
+// closeCmd is /close -switches [nick|window ...]: the windows of the types
+// the switches name, matching the names given (wildcards too), or all of
+// them with none; -a on every network, not just this one; -i only DCC
+// chats and Gets that are over. Like mIRC's (checked), it needs a type:
+// /close bob, /close @x and /close alone are "invalid parameters", and
+// channels aren't a type (/part closes them). Of mIRC's types, trout has
+// m (queries), c (DCC chats), g (DCC Gets), @ (custom windows), l (the
+// Channels List) and u (the URLs List); f, s, d, k and n are windows it
+// doesn't have, and status windows (t) stay open.
+func (a *App) closeCmd(w *state.Window, switches, rest string) {
+	sw := strings.TrimPrefix(switches, "-")
+	if !strings.ContainsAny(sw, "cdfgklmnstu@") {
+		a.addLine(w, state.RoleInfo, "* /close: invalid parameters")
+		return
+	}
+	names := strings.Fields(rest)
+	match := func(name string) bool {
+		return len(names) == 0 || slices.ContainsFunc(names, func(m string) bool { return wildMatch(m, name) })
+	}
+	nets := []*state.Network{w.Net}
+	if strings.Contains(sw, "a") {
+		nets = a.nets
+	}
+	inactive := strings.Contains(sw, "i")
+	var closing []*state.Window
+	for _, n := range nets {
+		for _, x := range n.Wins {
+			var ok bool
+			switch x.Kind {
+			case state.KQuery:
+				ok = strings.Contains(sw, "m") && match(x.Name)
+			case state.KChat:
+				ok = strings.Contains(sw, "c") && match(strings.TrimPrefix(x.Name, "=")) && (!inactive || a.chatFor(x) == nil || a.chatFor(x).conn == nil)
+			case state.KTransfer:
+				tr := a.transferFor(x)
+				ok = strings.Contains(sw, "g") && tr != nil && match(tr.nick) && (!inactive || tr.done || tr.err != nil)
+			case state.KCustom:
+				ok = strings.Contains(sw, "@") && match(x.Name)
+			}
+			if ok {
+				closing = append(closing, x)
+			}
+		}
+	}
+	for _, x := range closing {
+		a.closeWindow(x)
+	}
+	if l, ok := a.dlg.(*listBox); ok && (strings.Contains(sw, "l") && strings.HasPrefix(l.Title, "Channels List") ||
+		strings.Contains(sw, "u") && l.Title == "URLs List") {
+		a.dlg = nil
+	}
+}

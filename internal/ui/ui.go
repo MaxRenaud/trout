@@ -747,6 +747,7 @@ func (a *App) drawNicklist(c *Canvas, win *state.Window, x, y, w, h int) {
 	// unfocused Windows list.
 	focused := a.nickFocus && win == a.active
 	win.NickTop = clamp(win.NickTop, 0, n-h)
+	sel := win.SelectedNicks()
 	for i := 0; i < h && win.NickTop+i < n; i++ {
 		nk := win.Nicks[win.NickTop+i]
 		st := Style{FG: t.TextFG, BG: t.TextBG}
@@ -758,10 +759,10 @@ func (a *App) drawNicklist(c *Canvas, win *state.Window, x, y, w, h int) {
 		if nk.Away {
 			st.FG = t.Disabled
 		}
-		switch {
-		case nk.Name == win.NickSel && focused:
+		switch selected := slices.Contains(sel, nk.Name); {
+		case selected && focused:
 			st = Style{FG: t.SelFG, BG: t.SelBG}
-		case nk.Name == win.NickSel:
+		case selected:
 			st = Style{FG: t.FaceText, BG: t.Face}
 		}
 		c.Fill(x, y+i, lw, 1, st)

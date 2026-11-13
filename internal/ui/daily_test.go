@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -659,5 +661,175 @@ func TestEchoActivity(t *testing.T) {
 	a.runScript([]script.Action{{Echo: &script.Echo{Network: n.Name, Window: "#go", Color: -1, Text: "hi", Message: true}}})
 	if ch.Act != state.ActMsg {
 		t.Errorf("echo -m: activity %d, want a message's", ch.Act)
+	}
+}
+
+// TestClose: /close closes the windows of the types its switches name,
+// matching names and wildcards, and never the active one by itself: with
+// no type it's "invalid parameters", like mIRC's (checked).
+func TestClose(t *testing.T) {
+	a, n, _ := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	typed := func(text string) {
+		t.Helper()
+		a.edit(a.active).Buf = []rune(text)
+		a.submit(a.active)
+	}
+	for _, q := range []string{"bob", "carol", "frank", "fred"} {
+		typed("/query -n " + q)
+	}
+	typed("//window @x | window @y")
+	a.activate(ch)
+	have := func() (names []string) {
+		for _, w := range n.Wins {
+			if w.Kind == state.KQuery || w.Kind == state.KCustom {
+				names = append(names, w.Name)
+			}
+		}
+		return names
+	}
+	for _, line := range []string{"/close #go", "/close bob", "/close"} {
+		typed(line)
+		if got := lastLine(ch); got != "* /close: invalid parameters" || n.Find(state.KChannel, "#go") == nil || a.active != ch {
+			t.Fatalf("%s: %q, active %q", line, got, a.active.Name)
+		}
+	}
+	typed("/close -m bob")
+	typed("/close -m f*")
+	typed("/close -@ @x")
+	if got := have(); !slices.Equal(got, []string{"carol", "@y"}) {
+		t.Fatalf("after closing bob, f* and @x: %q", got)
+	}
+	typed("/close -m@")
+	if got := have(); len(got) != 0 || a.active != ch {
+		t.Fatalf("/close -m@: %q, active %q", got, a.active.Name)
+	}
+}
+
+// TestChanProps: $chan(#).prop and $chan(N).prop, with values as mIRC's
+// on a channel (checked: modes with their arguments, the topic with its
+// codes, ial $true once WHO has everyone's address).
+func TestChanProps(t *testing.T) {
+	a, n, feed := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	eval := func(expr string) string {
+		t.Helper()
+		a.edit(ch).Buf = []rune("//echo -a $+(<," + expr + ",>)")
+		a.submit(ch)
+		return lastLine(ch)
+	}
+	feed(":srv 324 max #go +ntkl sesame 42", ":srv 332 max #go :the \x02topic\x02 here")
+	a.quietWho[whoKey(n, "#go")] = true // the WHO trout sends on joining (no connection here)
+	for expr, want := range map[string]string{
+		"$chan(#go).mode": "<+ntkl sesame 42>", "$chan(1).key": "<sesame>", "$chan(#GO).limit": "<42>",
+		"$chan(#go).topic": "<the \x02topic\x02 here>", "$chan(#go).status": "<joined>", "$chan(#go).cid": "<1>",
+		"$chan(#go).inwho": "<$true>", "$chan(#go).ial": "<$false>", "$chan(#go).ibl": "<$false>",
+		"$chan(#go).wid": "<>", "$chan(#nope).mode": "<>", "$chan(0)": "<1>", "$chan(#go).idle": "<0>",
+	} {
+		if got := eval(expr); got != want {
+			t.Errorf("%s = %q, want %q", expr, got, want)
+		}
+	}
+	feed(":srv 352 max #go a h srv alice H@ :0 A", ":srv 352 max #go b h srv bob H :0 B",
+		":srv 352 max #go m h srv max H :0 M", ":srv 315 max #go :End", ":srv MODE #go -k sesame")
+	for expr, want := range map[string]string{
+		"$chan(#go).inwho": "<$false>", "$chan(#go).ial": "<$true>", "$chan(#go).mode": "<+ntl 42>", "$chan(#go).key": "<>",
+	} {
+		if got := eval(expr); got != want {
+			t.Errorf("after WHO and -k: %s = %q, want %q", expr, got, want)
+		}
+	}
+}
+
+// csiMsg stands for Bubble Tea's message for a sequence it has no name
+// for, which prints like this.
+type csiMsg string
+
+func (c csiMsg) String() string {
+	var b []string
+	for _, x := range []byte(c) {
+		b = append(b, strconv.Itoa(int(x)))
+	}
+	return "?CSI[" + strings.Join(b, " ") + "]?"
+}
+
+// TestNickSelectAndFkeys: Ctrl+click and Shift+click select several nicks
+// ($snicks), and function keys run their aliases, with the selected nicks
+// as $1- (all checked in mIRC).
+func TestNickSelectAndFkeys(t *testing.T) {
+	a, n, _ := realApp(t)
+	ch := n.Find(state.KChannel, "#go")
+	a.activate(ch)
+	typed := func(text string) {
+		t.Helper()
+		a.edit(ch).Buf = []rune(text)
+		a.submit(ch)
+	}
+	if a.scriptMem == nil {
+		a.scriptMem = map[string]string{}
+	}
+	a.scriptMem["f.mrc"] = "alias F5 echo -a F5 $0 $+(<,$1-,>)\nalias sF5 echo -a sF5 $1-\nalias cF5 echo -a cF5 $1-\n"
+	typed("/load -rs f.mrc")
+
+	a.View()
+	click := func(nick string, ctrl, shift bool) {
+		t.Helper()
+		for _, r := range a.regions {
+			if r.Kind == HitNick && r.S == nick {
+				a.Update(tea.MouseMsg{X: r.X + 1, Y: r.Y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, Ctrl: ctrl, Shift: shift})
+				a.Update(tea.MouseMsg{X: r.X + 1, Y: r.Y, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft})
+				return
+			}
+		}
+		t.Fatalf("no %s in the nicklist", nick)
+	}
+	click("alice", false, false)
+	click("max", true, false) // Ctrl: adds max
+	if got := ch.SelectedNicks(); !slices.Equal(got, []string{"alice", "max"}) {
+		t.Fatalf("Ctrl+click: %q", got)
+	}
+	if len(a.menus) != 0 {
+		t.Fatal("Ctrl+click on a nick opened its popup")
+	}
+	typed("//echo -a $snicks $snick(#go,0) $snick(#go,2)")
+	if got := lastLine(ch); got != "alice,max 2 max" {
+		t.Fatalf("$snicks: %q", got)
+	}
+	click("alice", false, false)
+	click("max", false, true) // Shift: alice to max
+	if got := ch.SelectedNicks(); !slices.Equal(got, []string{"alice", "bob", "max"}) {
+		t.Fatalf("Shift+click: %q", got)
+	}
+
+	for _, c := range []struct {
+		key  tea.Msg
+		want string
+	}{
+		{tea.KeyMsg{Type: tea.KeyF5}, "F5 3 <alice bob max>"},
+		{tea.KeyMsg{Type: tea.KeyF17}, "sF5 alice bob max"}, // Shift+F5, as Bubble Tea names it
+		{csiMsg("15;5~"), "cF5 alice bob max"},
+		{csiMsg("15;6~"), "sF5 alice bob max"}, // Shift+Ctrl is sF5, like mIRC's
+	} {
+		a.nickFocus = true
+		a.Update(c.key)
+		if got := lastLine(ch); got != c.want {
+			t.Errorf("%v: %q, want %q", c.key, got, c.want)
+		}
+	}
+	a.nickFocus = false // the editbox has the focus: no nicks
+	a.Update(tea.KeyMsg{Type: tea.KeyF5})
+	if got := lastLine(ch); got != "F5 0 <>" {
+		t.Errorf("F5 from the editbox: %q", got)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyF1}) // no alias: the key's own
+	if d, ok := a.dlg.(*msgBox); !ok || d.Title != "Keyboard Shortcuts" {
+		t.Errorf("F1 with no alias: %#v", a.dlg)
+	}
+	for seq, want := range map[string]string{"1;5P": "cf1", "24;2~": "sf12", "15;3~": "", "15;5": "", "16;5~": "", "1;2S": "sf4"} {
+		if got := fkeyCSI(seq); got != want {
+			t.Errorf("fkeyCSI(%q) = %q, want %q", seq, got, want)
+		}
 	}
 }

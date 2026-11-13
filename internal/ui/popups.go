@@ -2,6 +2,7 @@ package ui
 
 import (
 	"cmp"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -155,9 +156,16 @@ func (a *App) scriptMenu(kind string, w *state.Window, params []string) []MenuIt
 }
 
 // nickMenu is the nicklist popup, for a nick in the nicklist or the text.
+//
+// With several nicks selected, nick among them, $1- is all of them, like
+// mIRC's: its own nicklist popup has "Op:/mode # +ooo $$1 $2 $3".
 func (a *App) nickMenu(win *state.Window, nick string, x, y int) {
 	a.closeMenus()
-	if items := a.scriptMenu("nicklist", win, []string{nick}); len(items) > 0 {
+	params := []string{nick}
+	if sel := win.SelectedNicks(); slices.Contains(sel, nick) {
+		params = sel
+	}
+	if items := a.scriptMenu("nicklist", win, params); len(items) > 0 {
 		a.pushMenu(items, x, y)
 	}
 }

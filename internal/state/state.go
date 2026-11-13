@@ -107,16 +107,21 @@ type Window struct {
 	Topic   string // channels
 	Modes   string // channels
 	Key     string // channels: their +k key, when the server shows it
+	Limit   string // channels: their +l limit
 	Host    string // queries
 	Away    string // queries: their away message
 	Lines   []Line
 	Nicks   []Nick
 	NickSel string
-	NickTop int
-	Scroll  int // rows scrolled up from the bottom
-	Marker  int // len(Lines) when you last left the window; 0 means none
-	Act     Activity
-	Edit    EditBox
+	// NickSels is the nicks selected together (Ctrl+click, Shift+click);
+	// nil when it's NickSel alone, and empty, not nil, for none
+	// (SelectedNicks).
+	NickSels []string
+	NickTop  int
+	Scroll   int // rows scrolled up from the bottom
+	Marker   int // len(Lines) when you last left the window; 0 means none
+	Act      Activity
+	Edit     EditBox
 	// Edit2 is mIRC's second editbox (Alt+Q), shown when Edit2On;
 	// Edit2Focus means typing goes there.
 	Edit2               EditBox
@@ -479,4 +484,48 @@ func clamp(v, lo, hi int) int {
 		hi = lo
 	}
 	return max(lo, min(v, hi))
+}
+
+// SelectedNicks is the nicklist's selection, in its order: NickSels, or
+// NickSel alone. Nicks that have left aren't in it.
+func (w *Window) SelectedNicks() []string {
+	var out []string
+	for _, nk := range w.Nicks {
+		if nk.Name == w.NickSel && w.NickSels == nil || slices.Contains(w.NickSels, nk.Name) {
+			out = append(out, nk.Name)
+		}
+	}
+	return out
+}
+
+// SelectNick is a click on a nick in the nicklist: plain selects it alone;
+// toggle (Ctrl) adds it to the selection or takes it out; extend (Shift)
+// selects from the nick with the focus to it, like a Windows listbox.
+func (w *Window) SelectNick(nick string, toggle, extend bool) {
+	switch {
+	case extend && w.NickSel != "":
+		i := slices.IndexFunc(w.Nicks, func(n Nick) bool { return n.Name == w.NickSel })
+		j := slices.IndexFunc(w.Nicks, func(n Nick) bool { return n.Name == nick })
+		if i < 0 || j < 0 {
+			break
+		}
+		w.NickSels = nil
+		for _, n := range w.Nicks[min(i, j) : max(i, j)+1] {
+			w.NickSels = append(w.NickSels, n.Name)
+		}
+		return // the focus stays where the range started
+	case toggle:
+		sel := w.SelectedNicks()
+		if i := slices.Index(sel, nick); i >= 0 {
+			sel = slices.Delete(sel, i, i+1)
+		} else {
+			sel = append(sel, nick)
+		}
+		w.NickSels, w.NickSel = sel, nick
+		if len(sel) == 0 {
+			w.NickSels = []string{} // none, not NickSel alone
+		}
+		return
+	}
+	w.NickSel, w.NickSels = nick, nil
 }

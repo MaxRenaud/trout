@@ -190,6 +190,20 @@ error.
   families, `$nick`, `$chan`, `$address`, `$ial`, `$comchan`, `$chan(N)`, `$nick(#,N)`,
   `$hget`, `$hfind`, `$read`, `$readini`, `$ini`, `$regex`, `$regml`, `$regmlex`, `$regsubex`, `$timer`,
   hashes and encodings. Help > Identifiers in the editor lists them all.
+- **Channels**: `$chan(N)` and `$chan(#name)` with mIRC's properties: `topic` (with its
+  codes), `mode` (with its arguments: `+ntkl sesame 42`), `key`, `limit`, `ial` (`$true`
+  once WHO has everyone's address), `inwho`, `stamp`, `status`, `cid`, `ibl`, `iel`,
+  `iil`, `iql` and `idle`. `logfile`, `wid` and `hwnd` are empty: trout writes no logs,
+  and a terminal has no window ids. `$snicks` and `$snick(#,N)` are the nicks selected in
+  the nicklist (Ctrl+click adds one, Shift+click a range).
+- **Function keys**: an alias named `F1` to `F12` runs on that key instead of what the
+  key does in trout, `sF5` on Shift+F5 and `cF5` on Ctrl+F5 (Shift+Ctrl runs `sF5`, and
+  Alt has none, like mIRC's). In a query `$1` is who it's with; in a channel with the
+  nicklist focused, `$1-` is the selected nicks.
+- **`/close`** closes windows by type, like mIRC's: `-m` queries, `-c` DCC chats, `-g`
+  DCC Gets, `-@` custom windows, `-l` the Channels List, `-u` the URLs List, matching
+  nicks or window names (wildcards too), `-a` on every network, `-i` only chats and Gets
+  that are over. With no type it's "invalid parameters"; `/part` closes a channel.
 - **Timers** (`/timer`, `-m`, `-e`, `-p`, `-r`, time of day), **hash tables** (kept in
   memory until `/hsave`, like mIRC's), **files** (`/write`, INI files, file handles,
   `/copy`, `/rename`, `/remove`, `/mkdir`; `/write` makes no folders, like mIRC's).

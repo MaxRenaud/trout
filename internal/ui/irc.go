@@ -471,7 +471,7 @@ func (a *App) handleLine(n *state.Network, m ircmsg.Message) tea.Cmd {
 		}
 	case "324": // RPL_CHANNELMODEIS
 		if w := n.Find(state.KChannel, arg(1)); w != nil {
-			w.Modes = ""
+			w.Modes, w.Limit = "", ""
 			applyChanModes(w, arg(2), p[min(3, len(p)):])
 		}
 	case "332": // RPL_TOPIC
@@ -1132,7 +1132,7 @@ func (a *App) ircCommand(w *state.Window, line string) tea.Cmd {
 			a.sendNet(n, "PART", ch)
 		}
 	case "close":
-		a.closeWindow(w)
+		a.closeCmd(w, switches, rest)
 	case "query":
 		if arg == "" {
 			need()
@@ -1302,13 +1302,19 @@ func applyChanModes(w *state.Window, modes string, args []string) {
 			}
 		default:
 			if takesArg(c, on) && len(args) > 0 {
-				if c == 'k' && on && args[0] != "*" { // servers hide it from non-members as *
+				switch {
+				case c == 'k' && on && args[0] != "*": // servers hide it from non-members as *
 					w.Key = args[0]
+				case c == 'l' && on:
+					w.Limit = args[0]
 				}
 				args = args[1:]
 			}
-			if c == 'k' && !on {
+			switch {
+			case c == 'k' && !on:
 				w.Key = ""
+			case c == 'l' && !on:
+				w.Limit = ""
 			}
 			if strings.IndexByte(groups[0], c) < 0 {
 				w.Modes = applyFlags(w.Modes, string([]byte{"-+"[b2i(on)], c}))

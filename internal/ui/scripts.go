@@ -1238,3 +1238,67 @@ func addrHost(addr net.Addr) string {
 	}
 	return host
 }
+
+// ChanInfo is what $chan(#).prop says of a channel we're on.
+func (h scriptHost) ChanInfo(network, channel string) (script.ChanInfo, bool) {
+	n := h.net(network)
+	if n == nil {
+		return script.ChanInfo{}, false
+	}
+	w := n.Find(state.KChannel, channel)
+	if w == nil {
+		return script.ChanInfo{}, false
+	}
+	a := h.a
+	info := script.ChanInfo{Topic: w.Topic, Key: w.Key, Limit: w.Limit, Status: "kicked",
+		InWho: a.quietWho[whoKey(n, w.Name)], Stamp: a.stampsFor(w), IAL: len(w.Nicks) > 0}
+	if w.Joined {
+		info.Status = "joined"
+	}
+	// The modes with their arguments, in the order of their letters.
+	var args []string
+	for _, c := range []byte(w.Modes) {
+		switch {
+		case c == 'k' && w.Key != "":
+			args = append(args, w.Key)
+		case c == 'l' && w.Limit != "":
+			args = append(args, w.Limit)
+		}
+	}
+	if w.Modes != "" {
+		info.Mode = strings.Join(append([]string{"+" + w.Modes}, args...), " ")
+	}
+	for _, nk := range w.Nicks {
+		if _, ok := a.ial[n][n.Fold(nk.Name)]; !ok {
+			info.IAL = false
+			break
+		}
+	}
+	for mode, list := range w.Lists {
+		if list != nil {
+			info.Lists += string(mode)
+		}
+	}
+	// Idle: since the last line someone else said, or we joined.
+	since := time.Time{}
+	for _, l := range slices.Backward(w.Lines) {
+		if l.Role != state.RoleOwn {
+			since = l.Time
+			break
+		}
+	}
+	if !since.IsZero() {
+		info.Idle = int(time.Since(since).Seconds())
+	}
+	return info, true
+}
+
+// SelectedNicks is channel's nicklist selection, for $snicks and $snick.
+func (h scriptHost) SelectedNicks(network, channel string) []string {
+	if n := h.net(network); n != nil {
+		if w := n.Find(state.KChannel, channel); w != nil {
+			return w.SelectedNicks()
+		}
+	}
+	return nil
+}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"errors"
 	"slices"
 	"strconv"
@@ -62,8 +63,11 @@ func (a *App) openChannelModes(w *state.Window) {
 	for _, f := range chanModeFlags {
 		fields = append(fields, newCheck(f.label, strings.IndexByte(w.Modes, f.mode) >= 0))
 	}
-	fields = append(fields, newField("Key:", "", false), newField("Limit:", "", false))
-	lines := []string{"An empty key or limit leaves it as it is; \"-\" removes it."}
+	// The key and limit the channel has, like mIRC's (Jinx's): emptying
+	// one takes it off. A key the server hid (+k with no key shown) is
+	// empty, and stays unless it's "-".
+	fields = append(fields, newField("Key:", w.Key, false), newField("Limit:", w.Limit, false))
+	lines := []string{"Empty the key or limit to take it off (\"-\": a key you can't see)."}
 	if !op {
 		lines = []string{"You're not an operator here, so this is read-only."}
 	}
@@ -100,19 +104,19 @@ func (a *App) applyChannelCentral(w *state.Window, v []string) error {
 		}
 	}
 	key, limit := strings.TrimSpace(v[len(v)-2]), strings.TrimSpace(v[len(v)-1])
-	switch key {
-	case "":
-	case "-":
+	switch {
+	case key == "-" || key == "" && w.Key != "": // "-" for a key the server hides
 		minus += "k"
-		minusArgs = append(minusArgs, "*")
+		minusArgs = append(minusArgs, cmp.Or(w.Key, "*"))
+	case key == w.Key:
 	default:
 		plus += "k"
 		plusArgs = append(plusArgs, key)
 	}
-	switch limit {
-	case "":
-	case "-":
+	switch {
+	case limit == "-" || limit == "" && w.Limit != "":
 		minus += "l"
+	case limit == w.Limit:
 	default:
 		if _, err := strconv.Atoi(limit); err != nil {
 			return errors.New("the limit is a number of people")

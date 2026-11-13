@@ -433,6 +433,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	var cmd tea.Cmd
+	if c, ok := a.fkey(fkeyAlias(msg)); ok { // a function key's alias, instead of the key
+		cmd, msg = c, nil
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.w, a.h = msg.Width, msg.Height
@@ -851,7 +854,7 @@ func (a *App) nickKey(s string) (tea.Cmd, bool) {
 	i := slices.IndexFunc(w.Nicks, func(n state.Nick) bool { return n.Name == w.NickSel })
 	move := func(d int) {
 		j := clamp(i+d, 0, len(w.Nicks)-1)
-		w.NickSel = w.Nicks[j].Name
+		w.SelectNick(w.Nicks[j].Name, false, false)
 		w.NickTop = clamp(w.NickTop, j-a.msgH+1, j) // keep it in view
 	}
 	switch s {
@@ -1036,6 +1039,7 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 	}
 
 	// macOS terminals report Ctrl+click as a left click with Ctrl held.
+	// In the nicklist it's mIRC's Ctrl+click instead, which selects.
 	right := m.Button == tea.MouseButtonRight || m.Ctrl
 	// The message pane is one region, so a double-click there must also be
 	// on the same cell; and query and status panes are the same region, so
@@ -1120,15 +1124,25 @@ func (a *App) mouse(m tea.MouseMsg) tea.Cmd {
 	case HitNickScroll:
 		w.NickTop += scrollStep(r.I, a.msgH)
 	case HitNick:
-		w.NickSel = r.S
 		a.nickFocus = r.S != ""
+		left := m.Button == tea.MouseButtonLeft
 		switch {
 		case r.S == "":
+		case left && m.Ctrl: // adds it to the selection or takes it out, like mIRC's listbox
+			w.SelectNick(r.S, true, false)
+		case left && m.Shift: // selects from the focus to it
+			w.SelectNick(r.S, false, true)
 		case right:
+			// On a selected nick, the popup is for all of them, like mIRC's.
+			if !slices.Contains(w.SelectedNicks(), r.S) {
+				w.SelectNick(r.S, false, false)
+			}
 			a.nickMenu(w, r.S, m.X, m.Y)
 		case double:
+			w.SelectNick(r.S, false, false)
 			a.openQuery(w.Net, r.S)
 		default:
+			w.SelectNick(r.S, false, false)
 			return a.startHold(r, m.X, m.Y)
 		}
 	case HitTransfer:

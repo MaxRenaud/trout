@@ -765,9 +765,33 @@ func TestChannelCentralLists(t *testing.T) {
 		t.Fatal("the topic change wasn't kept")
 	}
 
-	w.Nicks = []state.Nick{{Name: "max"}} // no longer an operator
+	// The key and limit show as the channel has them (Jinx's); OK with
+	// them as they are sends nothing for them, a new one sets it, and an
+	// emptied one takes it off.
+	feed(":srv 324 max #go +ntkl sesame 42")
 	a.openChannelModes(w)
 	f := a.dlg.(*formBox)
+	key, limit := f.Fields[len(f.Fields)-2], f.Fields[len(f.Fields)-1]
+	if string(key.Edit.Buf) != "sesame" || string(limit.Edit.Buf) != "42" {
+		t.Fatalf("Channel Central's key %q, limit %q", string(key.Edit.Buf), string(limit.Edit.Buf))
+	}
+	limit.Edit.Buf = []rune("50")
+	f.press(a, 0)
+	expectSent(t, sent, "MODE #go +l 50")
+	feed(":max!m@h MODE #go +l 50")
+	a.openChannelModes(w)
+	f = a.dlg.(*formBox)
+	f.Fields[len(f.Fields)-2].Edit.Buf, f.Fields[len(f.Fields)-1].Edit.Buf = nil, nil
+	f.press(a, 0)
+	expectSent(t, sent, "MODE #go -kl sesame")
+	feed(":max!m@h MODE #go -kl sesame")
+	if w.Key != "" || w.Limit != "" {
+		t.Fatalf("after -kl: key %q, limit %q", w.Key, w.Limit)
+	}
+
+	w.Nicks = []state.Nick{{Name: "max"}} // no longer an operator
+	a.openChannelModes(w)
+	f = a.dlg.(*formBox)
 	if !strings.Contains(f.Lines[0], "read-only") {
 		t.Fatal("Channel Central isn't read-only for non-operators")
 	}

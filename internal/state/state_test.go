@@ -1,6 +1,7 @@
 package state
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -55,5 +56,27 @@ func TestWordStep(t *testing.T) {
 		if got := WordStep(buf, c.pos, c.d); got != c.want {
 			t.Errorf("WordStep(%d, %d) = %d, want %d", c.pos, c.d, got, c.want)
 		}
+	}
+}
+
+func TestSelectNick(t *testing.T) {
+	w := &Window{Nicks: []Nick{{Name: "ann"}, {Name: "bob"}, {Name: "cat"}, {Name: "dan"}}}
+	step := func(nick string, toggle, extend bool, want ...string) {
+		t.Helper()
+		w.SelectNick(nick, toggle, extend)
+		if got := w.SelectedNicks(); !slices.Equal(got, want) {
+			t.Fatalf("after %s (toggle %v, extend %v): %q, want %q", nick, toggle, extend, got, want)
+		}
+	}
+	step("bob", false, false, "bob")
+	step("dan", true, false, "bob", "dan")
+	step("bob", true, false, "dan")
+	step("dan", true, false)
+	step("ann", false, false, "ann")
+	step("cat", false, true, "ann", "bob", "cat")
+	step("bob", false, false, "bob")
+	w.Nicks = w.Nicks[2:] // bob left
+	if got := w.SelectedNicks(); len(got) != 0 {
+		t.Fatalf("a nick who left is still selected: %q", got)
 	}
 }

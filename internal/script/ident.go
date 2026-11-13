@@ -3,6 +3,7 @@ package script
 import (
 	"cmp"
 	"maps"
+	"slices"
 	"strings"
 )
 
@@ -20,7 +21,7 @@ func init() {
 	builtins = map[string]builtin{"regsubex": regsubexIdent}
 	for _, m := range []map[string]builtin{eventIdents, coreIdents, textIdents, tokenIdents, numIdents,
 		timeIdents, hashIdents, regexIdents, timerIdents, sockIdents, fileIdents, menuIdents, miscIdents,
-		fileHandleIdents, connIdents, userIdents, windowIdents, binIdents, urlIdents, clientIdents, dccIdents, dnsIdents} {
+		fileHandleIdents, connIdents, userIdents, windowIdents, binIdents, urlIdents, clientIdents, dccIdents, dnsIdents, nickSelIdents} {
 		maps.Copy(builtins, m)
 	}
 }
@@ -46,30 +47,27 @@ var eventIdents = map[string]builtin{
 		return evField(fr, func(ev *Event) string { return ev.Nick }), nil
 	},
 	// $chan is the event's channel; $chan(N) the Nth channel we're on
-	// (N = 0 is how many), and $chan(#name) that name if we're on it.
+	// (N = 0 is how many), and $chan(#name) that name if we're on it;
+	// with a property, what chanProp says of it.
 	"chan": func(r *run, fr *frame, c *call) (string, error) {
 		if !c.hasArgs {
 			return fr.channel, nil
 		}
-		if c.prop != "" {
-			return "", errorf("$chan().", c.prop, " isn't supported yet")
-		}
-		chans := r.h.Chans(fr.network)
+		chans, ch := r.h.Chans(fr.network), ""
 		if n, ok := parseNum(c.arg(0)); ok {
 			switch i := int(n); {
-			case i == 0:
+			case i == 0 && c.prop == "":
 				return itoa(len(chans)), nil
 			case i > 0 && i <= len(chans):
-				return chans[i-1], nil
+				ch = chans[i-1]
 			}
-			return "", nil
+		} else if i := slices.IndexFunc(chans, func(x string) bool { return strings.EqualFold(x, c.arg(0)) }); i >= 0 {
+			ch = chans[i]
 		}
-		for _, ch := range chans {
-			if strings.EqualFold(ch, c.arg(0)) {
-				return ch, nil
-			}
+		if ch == "" || c.prop == "" {
+			return ch, nil
 		}
-		return "", nil
+		return r.chanProp(fr.network, ch, c.prop), nil
 	},
 	// $comchan(nick,N) is the Nth channel both we and nick are on.
 	"comchan": func(r *run, fr *frame, c *call) (string, error) {
